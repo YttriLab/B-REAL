@@ -1,0 +1,307 @@
+"""
+Training service: manages model training as a subprocess with live metrics streaming.
+
+Training runs in a subprocess to isolate CUDA memory and allow clean termination.
+Metrics are written to a JSON-lines file that the SSE endpoint tails.
+"""
+
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import threading
+import uuid
+from pathlib import Path
+from typing import Optional
+
+import yaml
+
+PROJECT_ROOT = str(Path(__file__).resolve().parent.parent.parent)
+
+# ── Task registry ──────────────────────────────────────────────────────────
+
+_tasks: dict[str, dict] = {}
+
+
+def get_task(task_id: str) -> Optional[dict]:
+    return _tasks.get(task_id)
+
+
+def cancel_all():
+    for task in _tasks.values():
+        proc = task.get("process")
+        if proc and proc.poll() is None:
+            proc.terminate()
+
+
+# ── Training subprocess script ─────────────────────────────────────────────
+
+TRAIN_SCRIPT = r'''
+"""Training subprocess: loads config, trains model, writes JSON-lines metrics."""
+import sys
+import os
+import json
+import torch
+import lightning as L
+from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping, Callback
+from omegaconf import OmegaConf
+
+# Ensure project root is importable
+sys.path.insert(0, os.environ["PROJECT_ROOT"])
+
+from model import load_data, MultiImageDataModule, train_test_split
+from model_tsm import TSMClassifier
+
+
+class MetricsWriter(Callback):
+    """Write per-epoch metrics to a JSON-lines file for the SSE endpoint."""
+
+    def __init__(self, metrics_path: str, max_epochs: int):
+        super().__init__()
+        self.metrics_path = metrics_path
+        self.max_epochs = max_epochs
+
+    def on_train_epoch_end(self, trainer, pl_module):
+        metrics = {
+            "epoch": trainer.current_epoch,
+            "total_epochs": self.max_epochs,
+            "train_loss": float(trainer.callback_metrics.get("train_loss", 0)),
+            "train_acc": float(trainer.callback_metrics.get("train_balanced_acc", 0)),
+            "val_loss": float(trainer.callback_metrics.get("val_loss", 0)),
+            "val_acc": float(trainer.callback_metrics.get("val_balanced_acc", 0)),
+            "val_mcc": float(trainer.callback_metrics.get("val_mcc", 0)),
+            "lr": float(trainer.optimizers[0].param_groups[0]["lr"]),
+            "status": "training",
+        }
+        with open(self.metrics_path, "a") as f:
+            f.write(json.dumps(metrics) + "\n")
+
+
+def main():
+    config_path = sys.argv[1]
+    metrics_path = sys.argv[2]
+
+    config = OmegaConf.load(config_path)
+    torch.set_float32_matmul_precision("medium")
+
+    # Load data
+    all_file_paths, all_labels, all_class_names_union, all_boundary_dists = load_data(
+        **OmegaConf.to_container(config.data_loading, resolve=True)
+    )
+
+    train_data, valid_data, test_data, test_clip_sizes = train_test_split(
+        all_file_paths, all_labels, all_boundary_dists,
+        **OmegaConf.to_container(config.data, resolve=True)
+    )
+
+    # Class weights
+    class_ids, counts = torch.unique(torch.tensor(train_data[1]), return_counts=True)
+    weights = counts.sum() / counts
+
+    data_module = MultiImageDataModule(train_data, valid_data, test_data)
+
+    boundary_smoothing = (
+        OmegaConf.to_container(config.boundary_smoothing, resolve=True)
+        if "boundary_smoothing" in config else None
+    )
+
+    model = TSMClassifier(
+        **OmegaConf.to_container(config.model, resolve=True),
+        max_epochs=config.max_epochs,
+        weights=weights,
+        class_names=all_class_names_union,
+        boundary_smoothing=boundary_smoothing,
+    )
+    model.test_clip_sizes = test_clip_sizes
+
+    # Callbacks
+    checkpoint_dir = config.get("checkpoint_dir", "checkpoints")
+    checkpoint_cb = ModelCheckpoint(
+        dirpath=checkpoint_dir,
+        monitor="val_loss", mode="min", save_top_k=1
+    )
+    early_stop_cb = EarlyStopping(
+        monitor="val_loss",
+        patience=config.callbacks.early_stopping_patience,
+        mode="min",
+    )
+    metrics_cb = MetricsWriter(metrics_path, config.max_epochs)
+
+    # Logger (optional wandb)
+    logger = None
+    if config.get("use_wandb", False):
+        from lightning.pytorch.loggers.wandb import WandbLogger
+        logger = WandbLogger(
+            project=config.get("project_name", "realtime-asoid"),
+            name=config.get("run_name", "training"),
+        )
+
+    trainer = L.Trainer(
+        logger=logger,
+        callbacks=[checkpoint_cb, early_stop_cb, metrics_cb],
+        max_epochs=config.max_epochs,
+        accelerator="auto",
+    )
+
+    trainer.fit(model, data_module)
+
+    # Write completion
+    completion = {
+        "status": "completed",
+        "best_checkpoint": checkpoint_cb.best_model_path,
+        "best_val_loss": float(checkpoint_cb.best_model_score or 0),
+        "epoch": trainer.current_epoch,
+        "total_epochs": config.max_epochs,
+    }
+    with open(metrics_path, "a") as f:
+        f.write(json.dumps(completion) + "\n")
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+# ── Service functions ──────────────────────────────────────────────────────
+
+def start_training(config: dict) -> str:
+    """
+    Launch training in a subprocess.
+
+    Args:
+        config: Full training configuration dict (same structure as config_tsm.yaml)
+
+    Returns:
+        task_id for status polling.
+    """
+    task_id = str(uuid.uuid4())
+
+    # Write config to temp file
+    tmp_dir = tempfile.mkdtemp(prefix="asoid_train_")
+    config_path = os.path.join(tmp_dir, "config.yaml")
+    metrics_path = os.path.join(tmp_dir, "metrics.jsonl")
+    script_path = os.path.join(tmp_dir, "train_subprocess.py")
+
+    # Add checkpoint dir to config
+    config.setdefault("checkpoint_dir", os.path.join(tmp_dir, "checkpoints"))
+
+    with open(config_path, "w") as f:
+        yaml.dump(config, f, default_flow_style=False)
+
+    with open(script_path, "w") as f:
+        f.write(TRAIN_SCRIPT)
+
+    # Touch metrics file
+    open(metrics_path, "w").close()
+
+    task = {
+        "status": "starting",
+        "metrics_path": metrics_path,
+        "config_path": config_path,
+        "tmp_dir": tmp_dir,
+        "process": None,
+        "latest_metrics": {},
+        "error": None,
+    }
+    _tasks[task_id] = task
+
+    def _run():
+        try:
+            env = os.environ.copy()
+            env["PROJECT_ROOT"] = PROJECT_ROOT
+
+            proc = subprocess.Popen(
+                [sys.executable, script_path, config_path, metrics_path],
+                cwd=PROJECT_ROOT,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            task["process"] = proc
+            task["status"] = "running"
+
+            proc.wait()
+
+            if proc.returncode != 0:
+                stderr = proc.stderr.read().decode("utf-8", errors="replace")
+                task["status"] = "error"
+                task["error"] = stderr[-2000:]  # Last 2000 chars
+            else:
+                # Read final metrics line for completion info
+                try:
+                    with open(metrics_path, "r") as f:
+                        lines = f.readlines()
+                    if lines:
+                        final = json.loads(lines[-1])
+                        task["latest_metrics"] = final
+                        task["status"] = final.get("status", "completed")
+                except Exception:
+                    task["status"] = "completed"
+        except Exception as e:
+            task["status"] = "error"
+            task["error"] = str(e)
+
+    thread = threading.Thread(target=_run, daemon=True)
+    thread.start()
+    return task_id
+
+
+def read_latest_metrics(task_id: str) -> dict:
+    """Read the latest metrics from the JSON-lines file."""
+    task = get_task(task_id)
+    if not task:
+        return {}
+
+    metrics_path = task.get("metrics_path")
+    if not metrics_path or not os.path.exists(metrics_path):
+        return {"status": task["status"], "error": task.get("error")}
+
+    try:
+        with open(metrics_path, "r") as f:
+            lines = f.readlines()
+        if lines:
+            latest = json.loads(lines[-1])
+            latest["status"] = task["status"]
+            return latest
+    except Exception:
+        pass
+
+    return {"status": task["status"], "error": task.get("error")}
+
+
+def stop_training(task_id: str) -> bool:
+    """Terminate the training subprocess."""
+    task = get_task(task_id)
+    if not task:
+        return False
+    proc = task.get("process")
+    if proc and proc.poll() is None:
+        proc.terminate()
+        task["status"] = "cancelled"
+        return True
+    return False
+
+
+def list_checkpoints(search_dirs: list[str] | None = None) -> list[dict]:
+    """
+    Scan directories for checkpoint files.
+    Returns list of {path, filename, size_mb}.
+    """
+    if search_dirs is None:
+        # Search in common locations
+        search_dirs = [PROJECT_ROOT]
+
+    results = []
+    for base_dir in search_dirs:
+        for root, dirs, files in os.walk(base_dir):
+            for f in files:
+                if f.endswith(".ckpt") or f.endswith(".pt"):
+                    full_path = os.path.join(root, f)
+                    size_mb = os.path.getsize(full_path) / (1024 * 1024)
+                    results.append({
+                        "path": full_path,
+                        "filename": f,
+                        "size_mb": round(size_mb, 1),
+                    })
+    return results

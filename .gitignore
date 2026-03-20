@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+*.whl
+.venv/
+venv/
+env/
+
+# PyTorch / Training artifacts
+lightning_logs/
+checkpoints/
+*.ckpt
+*.pt
+*.pth
+*.onnx
+wandb/
+
+# Preprocessed frames (large, regenerable)
+frames_*/
+cropped_*/
+
+# Node / Electron
+node_modules/
+LabelingApp/dist/
+LabelingApp/out/
+LabelingApp/LabelingAppMac/
+LabelingApp/LabelingAppMac.zip
+LabelingApp/LabelingAppMacV2/
+LabelingApp/LabelingAppMacV2.zip
+
+# pytest
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log
+*.bak

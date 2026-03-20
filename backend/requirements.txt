@@ -1,0 +1,21 @@
+fastapi
+uvicorn[standard]
+torch
+torchvision
+lightning
+opencv-python-headless
+albumentations
+omegaconf
+numpy
+pandas
+wandb
+torchmetrics
+timm
+matplotlib
+pyyaml
+scipy
+
+# Dev / test dependencies
+pytest
+pytest-asyncio
+httpx

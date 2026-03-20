@@ -1,0 +1,159 @@
+"""Training router: start/stop training, stream metrics, list checkpoints."""
+
+import asyncio
+import json
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+
+from backend.services.training_service import (
+    start_training,
+    read_latest_metrics,
+    stop_training,
+    list_checkpoints,
+    get_task,
+)
+
+router = APIRouter()
+
+
+# ── Request schemas ────────────────────────────────────────────────────────
+
+class TrainingConfig(BaseModel):
+    """Full training configuration — mirrors config_tsm.yaml structure."""
+    # Data loading
+    label_paths: list[str]
+    frame_dirs: list[str]
+    frames_per_group: int = 3
+    label_union: Optional[dict] = None
+    binarize: Optional[str] = None
+
+    # Data splits
+    train_percent: float = 0.7
+    val_percent: float = 0.15
+    test_percent: float = 0.15
+    shuffle: bool = False
+
+    # Model
+    num_frames: int = 3
+    variant: str = "b0"
+    shift_fraction: float = 0.125
+    pretrained: bool = True
+    tsm_stages: list[int] = [5, 6, 7]
+    dropout: float = 0.2
+    lr: float = 1e-4
+    weight_decay: float = 1e-3
+    temporal_pool: str = "last"
+
+    # Training
+    max_epochs: int = 100
+    early_stopping_patience: int = 20
+
+    # Boundary smoothing
+    boundary_smoothing_enabled: bool = False
+    boundary_smoothing_epsilon: float = 0.3
+    boundary_smoothing_window: int = 5
+
+    # Logging
+    use_wandb: bool = False
+    project_name: str = "realtime-asoid"
+    run_name: str = "training"
+
+    # Output
+    checkpoint_dir: Optional[str] = None
+
+
+class CheckpointSearchRequest(BaseModel):
+    search_dirs: Optional[list[str]] = None
+
+
+# ── Endpoints ──────────────────────────────────────────────────────────────
+
+@router.post("/start")
+async def api_start_training(req: TrainingConfig):
+    """Start model training in a subprocess. Returns task_id."""
+    # Convert to config_tsm.yaml-compatible dict
+    config = {
+        "data_loading": {
+            "label_paths": req.label_paths,
+            "frame_dirs": req.frame_dirs,
+            "frames_per_group": req.frames_per_group,
+            "label_union": req.label_union,
+            "binarize": req.binarize,
+        },
+        "data": {
+            "train_percent": req.train_percent,
+            "val_percent": req.val_percent,
+            "test_percent": req.test_percent,
+            "shuffle": req.shuffle,
+        },
+        "model": {
+            "num_frames": req.num_frames,
+            "variant": req.variant,
+            "shift_fraction": req.shift_fraction,
+            "pretrained": req.pretrained,
+            "tsm_stages": req.tsm_stages,
+            "dropout": req.dropout,
+            "lr": req.lr,
+            "weight_decay": req.weight_decay,
+            "temporal_pool": req.temporal_pool,
+        },
+        "max_epochs": req.max_epochs,
+        "callbacks": {
+            "early_stopping_patience": req.early_stopping_patience,
+        },
+        "boundary_smoothing": {
+            "enabled": req.boundary_smoothing_enabled,
+            "epsilon": req.boundary_smoothing_epsilon,
+            "window": req.boundary_smoothing_window,
+        },
+        "use_wandb": req.use_wandb,
+        "project_name": req.project_name,
+        "run_name": req.run_name,
+        "fine_tune_lr": False,
+    }
+    if req.checkpoint_dir:
+        config["checkpoint_dir"] = req.checkpoint_dir
+
+    try:
+        task_id = start_training(config)
+        return {"task_id": task_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/status/{task_id}")
+async def api_training_status(task_id: str):
+    """SSE stream of training metrics."""
+    task = get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    async def event_stream():
+        while True:
+            metrics = read_latest_metrics(task_id)
+            yield f"data: {json.dumps(metrics)}\n\n"
+            if metrics.get("status") in ("completed", "error", "cancelled"):
+                break
+            await asyncio.sleep(1.0)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.post("/stop/{task_id}")
+async def api_stop_training(task_id: str):
+    """Terminate a running training subprocess."""
+    success = stop_training(task_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Task not found or already stopped")
+    return {"status": "cancelled"}
+
+
+@router.get("/checkpoints")
+async def api_list_checkpoints(search_dirs: Optional[str] = None):
+    """List available checkpoint files."""
+    dirs = search_dirs.split(",") if search_dirs else None
+    checkpoints = list_checkpoints(dirs)
+    return {"checkpoints": checkpoints}

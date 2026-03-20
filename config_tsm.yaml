@@ -1,0 +1,50 @@
+project_name: aeagle-yttri-lab
+run_name: tsm_efficientnet_binary_more_data_best_hyper
+
+max_epochs: 100
+
+fine_tune_lr: False
+
+model:
+  num_frames: 3
+  variant: b0              # EfficientNet variant (b0, b1, b2, b3)
+  shift_fraction: 0.125    # fraction of channels shifted per direction (1/8)
+  pretrained: True
+  tsm_stages: [1, 2, 3, 4, 5, 6, 7]   # which MBConv stages get TSM (1-7). Everything before is frozen.
+  dropout: 0.2
+  lr: 1e-4
+  weight_decay: 1e-3
+  temporal_pool: last       # last | avg | max
+
+data:
+  train_percent: 0.7
+  val_percent: 0.15
+  test_percent: 0.15
+  shuffle: False
+
+callbacks:
+  early_stopping_patience: 20
+
+data_loading:
+  label_paths:
+    - labels\01_09.csv
+    - labels\01_09_after_15.csv
+    - labels\01_09_remaining.csv
+    - labels\02_23.csv
+
+  frame_dirs:
+    - processed_frames\01_09
+    - processed_frames\01_09
+    - processed_frames\01_09
+    - processed_frames\02_23
+
+  frames_per_group: 3
+
+  label_union:
+
+  binarize: face/head/paw groom
+
+boundary_smoothing:
+  enabled: true
+  epsilon: 0.3
+  window: 5
