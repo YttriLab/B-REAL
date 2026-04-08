@@ -121,4 +121,21 @@ contextBridge.exposeInMainWorld("api", {
   selectFiles: (payload) => ipcRenderer.invoke("select-files", payload),
   getBackendPort: () => ipcRenderer.invoke("get-backend-port"),
   importProject: () => ipcRenderer.invoke("import-project"),
+  // ── Project management ──
+  projectPromptName: () => ipcRenderer.invoke("project:prompt-name"),
+  projectSelectDir: () => ipcRenderer.invoke("project:select-dir"),
+  projectOpenDialog: () => ipcRenderer.invoke("project:open-dialog"),
+  projectCreate: (payload) => ipcRenderer.invoke("project:create", payload),
+  projectOpen: (payload) => ipcRenderer.invoke("project:open", payload),
+  projectSave: (payload) => ipcRenderer.invoke("project:save", payload),
+  projectSaveLabels: (payload) => ipcRenderer.invoke("project:save-labels", payload),
+  projectReadLabels: (payload) => ipcRenderer.invoke("project:read-labels", payload),
+  projectEnsureDir: (payload) => ipcRenderer.invoke("project:ensure-dir", payload),
+  // ── XLSX support ──
+  xlsxToCsv: async (filePath) => {
+    const XLSX = require("xlsx");
+    const workbook = XLSX.readFile(filePath);
+    const sheetName = workbook.SheetNames[0];
+    return XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
+  },
 });

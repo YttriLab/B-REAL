@@ -46,6 +46,17 @@ let pendingSeekTime = null;
 let suppressTimeUpdate = false;
 let currentFile = null;
 
+// ── Multi-video sidebar ───────────────────────────────────────────────────
+function loadVideoList() {
+  try {
+    const stored = localStorage.getItem("videoList");
+    if (!stored) return [];
+    const parsed = JSON.parse(stored);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+let videoList = loadVideoList();
+
 let webcodecsMode = false;
 let webcodecsReady = false;
 let webcodecsLoading = false;
@@ -1256,6 +1267,11 @@ const renderBouts = () => {
 
 const saveBehaviors = () => {
   localStorage.setItem("behaviors", JSON.stringify(behaviors));
+  try {
+    if (window.projectManager && window.projectManager.isActive()) {
+      window.projectManager.updateBehaviors(behaviors);
+    }
+  } catch { /* project manager not ready */ }
 };
 
 function loadBehaviors() {
@@ -1294,6 +1310,15 @@ const saveProgress = () => {
   } catch (error) {
     console.warn("Failed to save progress", error);
   }
+  // Auto-save labels to project directory
+  try {
+    if (window.projectManager && window.projectManager.isActive() && currentVideoName) {
+      const csv = generateBoutsCsv(bouts);
+      window.projectManager.saveVideoLabels(currentVideoName, csv).catch(() => {});
+    }
+  } catch { /* project manager not ready or generateBoutsCsv not yet defined */ }
+  // Update sidebar bout counts
+  try { renderVideoSidebar(); } catch { /* sidebar not ready yet */ }
   // Rebuild misclassification overlay when bouts change
   try {
     if (alState && alState.results) {
@@ -1338,6 +1363,142 @@ const restoreProgress = (videoName) => {
   setStatus(`Restored progress for ${videoName}.`);
 };
 
+// ── Video sidebar functions ───────────────────────────────────────────────
+
+const saveVideoList = () => {
+  const serializable = videoList.map(v => ({ name: v.name, path: v.path, isWebCodecs: !!v.isWebCodecs }));
+  localStorage.setItem("videoList", JSON.stringify(serializable));
+};
+
+const getBoutCountForVideo = (videoName) => {
+  if (videoName === currentVideoName) return bouts.length;
+  const progress = loadProgress(videoName);
+  return progress && Array.isArray(progress.bouts) ? progress.bouts.length : 0;
+};
+
+const renderVideoSidebar = () => {
+  const sidebar = document.getElementById("videoSidebar");
+  const listEl = document.getElementById("videoListEl");
+  const contentEl = document.querySelector(".content");
+
+  if (videoList.length === 0) {
+    sidebar.classList.add("hidden");
+    contentEl.style.gridTemplateColumns = "2.2fr 1fr";
+    return;
+  }
+  sidebar.classList.remove("hidden");
+  contentEl.style.gridTemplateColumns = "auto 2.2fr 1fr";
+
+  listEl.innerHTML = "";
+  videoList.forEach((entry) => {
+    const li = document.createElement("li");
+    li.className = "video-list-item" + (entry.name === currentVideoName ? " active" : "");
+    li.title = entry.path || entry.name;
+
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "video-name";
+    nameSpan.textContent = entry.name;
+
+    const countSpan = document.createElement("span");
+    countSpan.className = "bout-count";
+    const count = getBoutCountForVideo(entry.name);
+    countSpan.textContent = count > 0 ? `(${count})` : "";
+
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "remove-btn";
+    removeBtn.textContent = "\u00d7";
+    removeBtn.title = "Remove video";
+    removeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      removeVideoFromList(entry.name);
+    });
+
+    li.appendChild(nameSpan);
+    li.appendChild(countSpan);
+    li.appendChild(removeBtn);
+    li.addEventListener("click", () => switchToVideo(entry.name));
+    listEl.appendChild(li);
+  });
+};
+
+const addVideoToList = (file) => {
+  const name = file.name;
+  if (videoList.some(v => v.name === name)) return;
+  videoList.push({
+    name,
+    path: file.path || "",
+    isWebCodecs: useWebCodecsInput.checked
+  });
+  saveVideoList();
+  renderVideoSidebar();
+  // Add to project manifest
+  try {
+    if (window.projectManager && window.projectManager.isActive() && file.path) {
+      window.projectManager.addVideoToManifest(file.path);
+    }
+  } catch { /* project manager not ready */ }
+};
+
+const removeVideoFromList = (videoName) => {
+  videoList = videoList.filter(v => v.name !== videoName);
+  saveVideoList();
+  localStorage.removeItem(getProgressKey(videoName));
+  // Remove from project manifest
+  try {
+    if (window.projectManager && window.projectManager.isActive()) {
+      const id = window.projectManager.getVideoIdFromName(videoName);
+      window.projectManager.removeVideoFromManifest(id);
+    }
+  } catch { /* project manager not ready */ }
+  if (videoName === currentVideoName) {
+    if (videoList.length > 0) {
+      switchToVideo(videoList[0].name);
+    } else {
+      resetSession();
+      currentVideoName = "";
+      currentFile = null;
+      if (video.src) { URL.revokeObjectURL(video.src); video.removeAttribute("src"); }
+      renderVideoSidebar();
+    }
+  } else {
+    renderVideoSidebar();
+  }
+};
+
+const switchToVideo = (videoName) => {
+  if (videoName === currentVideoName) return;
+
+  // Save current progress before switching
+  saveProgress();
+
+  const entry = videoList.find(v => v.name === videoName);
+  if (!entry) return;
+
+  // Stop playback
+  if (webcodecsMode && webcodecsPlaying) {
+    togglePlayPause();
+  } else if (!video.paused) {
+    video.pause();
+    playPauseButton.textContent = "Play";
+  }
+
+  // Build file-like object and load
+  const fileObj = { name: entry.name, path: entry.path };
+  currentFile = fileObj;
+
+  if (entry.isWebCodecs && webcodecsSupported()) {
+    useWebCodecsInput.checked = true;
+    loadWebcodecsFile(fileObj);
+  } else {
+    useWebCodecsInput.checked = false;
+    setWebcodecsMode(false);
+    loadHtml5File(fileObj);
+  }
+
+  localStorage.setItem("lastActiveVideo", videoName);
+  renderVideoSidebar();
+};
+
 const nextBehaviorKey = () => {
   const used = new Set(behaviors.map((behavior) => behavior.key));
   return KEY_ORDER.find((key) => !used.has(key));
@@ -1380,6 +1541,7 @@ const loadHtml5File = (file) => {
     URL.revokeObjectURL(video.src);
   }
   currentVideoName = file.name;
+  localStorage.setItem("lastActiveVideo", file.name);
   frameDurationMs = 1000 / (Number(fpsInput.value) || 30);
   lastFrameMediaTime = null;
   currentFrameIndex = 0;
@@ -1399,6 +1561,7 @@ const loadHtml5File = (file) => {
 const loadWebcodecsFile = async (file) => {
   webcodecsOperationInProgress = true;
   currentVideoName = file.name;
+  localStorage.setItem("lastActiveVideo", file.name);
   currentFrameIndex = 0;
   webcodecsDurationMs = 0;
   resetSession();
@@ -1605,6 +1768,18 @@ const findOverlappingBouts = () => {
   return null;
 };
 
+const generateBoutsCsv = (boutsArr) => {
+  const header = ["start", "end", "behavior"].join(",");
+  const rows = boutsArr.map((bout) =>
+    [
+      csvEscape(formatTime(getFrameTimeMs(bout.startFrame))),
+      csvEscape(formatTime(getFrameTimeMs(bout.endFrame))),
+      csvEscape(bout.behaviorName)
+    ].join(",")
+  );
+  return [header, ...rows].join("\n");
+};
+
 const exportCsv = async () => {
   if (bouts.length === 0) {
     setStatus("No bouts to export yet.");
@@ -1622,15 +1797,7 @@ const exportCsv = async () => {
     return;
   }
 
-  const header = ["start", "end", "behavior"].join(",");
-  const rows = bouts.map((bout) =>
-    [
-      csvEscape(formatTime(getFrameTimeMs(bout.startFrame))),
-      csvEscape(formatTime(getFrameTimeMs(bout.endFrame))),
-      csvEscape(bout.behaviorName)
-    ].join(",")
-  );
-  const content = [header, ...rows].join("\n");
+  const content = generateBoutsCsv(bouts);
 
   if (!window.api || !window.api.saveCsv) {
     setStatus("CSV export is unavailable.");
@@ -1814,15 +1981,20 @@ const parseCsvAndImport = (content, sourceName = "CSV") => {
 // ── Import CSV via file dialog ────────────────────────────────────────
 const importCsv = async () => {
   if (!window.api || !window.api.openCsv) {
-    setStatus("CSV import is unavailable.");
+    setStatus("Label import is unavailable.");
     return;
   }
   const result = await window.api.openCsv();
-  if (result.canceled || !result.content) {
-    if (!result.canceled) setStatus("Import canceled.");
-    return;
+  if (result.canceled) return;
+  let content;
+  if (result.isXlsx) {
+    if (!window.api.xlsxToCsv) { setStatus("XLSX support unavailable."); return; }
+    content = await window.api.xlsxToCsv(result.filePath);
+  } else {
+    content = result.content;
   }
-  parseCsvAndImport(result.content, result.filePath || "CSV");
+  if (!content) { setStatus("Import canceled or file empty."); return; }
+  parseCsvAndImport(content, result.filePath || "Labels");
 };
 
 const exportOneHot = async () => {
@@ -2182,6 +2354,7 @@ videoFileInput.addEventListener("change", (event) => {
   }
   
   currentFile = file;
+  addVideoToList(file);
   console.log("[renderer] File selected:", file.name, "WebCodecs checked:", useWebCodecsInput.checked);
   if (useWebCodecsInput.checked) {
     if (!webcodecsSupported()) {
@@ -2218,12 +2391,22 @@ document.getElementById("importProject").addEventListener("click", async () => {
   if (result.canceled) return;
 
   const videoPath = result.videoPath;
-  const labelContent = result.labelContent;
   const videoName = videoPath.split(/[\\/]/).pop();
+
+  // Resolve label content (CSV text or XLSX binary)
+  let labelContent;
+  if (result.isXlsx) {
+    if (!window.api.xlsxToCsv) { setStatus("XLSX support unavailable."); return; }
+    labelContent = await window.api.xlsxToCsv(result.labelPath);
+  } else {
+    labelContent = result.labelContent;
+  }
+  if (!labelContent) { setStatus("Label file empty or unreadable."); return; }
 
   // Build a File-like object for the existing load functions
   const fileObj = { name: videoName, path: videoPath };
   currentFile = fileObj;
+  addVideoToList(fileObj);
 
   // Load the video, then import labels once it's ready
   const importLabelsOnce = () => {
@@ -3239,5 +3422,206 @@ async function initialBackendCheck() {
 }
 initialBackendCheck();
 
+// ── Video sidebar event listeners ─────────────────────────────────────────
+
+document.getElementById("addVideosBtn").addEventListener("click", async () => {
+  if (!window.api || !window.api.selectFiles) {
+    setStatus("File selection API unavailable.");
+    return;
+  }
+  const result = await window.api.selectFiles({
+    title: "Add Videos",
+    filters: [
+      { name: "Video Files", extensions: ["mp4", "webm", "avi", "mkv", "mov"] },
+      { name: "All Files", extensions: ["*"] }
+    ]
+  });
+  if (result.canceled || !result.paths) return;
+
+  for (const filePath of result.paths) {
+    const name = filePath.split(/[\\/]/).pop();
+    addVideoToList({ name, path: filePath });
+  }
+
+  // If no video is currently loaded, load the first new one
+  if (!currentVideoName && videoList.length > 0) {
+    switchToVideo(videoList[0].name);
+  }
+});
+
+document.getElementById("toggleSidebar").addEventListener("click", () => {
+  document.getElementById("videoSidebar").classList.toggle("collapsed");
+});
+
+// Render sidebar on startup and auto-load last active video
+renderVideoSidebar();
+{
+  const lastActive = localStorage.getItem("lastActiveVideo");
+  if (lastActive && videoList.some(v => v.name === lastActive)) {
+    const entry = videoList.find(v => v.name === lastActive);
+    if (entry && entry.path) {
+      switchToVideo(lastActive);
+    }
+  }
+}
+
+// ── Project management ────────────────────────────────────────────────────
+
+function updateProjectUI() {
+  const nameEl = document.getElementById("projectName");
+  const saveBtn = document.getElementById("saveProject");
+  const closeBtn = document.getElementById("closeProject");
+  if (window.projectManager && window.projectManager.isActive()) {
+    const manifest = window.projectManager.getManifest();
+    nameEl.textContent = manifest.name || "Untitled";
+    saveBtn.classList.remove("hidden");
+    closeBtn.classList.remove("hidden");
+  } else {
+    nameEl.textContent = "";
+    saveBtn.classList.add("hidden");
+    closeBtn.classList.add("hidden");
+  }
+}
+
+async function restoreProjectVideos(manifest) {
+  // Restore behaviors from manifest
+  if (Array.isArray(manifest.behaviors) && manifest.behaviors.length > 0) {
+    behaviors = manifest.behaviors.map((b, i) => ({
+      id: Date.now() + "-" + i,
+      name: b.name,
+      key: b.key || KEY_ORDER[i] || ""
+    }));
+    saveBehaviors();
+    renderBehaviors();
+  }
+
+  // Add videos from manifest to videoList
+  for (const vEntry of manifest.videos) {
+    if (!vEntry.path) continue;
+    const name = vEntry.path.split(/[\\/]/).pop();
+    addVideoToList({ name, path: vEntry.path });
+
+    // Load labels from project if they exist
+    const labelContent = await window.projectManager.loadVideoLabels(name);
+    if (labelContent && labelContent.trim()) {
+      // Store as progress so restoreProgress picks them up
+      // We need to temporarily switch context to parse for this video
+      const prevBouts = [...bouts];
+      bouts = [];
+      parseCsvAndImport(labelContent, "project:" + vEntry.id);
+      const importedBouts = [...bouts];
+      bouts = prevBouts;
+
+      // Save imported bouts to localStorage for this video
+      if (importedBouts.length > 0) {
+        const progress = { frameIndex: 0, bouts: importedBouts, activeStarts: [] };
+        localStorage.setItem(getProgressKey(name), JSON.stringify(progress));
+      }
+    }
+  }
+
+  // Load first video
+  if (videoList.length > 0) {
+    switchToVideo(videoList[0].name);
+  }
+}
+
+document.getElementById("newProject").addEventListener("click", async () => {
+  if (!window.projectManager) {
+    setStatus("Project manager not available.");
+    return;
+  }
+  const result = await window.projectManager.createProject();
+  if (!result) return;
+
+  // Sync current state into the new project
+  window.projectManager.updateBehaviors(behaviors);
+  for (const v of videoList) {
+    if (v.path) window.projectManager.addVideoToManifest(v.path);
+  }
+  // Save bouts for ALL videos (current + others from localStorage)
+  for (const v of videoList) {
+    let videoBouts;
+    if (v.name === currentVideoName) {
+      videoBouts = bouts;
+    } else {
+      const progress = loadProgress(v.name);
+      videoBouts = progress && Array.isArray(progress.bouts) ? progress.bouts : [];
+    }
+    if (videoBouts.length > 0) {
+      const csv = generateBoutsCsv(videoBouts);
+      window.projectManager.saveVideoLabels(v.name, csv).catch(() => {});
+    }
+  }
+
+  updateProjectUI();
+  setStatus(`Project "${result.manifest.name}" created.`);
+});
+
+document.getElementById("openProjectBtn").addEventListener("click", async () => {
+  if (!window.projectManager) return;
+
+  // Close current project if open
+  if (window.projectManager.isActive()) {
+    await window.projectManager.closeProject();
+  }
+
+  const result = await window.projectManager.openProject();
+  if (!result) return;
+
+  updateProjectUI();
+  await restoreProjectVideos(result.manifest);
+  setStatus(`Project "${result.manifest.name}" opened.`);
+});
+
+document.getElementById("saveProject").addEventListener("click", async () => {
+  if (!window.projectManager || !window.projectManager.isActive()) return;
+  saveProgress();
+  // Write labels for all videos in the project
+  for (const v of videoList) {
+    if (v.name === currentVideoName) continue; // already saved by saveProgress
+    const stored = loadProgress(v.name);
+    if (stored && Array.isArray(stored.bouts) && stored.bouts.length > 0) {
+      const csv = generateBoutsCsv(stored.bouts);
+      await window.projectManager.saveVideoLabels(v.name, csv);
+    }
+  }
+  await window.projectManager.flushManifest();
+  setStatus("Project saved.");
+});
+
+document.getElementById("closeProject").addEventListener("click", async () => {
+  if (!window.projectManager || !window.projectManager.isActive()) return;
+  // Save current state before closing
+  saveProgress();
+  await window.projectManager.closeProject();
+  updateProjectUI();
+  setStatus("Project closed.");
+});
+
+// Try to restore last project on startup
+(async () => {
+  const lastDir = localStorage.getItem("lastProjectDir");
+  if (lastDir && window.projectManager) {
+    try {
+      const result = await window.projectManager.openProjectFromDir(lastDir);
+      if (result) {
+        updateProjectUI();
+        await restoreProjectVideos(result.manifest);
+      }
+    } catch (err) {
+      console.warn("[project] Failed to restore last project:", err);
+      localStorage.removeItem("lastProjectDir");
+    }
+  }
+})();
+
 // ── Save settings on page unload ──────────────────────────────────────────
-window.addEventListener("beforeunload", saveSettings);
+window.addEventListener("beforeunload", () => {
+  saveSettings();
+  // Flush project manifest on unload
+  if (window.projectManager && window.projectManager.isActive()) {
+    saveProgress();
+    window.projectManager.flushManifest();
+  }
+});

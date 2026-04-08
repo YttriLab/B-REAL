@@ -151,14 +151,18 @@ app.on("window-all-closed", () => {
 
 ipcMain.handle("open-csv", async () => {
   const result = await dialog.showOpenDialog({
-    title: "Load bouts CSV",
-    filters: [{ name: "CSV", extensions: ["csv"] }],
+    title: "Load Labels",
+    filters: [{ name: "Label Files", extensions: ["csv", "xlsx", "xls"] }],
     properties: ["openFile"]
   });
   if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
     return { canceled: true };
   }
   const filePath = result.filePaths[0];
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".xlsx" || ext === ".xls") {
+    return { canceled: false, filePath, isXlsx: true };
+  }
   const content = await fs.readFile(filePath, "utf8");
   return { canceled: false, filePath, content };
 });
@@ -304,10 +308,10 @@ ipcMain.handle("import-project", async () => {
   }
   const videoPath = videoResult.filePaths[0];
 
-  // Step 2: Select label CSV
+  // Step 2: Select label file (CSV or XLSX)
   const labelResult = await dialog.showOpenDialog({
-    title: "Select Label CSV",
-    filters: [{ name: "CSV Files", extensions: ["csv"] }],
+    title: "Select Label File",
+    filters: [{ name: "Label Files", extensions: ["csv", "xlsx", "xls"] }],
     properties: ["openFile"],
   });
   if (labelResult.canceled || !labelResult.filePaths || labelResult.filePaths.length === 0) {
@@ -315,12 +319,131 @@ ipcMain.handle("import-project", async () => {
   }
   const labelPath = labelResult.filePaths[0];
 
-  // Step 3: Read CSV content
+  // Step 3: Read label content (text for CSV, flag for XLSX)
+  const ext = path.extname(labelPath).toLowerCase();
+  if (ext === ".xlsx" || ext === ".xls") {
+    return { canceled: false, videoPath, labelPath, isXlsx: true };
+  }
   const labelContent = await fs.readFile(labelPath, "utf8");
-
   return { canceled: false, videoPath, labelPath, labelContent };
 });
 
 ipcMain.handle("get-backend-port", () => {
   return BACKEND_PORT;
+});
+
+// ── IPC handlers (project management) ─────────────────────────────────────
+
+function isPathWithin(parent, child) {
+  const rel = path.relative(parent, child);
+  return rel && !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+
+ipcMain.handle("project:select-dir", async () => {
+  const result = await dialog.showOpenDialog({
+    title: "Choose Project Location",
+    properties: ["openDirectory", "createDirectory"]
+  });
+  if (result.canceled || !result.filePaths.length) return { canceled: true };
+  return { canceled: false, path: result.filePaths[0] };
+});
+
+ipcMain.handle("project:prompt-name", async () => {
+  // Use a message box with an input field workaround — Electron has no native input dialog,
+  // so we use showSaveDialog to let the user type a folder name, creating the dir in one step.
+  const result = await dialog.showSaveDialog({
+    title: "Create New Project — enter project folder name",
+    buttonLabel: "Create Project",
+    properties: ["createDirectory", "showOverwriteConfirmation"]
+  });
+  if (result.canceled || !result.filePath) return { canceled: true };
+  // Use the chosen path as both the project dir and derive the name from it
+  const projectDir = result.filePath;
+  const name = path.basename(projectDir);
+  await fs.mkdir(projectDir, { recursive: true });
+  return { canceled: false, path: projectDir, name };
+});
+
+ipcMain.handle("project:open-dialog", async () => {
+  const result = await dialog.showOpenDialog({
+    title: "Open Project Directory",
+    properties: ["openDirectory"]
+  });
+  if (result.canceled || !result.filePaths.length) return { canceled: true };
+  const rootDir = result.filePaths[0];
+  const manifestPath = path.join(rootDir, "project.json");
+  try {
+    await fs.access(manifestPath);
+  } catch {
+    return { canceled: false, error: "No project.json found in selected directory." };
+  }
+  return { canceled: false, path: rootDir };
+});
+
+ipcMain.handle("project:create", async (_event, payload) => {
+  const { rootDir, name } = payload;
+  const subdirs = ["labels", "frames", "backgrounds",
+    path.join("models", "checkpoints"), path.join("models", "exports")];
+  for (const sub of subdirs) {
+    await fs.mkdir(path.join(rootDir, sub), { recursive: true });
+  }
+  const manifest = {
+    name: name || path.basename(rootDir),
+    created: new Date().toISOString().slice(0, 10),
+    version: 1,
+    behaviors: [],
+    videos: [],
+    preprocessing: {},
+    training: {},
+    models: []
+  };
+  await fs.writeFile(path.join(rootDir, "project.json"), JSON.stringify(manifest, null, 2), "utf8");
+  return manifest;
+});
+
+ipcMain.handle("project:open", async (_event, payload) => {
+  const { rootDir } = payload;
+  const raw = await fs.readFile(path.join(rootDir, "project.json"), "utf8");
+  return JSON.parse(raw);
+});
+
+ipcMain.handle("project:save", async (_event, payload) => {
+  const { rootDir, manifest } = payload;
+  await fs.writeFile(path.join(rootDir, "project.json"), JSON.stringify(manifest, null, 2), "utf8");
+  return { ok: true };
+});
+
+ipcMain.handle("project:save-labels", async (_event, payload) => {
+  const { rootDir, relativePath, content } = payload;
+  const resolved = path.resolve(rootDir, relativePath);
+  if (!isPathWithin(rootDir, resolved)) {
+    return { error: "Path traversal rejected" };
+  }
+  await fs.mkdir(path.dirname(resolved), { recursive: true });
+  await fs.writeFile(resolved, content, "utf8");
+  return { ok: true };
+});
+
+ipcMain.handle("project:read-labels", async (_event, payload) => {
+  const { rootDir, relativePath } = payload;
+  const resolved = path.resolve(rootDir, relativePath);
+  if (!isPathWithin(rootDir, resolved)) {
+    return { error: "Path traversal rejected" };
+  }
+  try {
+    const content = await fs.readFile(resolved, "utf8");
+    return { content };
+  } catch {
+    return { content: null };
+  }
+});
+
+ipcMain.handle("project:ensure-dir", async (_event, payload) => {
+  const { rootDir, relativePath } = payload;
+  const resolved = path.resolve(rootDir, relativePath);
+  if (!isPathWithin(rootDir, resolved)) {
+    return { error: "Path traversal rejected" };
+  }
+  await fs.mkdir(resolved, { recursive: true });
+  return { ok: true };
 });

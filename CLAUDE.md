@@ -55,6 +55,26 @@ pytest tests/test_api_routers.py   # single module
 
 Tests use synthetic frames/videos — no GPU or real data required. `pytest.ini` sets `asyncio_mode = auto`.
 
+## Project Directory Structure
+
+Projects are saved as self-contained directories with a `project.json` manifest:
+
+```
+my_experiment/
+├── project.json              # manifest (videos, behaviors, config)
+├── labels/                   # auto-saved bout CSVs per video
+├── frames/                   # preprocessed frames per video
+├── backgrounds/              # computed background images
+└── models/
+    ├── checkpoints/          # training checkpoints
+    └── exports/              # TorchScript exports
+```
+
+- Video paths are **absolute** (stay where they are); all other paths are **relative** to project root
+- `project-manager.js` manages project state; `saveProgress()` dual-writes to both localStorage and project labels
+- New/Open/Close Project buttons in the header; last project auto-restored on startup
+- Backward compatible: app works without a project (localStorage-only mode)
+
 ## Key Patterns
 
 - **Async task management**: Services use background tasks with task IDs, progress callbacks, and cancellation support. Task registries are module-level dicts cleared between tests via `autouse` fixture.
@@ -78,6 +98,60 @@ Tests use synthetic frames/videos — no GPU or real data required. `pytest.ini`
 | `/api/inference/run` | POST | Start inference |
 | `/api/inference/task/{id}` | GET | Inference progress/results |
 
+## Workflow Pipeline
+
+1. **Preprocess**: Video → background subtraction → contour detection → center-of-mass crop → flat PNGs (`output_dir/video_name/0.png, 1.png, ...`)
+2. **Label**: Load video in player, define behaviors (keys 1-9, 0), annotate temporal bouts, export CSV
+3. **Train**: Frame dirs + label CSVs → TSM classifier (EfficientNet backbone) → checkpoint in `lightning_logs/`
+4. **Infer**: Checkpoint + frame dir → per-frame predictions + normalized entropy uncertainty
+5. **Active Learning**: Uncertainty heatmap (green→red) + misclassification markers (magenta ticks) on timeline, jump to next uncertain/misclassified frame for relabeling
+
+## CSV Formats
+
+**Import auto-detects two formats:**
+
+Bout CSV (header contains `start`, `end`, `behav*`):
+```csv
+start,end,behavior
+00:01.000,00:05.500,grooming
+```
+
+Frame-level label matrix (header contains `time` or numeric first column):
+```csv
+time,grooming,walking,rearing
+0,1,0,0
+1,1,0,0
+2,0,1,0
+```
+
+**Export** produces bout CSV (start/end as MM:SS.mmm) or one-hot frame-level CSV.
+
+## Import Project
+
+"Import Project" button loads a video + label CSV from another project into the labeling UI. Two file dialogs (video then CSV), loads video, parses labels via `parseCsvAndImport()`. New behaviors are auto-created if they don't exist in the current session.
+
+## Data Storage
+
+- **Labels/bouts**: `localStorage["bouts"]` and `localStorage["behaviors"]` in Electron renderer
+- **Preprocessed frames**: Flat numbered PNGs (e.g., `frames_out/video_name/0.png`)
+- **Checkpoints**: `lightning_logs/version_N/checkpoints/*.ckpt`
+- **Backgrounds**: `backgrounds/bg_videoname.png`
+- **Training metrics**: JSON-lines files tailed by SSE endpoints
+
+## TorchScript Export
+
+```python
+from convert_torchscript_tsm import export_model
+export_model(
+    checkpoint_path="lightning_logs/.../epoch=22.ckpt",
+    output_name="tsm_realtime",
+    output_dir="bonsai_models",
+    tsm_stages=[1, 2, 3, 4, 5, 6, 7],
+)
+```
+
+Output `.pt` file is compatible with Bonsai.ML.Torch `LoadScriptModule` for real-time rig deployment.
+
 ## Build / Distribution
 
 ```bash
@@ -89,6 +163,6 @@ npm run dist:linux  # Linux (AppImage + deb)
 
 ## Dependencies
 
-- **Python**: FastAPI, Uvicorn, PyTorch, Lightning, timm, OpenCV, Albumentations, OmegaConf
+- **Python**: FastAPI, Uvicorn, PyTorch, Lightning, timm, OpenCV, Albumentations, OmegaConf, matplotlib, pyyaml, scipy
 - **Node**: Electron 31, electron-builder, mp4box
 - **Test**: pytest, pytest-asyncio, httpx

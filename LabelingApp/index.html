@@ -17,7 +17,14 @@
           <span>Video</span>
           <input id="videoFile" type="file" accept="video/mp4,video/webm,.mp4,.webm,.avi,video/*" />
         </label>
-        <button id="importProject" class="ghost">Import Project</button>
+        <div class="project-controls">
+          <button id="newProject" class="ghost">New Project</button>
+          <button id="openProjectBtn" class="ghost">Open Project</button>
+          <span id="projectName" class="project-name"></span>
+          <button id="saveProject" class="ghost hidden">Save Project</button>
+          <button id="closeProject" class="ghost hidden">Close Project</button>
+        </div>
+        <button id="importProject" class="ghost">Import Video+Labels</button>
         <span id="backendStatus" class="backend-status">Backend: checking...</span>
         <p class="hint video-hint">Supported: MP4 (H.264), WebM. HEVC/H.265 and AVI often fail—re-encode to H.264 MP4 if needed.</p>
       </header>
@@ -31,6 +38,16 @@
       </nav>
 
       <main class="content">
+        <!-- Video sidebar -->
+        <aside class="video-sidebar" id="videoSidebar">
+          <div class="video-sidebar-header">
+            <h3>Videos</h3>
+            <button id="addVideosBtn" class="ghost" title="Add videos">+</button>
+            <button id="toggleSidebar" class="ghost" title="Toggle sidebar">&#9664;</button>
+          </div>
+          <ul id="videoListEl" class="video-list"></ul>
+        </aside>
+
         <!-- Player (always visible) -->
         <section class="player">
           <div id="videoShell" class="video-shell">
@@ -349,6 +366,7 @@
       <div id="status" class="status"></div>
     </div>
 
+    <script src="project-manager.js"></script>
     <script type="module" src="renderer.js"></script>
   </body>
 </html>
