@@ -59,7 +59,8 @@ class TrainingConfig(BaseModel):
     # Logging
     use_wandb: bool = False
     project_name: str = "realtime-asoid"
-    run_name: str = "training"
+    run_name: Optional[str] = None
+    wandb_api_key: Optional[str] = None
 
     # Output
     checkpoint_dir: Optional[str] = None
@@ -111,7 +112,8 @@ async def api_start_training(req: TrainingConfig):
         },
         "use_wandb": req.use_wandb,
         "project_name": req.project_name,
-        "run_name": req.run_name,
+        "run_name": req.run_name or "training",
+        "wandb_api_key": req.wandb_api_key,
         "fine_tune_lr": False,
     }
     if req.checkpoint_dir:

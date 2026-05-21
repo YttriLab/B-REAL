@@ -289,6 +289,23 @@
                 </label>
               </div>
 
+              <h3>Weights &amp; Biases</h3>
+              <div class="form-grid">
+                <label class="checkbox-label">
+                  <input id="trainUseWandb" type="checkbox" />
+                  <span>Log to W&amp;B</span>
+                </label>
+                <label><span>Project:</span>
+                  <input id="trainWandbProject" type="text" value="realtime-asoid" placeholder="W&B project name" />
+                </label>
+                <label><span>Run Name:</span>
+                  <input id="trainWandbRunName" type="text" value="" placeholder="auto-generated if empty" />
+                </label>
+                <label><span>API Key:</span>
+                  <input id="trainWandbApiKey" type="password" value="" placeholder="leave empty if logged in" />
+                </label>
+              </div>
+
               <div class="form-row" style="margin-top:16px;">
                 <button id="trainStart" class="primary">Start Training</button>
                 <button id="trainStop" class="danger" disabled>Stop</button>

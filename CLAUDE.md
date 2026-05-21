@@ -102,7 +102,7 @@ my_experiment/
 
 1. **Preprocess**: Video → background subtraction → contour detection → center-of-mass crop → flat PNGs (`output_dir/video_name/0.png, 1.png, ...`)
 2. **Label**: Load video in player, define behaviors (keys 1-9, 0), annotate temporal bouts, export CSV
-3. **Train**: Frame dirs + label CSVs → TSM classifier (EfficientNet backbone) → checkpoint in `lightning_logs/`
+3. **Train**: Frame dirs + label CSVs → TSM classifier (EfficientNet backbone) → checkpoint in `lightning_logs/`. Optional W&B logging (project/run name, API key passed via env var to subprocess)
 4. **Infer**: Checkpoint + frame dir → per-frame predictions + normalized entropy uncertainty
 5. **Active Learning**: Uncertainty heatmap (green→red) + misclassification markers (magenta ticks) on timeline, jump to next uncertain/misclassified frame for relabeling
 

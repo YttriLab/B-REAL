@@ -2845,6 +2845,10 @@ document.getElementById("trainStart").addEventListener("click", async () => {
     boundary_smoothing_enabled: document.getElementById("trainBoundarySmoothing").checked,
     boundary_smoothing_epsilon: parseFloat(document.getElementById("trainBsEpsilon").value),
     boundary_smoothing_window: parseInt(document.getElementById("trainBsWindow").value),
+    use_wandb: document.getElementById("trainUseWandb").checked,
+    project_name: document.getElementById("trainWandbProject").value.trim() || "realtime-asoid",
+    run_name: document.getElementById("trainWandbRunName").value.trim() || undefined,
+    wandb_api_key: document.getElementById("trainWandbApiKey").value.trim() || undefined,
   };
 
   document.getElementById("trainStart").disabled = true;

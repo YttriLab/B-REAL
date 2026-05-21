@@ -132,10 +132,12 @@ def main():
     logger = None
     if config.get("use_wandb", False):
         from lightning.pytorch.loggers.wandb import WandbLogger
-        logger = WandbLogger(
+        wandb_kwargs = dict(
             project=config.get("project_name", "realtime-asoid"),
             name=config.get("run_name", "training"),
+            config=OmegaConf.to_container(config, resolve=True),
         )
+        logger = WandbLogger(**wandb_kwargs)
 
     trainer = L.Trainer(
         logger=logger,
@@ -156,6 +158,9 @@ def main():
     }
     with open(metrics_path, "a") as f:
         f.write(json.dumps(completion) + "\n")
+
+    if logger and hasattr(logger, "experiment"):
+        logger.experiment.finish()
 
 
 if __name__ == "__main__":
@@ -186,6 +191,9 @@ def start_training(config: dict) -> str:
     # Add checkpoint dir to config
     config.setdefault("checkpoint_dir", os.path.join(tmp_dir, "checkpoints"))
 
+    # Extract API key before writing config to disk
+    wandb_api_key = config.pop("wandb_api_key", None)
+
     with open(config_path, "w") as f:
         yaml.dump(config, f, default_flow_style=False)
 
@@ -210,6 +218,8 @@ def start_training(config: dict) -> str:
         try:
             env = os.environ.copy()
             env["PROJECT_ROOT"] = PROJECT_ROOT
+            if wandb_api_key:
+                env["WANDB_API_KEY"] = wandb_api_key
 
             proc = subprocess.Popen(
                 [sys.executable, script_path, config_path, metrics_path],
