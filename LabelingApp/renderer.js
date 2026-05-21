@@ -3475,15 +3475,18 @@ function updateProjectUI() {
   const nameEl = document.getElementById("projectName");
   const saveBtn = document.getElementById("saveProject");
   const closeBtn = document.getElementById("closeProject");
+  const exportRltBtn = document.getElementById("exportRlt");
   if (window.projectManager && window.projectManager.isActive()) {
     const manifest = window.projectManager.getManifest();
     nameEl.textContent = manifest.name || "Untitled";
     saveBtn.classList.remove("hidden");
     closeBtn.classList.remove("hidden");
+    exportRltBtn.classList.remove("hidden");
   } else {
     nameEl.textContent = "";
     saveBtn.classList.add("hidden");
     closeBtn.classList.add("hidden");
+    exportRltBtn.classList.add("hidden");
   }
 }
 
@@ -3601,6 +3604,68 @@ document.getElementById("closeProject").addEventListener("click", async () => {
   await window.projectManager.closeProject();
   updateProjectUI();
   setStatus("Project closed.");
+});
+
+// ── .rlt export / import ──
+
+document.getElementById("exportRlt").addEventListener("click", async () => {
+  if (!window.projectManager || !window.projectManager.isActive()) return;
+  // Save all current state first
+  saveProgress();
+  for (const v of videoList) {
+    if (v.name === currentVideoName) continue;
+    const stored = loadProgress(v.name);
+    if (stored && Array.isArray(stored.bouts) && stored.bouts.length > 0) {
+      const csv = generateBoutsCsv(stored.bouts);
+      await window.projectManager.saveVideoLabels(v.name, csv);
+    }
+  }
+  await window.projectManager.flushManifest();
+
+  setStatus("Exporting project to .rlt...");
+  try {
+    const result = await window.projectManager.exportRlt();
+    if (!result) {
+      setStatus("Export canceled.");
+      return;
+    }
+    const s = result.summary;
+    setStatus(
+      `Exported .rlt: ${s.labels} labels, ${s.frames} frames, ` +
+      `${s.backgrounds} backgrounds, ${s.checkpoints} checkpoints, ${s.exports} exports.`
+    );
+  } catch (err) {
+    setStatus("Export failed: " + (err.message || err));
+  }
+});
+
+document.getElementById("importRlt").addEventListener("click", async () => {
+  if (!window.projectManager) {
+    setStatus("Project manager not available.");
+    return;
+  }
+  // Close any open project first
+  if (window.projectManager.isActive()) {
+    saveProgress();
+    await window.projectManager.closeProject();
+  }
+
+  setStatus("Importing .rlt file...");
+  try {
+    const result = await window.projectManager.importRlt();
+    if (!result) {
+      setStatus("Import canceled.");
+      return;
+    }
+    updateProjectUI();
+    await restoreProjectVideos(result.manifest);
+    setStatus(
+      `Imported project "${result.manifest.name}". ` +
+      "Video files must be re-linked — paths were cleared for portability."
+    );
+  } catch (err) {
+    setStatus("Import failed: " + (err.message || err));
+  }
 });
 
 // Try to restore last project on startup

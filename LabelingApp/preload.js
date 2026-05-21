@@ -131,6 +131,10 @@ contextBridge.exposeInMainWorld("api", {
   projectSaveLabels: (payload) => ipcRenderer.invoke("project:save-labels", payload),
   projectReadLabels: (payload) => ipcRenderer.invoke("project:read-labels", payload),
   projectEnsureDir: (payload) => ipcRenderer.invoke("project:ensure-dir", payload),
+  // ── .rlt file dialogs ──
+  rltSaveDialog: (payload) => ipcRenderer.invoke("rlt:save-dialog", payload),
+  rltOpenDialog: () => ipcRenderer.invoke("rlt:open-dialog"),
+  rltSelectOutputDir: () => ipcRenderer.invoke("rlt:select-output-dir"),
   // ── XLSX support ──
   xlsxToCsv: async (filePath) => {
     const XLSX = require("xlsx");

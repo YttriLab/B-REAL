@@ -8,6 +8,7 @@ albumentations
 omegaconf
 numpy
 pandas
+h5py
 wandb
 torchmetrics
 timm

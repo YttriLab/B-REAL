@@ -22,7 +22,7 @@ PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from backend.routers import preprocessing, training, inference  # noqa: E402
+from backend.routers import preprocessing, training, inference, project  # noqa: E402
 
 
 @asynccontextmanager
@@ -55,6 +55,7 @@ app.add_middleware(
 app.include_router(preprocessing.router, prefix="/api/preprocess", tags=["preprocessing"])
 app.include_router(training.router, prefix="/api/training", tags=["training"])
 app.include_router(inference.router, prefix="/api/inference", tags=["inference"])
+app.include_router(project.router, prefix="/api/project", tags=["project"])
 
 
 @app.get("/api/health")

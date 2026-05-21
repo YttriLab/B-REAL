@@ -223,6 +223,87 @@
     return activeProject ? activeProject.rootDir : null;
   }
 
+  // ── .rlt export / import ────────────────────────────────────────────────
+
+  async function exportRlt(options) {
+    if (!activeProject) {
+      throw new Error("No active project to export.");
+    }
+    await flushManifest();
+
+    const defaultName = (activeProject.manifest.name || "project") + ".rlt";
+    const saveResult = await window.api.rltSaveDialog({ defaultPath: defaultName });
+    if (saveResult.canceled) return null;
+
+    const includeFrames = options?.includeFrames !== false;
+    const includeModels = options?.includeModels !== false;
+
+    const backendPort = window.api.backendPort || 8741;
+    const res = await fetch(`http://127.0.0.1:${backendPort}/api/project/export-rlt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        project_dir: activeProject.rootDir,
+        output_path: saveResult.path,
+        include_frames: includeFrames,
+        include_models: includeModels,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Export failed");
+    }
+    return await res.json();
+  }
+
+  async function importRlt() {
+    const openResult = await window.api.rltOpenDialog();
+    if (openResult.canceled) return null;
+
+    const dirResult = await window.api.rltSelectOutputDir();
+    if (dirResult.canceled) return null;
+
+    const backendPort = window.api.backendPort || 8741;
+    const res = await fetch(`http://127.0.0.1:${backendPort}/api/project/import-rlt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        rlt_path: openResult.path,
+        output_dir: dirResult.path,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Import failed");
+    }
+    const data = await res.json();
+
+    // Open the unpacked project
+    activeProject = { rootDir: dirResult.path, manifest: data.manifest };
+    localStorage.setItem("lastProjectDir", dirResult.path);
+    window.dispatchEvent(
+      new CustomEvent("project-opened", {
+        detail: { rootDir: dirResult.path, manifest: data.manifest },
+      })
+    );
+
+    return { rootDir: dirResult.path, manifest: data.manifest };
+  }
+
+  async function inspectRlt(rltPath) {
+    const backendPort = window.api.backendPort || 8741;
+    const res = await fetch(`http://127.0.0.1:${backendPort}/api/project/inspect-rlt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rlt_path: rltPath }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Inspect failed");
+    }
+    return await res.json();
+  }
+
   // ── Public API ────────────────────────────────────────────────────────────
 
   window.projectManager = {
@@ -264,6 +345,11 @@
     getModelsDir,
     getCheckpointsDir,
     getExportsDir,
+
+    // .rlt file format
+    exportRlt,
+    importRlt,
+    inspectRlt,
 
     // Utility
     sanitizeId

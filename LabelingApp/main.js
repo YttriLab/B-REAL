@@ -447,3 +447,39 @@ ipcMain.handle("project:ensure-dir", async (_event, payload) => {
   await fs.mkdir(resolved, { recursive: true });
   return { ok: true };
 });
+
+// ── IPC handlers (.rlt file dialogs) ─────────────────────────────────────
+
+ipcMain.handle("rlt:save-dialog", async (_event, payload) => {
+  const { defaultPath } = payload || {};
+  const result = await dialog.showSaveDialog({
+    title: "Export Project as .rlt",
+    defaultPath: defaultPath || "project.rlt",
+    filters: [{ name: "RealtimeASOID Project", extensions: ["rlt"] }],
+  });
+  if (result.canceled || !result.filePath) return { canceled: true };
+  return { canceled: false, path: result.filePath };
+});
+
+ipcMain.handle("rlt:open-dialog", async () => {
+  const result = await dialog.showOpenDialog({
+    title: "Import .rlt Project File",
+    filters: [{ name: "RealtimeASOID Project", extensions: ["rlt"] }],
+    properties: ["openFile"],
+  });
+  if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+    return { canceled: true };
+  }
+  return { canceled: false, path: result.filePaths[0] };
+});
+
+ipcMain.handle("rlt:select-output-dir", async () => {
+  const result = await dialog.showOpenDialog({
+    title: "Choose Folder to Unpack Project Into",
+    properties: ["openDirectory", "createDirectory"],
+  });
+  if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+    return { canceled: true };
+  }
+  return { canceled: false, path: result.filePaths[0] };
+});

@@ -75,6 +75,25 @@ my_experiment/
 - New/Open/Close Project buttons in the header; last project auto-restored on startup
 - Backward compatible: app works without a project (localStorage-only mode)
 
+## .rlt File Format
+
+Projects can be exported to a single `.rlt` file (HDF5 with custom extension, similar to SLEAP's `.slp` format). This enables portable project sharing without fragile folder structures.
+
+**HDF5 layout:**
+```
+/manifest                       (attr: JSON string)
+/labels/{video_id}              (dataset: UTF-8 CSV string)
+/frames/{video_id}/{idx}        (dataset: uint8 PNG bytes, gzip compressed)
+/backgrounds/{video_id}         (dataset: uint8 PNG bytes, gzip compressed)
+/models/checkpoints/{name}      (dataset: uint8 binary blob)
+/models/exports/{name}          (dataset: uint8 binary blob)
+```
+
+- Video files are NOT stored (too large) — only filenames are kept; user re-links after import
+- Export/import goes through the backend (`/api/project/export-rlt`, `/api/project/import-rlt`)
+- `rlt_service.py` handles all HDF5 read/write via `h5py`
+- Frames use gzip compression (level 4) for good size/speed tradeoff
+
 ## Key Patterns
 
 - **Async task management**: Services use background tasks with task IDs, progress callbacks, and cancellation support. Task registries are module-level dicts cleared between tests via `autouse` fixture.
@@ -97,6 +116,9 @@ my_experiment/
 | `/api/training/checkpoints` | GET | List saved checkpoints |
 | `/api/inference/run` | POST | Start inference |
 | `/api/inference/task/{id}` | GET | Inference progress/results |
+| `/api/project/export-rlt` | POST | Pack project folder into .rlt |
+| `/api/project/import-rlt` | POST | Unpack .rlt into project folder |
+| `/api/project/inspect-rlt` | POST | Read .rlt metadata without extracting |
 
 ## Workflow Pipeline
 
