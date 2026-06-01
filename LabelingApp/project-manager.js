@@ -225,7 +225,7 @@
 
   // ── .rlt export / import ────────────────────────────────────────────────
 
-  async function exportRlt(options) {
+  async function exportRlt() {
     if (!activeProject) {
       throw new Error("No active project to export.");
     }
@@ -235,9 +235,6 @@
     const saveResult = await window.api.rltSaveDialog({ defaultPath: defaultName });
     if (saveResult.canceled) return null;
 
-    const includeFrames = options?.includeFrames !== false;
-    const includeModels = options?.includeModels !== false;
-
     const backendPort = window.api.backendPort || 8741;
     const res = await fetch(`http://127.0.0.1:${backendPort}/api/project/export-rlt`, {
       method: "POST",
@@ -245,8 +242,6 @@
       body: JSON.stringify({
         project_dir: activeProject.rootDir,
         output_path: saveResult.path,
-        include_frames: includeFrames,
-        include_models: includeModels,
       }),
     });
     if (!res.ok) {

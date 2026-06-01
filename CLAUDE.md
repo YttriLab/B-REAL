@@ -77,22 +77,22 @@ my_experiment/
 
 ## .rlt File Format
 
-Projects can be exported to a single `.rlt` file (HDF5 with custom extension, similar to SLEAP's `.slp` format). This enables portable project sharing without fragile folder structures.
+Projects can be exported to a single `.rlt` file — a **lightweight, uncompressed HDF5** modeled on SLEAP's base `.slp` format. It stores only the irreplaceable parts of a project; regenerable data is rebuilt after import.
+
+**Stored:** manifest (project info, behaviors, all config), video references (paths + filenames), and hand-annotated label bouts.
+**Not stored:** preprocessed frames, backgrounds, model checkpoints (all regenerable from videos + config).
 
 **HDF5 layout:**
 ```
-/manifest                       (attr: JSON string)
-/labels/{video_id}              (dataset: UTF-8 CSV string)
-/frames/{video_id}/{idx}        (dataset: uint8 PNG bytes, gzip compressed)
-/backgrounds/{video_id}         (dataset: uint8 PNG bytes, gzip compressed)
-/models/checkpoints/{name}      (dataset: uint8 binary blob)
-/models/exports/{name}          (dataset: uint8 binary blob)
+/                               (attr: rlt_version = 2)
+/                               (attr: manifest — JSON string with paths + config)
+/labels/{video_id}              (dataset: UTF-8 CSV string of bouts)
 ```
 
-- Video files are NOT stored (too large) — only filenames are kept; user re-links after import
-- Export/import goes through the backend (`/api/project/export-rlt`, `/api/project/import-rlt`)
-- `rlt_service.py` handles all HDF5 read/write via `h5py`
-- Frames use gzip compression (level 4) for good size/speed tradeoff
+- Video paths are preserved in the manifest; on import, the app prompts to re-link any video whose path doesn't resolve on the new machine (SLEAP-style)
+- On import, `import_rlt` writes `project.json` + label CSVs and creates the standard empty subdirs (`frames/`, `backgrounds/`, `models/`) for regenerated data
+- Export/import goes through the backend (`/api/project/export-rlt`, `/api/project/import-rlt`, `/api/project/inspect-rlt`)
+- `rlt_service.py` handles all HDF5 read/write via `h5py`; no compression (labels are small text)
 
 ## Key Patterns
 

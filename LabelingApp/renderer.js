@@ -3631,8 +3631,7 @@ document.getElementById("exportRlt").addEventListener("click", async () => {
     }
     const s = result.summary;
     setStatus(
-      `Exported .rlt: ${s.labels} labels, ${s.frames} frames, ` +
-      `${s.backgrounds} backgrounds, ${s.checkpoints} checkpoints, ${s.exports} exports.`
+      `Exported .rlt: ${s.videos} video reference(s), ${s.labels} label set(s).`
     );
   } catch (err) {
     setStatus("Export failed: " + (err.message || err));
@@ -3661,7 +3660,7 @@ document.getElementById("importRlt").addEventListener("click", async () => {
     await restoreProjectVideos(result.manifest);
     setStatus(
       `Imported project "${result.manifest.name}". ` +
-      "Video files must be re-linked — paths were cleared for portability."
+      "If any video doesn't load, re-link it — frames and models will be regenerated from the video + config."
     );
   } catch (err) {
     setStatus("Import failed: " + (err.message || err));

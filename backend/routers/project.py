@@ -13,8 +13,6 @@ router = APIRouter()
 class ExportRequest(BaseModel):
     project_dir: str
     output_path: str
-    include_frames: bool = True
-    include_models: bool = True
 
 
 class ImportRequest(BaseModel):
@@ -30,12 +28,7 @@ class InspectRequest(BaseModel):
 async def api_export_rlt(req: ExportRequest):
     """Pack a project folder into an .rlt file."""
     try:
-        summary = export_rlt(
-            req.project_dir,
-            req.output_path,
-            include_frames=req.include_frames,
-            include_models=req.include_models,
-        )
+        summary = export_rlt(req.project_dir, req.output_path)
         return {"status": "ok", "summary": summary}
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
