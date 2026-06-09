@@ -106,16 +106,20 @@ Projects can be exported to a single `.rlt` file — a **lightweight, uncompress
 
 | Route | Method | Purpose |
 |-------|--------|---------|
+| `/api/health` | GET | Health check (used by Electron startup) |
 | `/api/preprocess/background` | POST | Compute background frame |
 | `/api/preprocess/preview` | POST | Preview cropped frame |
-| `/api/preprocess/start` | POST | Start video preprocessing |
-| `/api/preprocess/task/{id}` | GET | Preprocessing progress |
+| `/api/preprocess/run` | POST | Start video preprocessing |
+| `/api/preprocess/status/{task_id}` | GET | Preprocessing progress |
+| `/api/preprocess/stop/{task_id}` | POST | Stop preprocessing |
 | `/api/training/start` | POST | Start model training |
-| `/api/training/metrics/{id}` | GET | Stream metrics (JSON lines) |
-| `/api/training/stop/{id}` | POST | Stop training |
+| `/api/training/status/{task_id}` | GET | SSE stream of training metrics |
+| `/api/training/stop/{task_id}` | POST | Stop training |
 | `/api/training/checkpoints` | GET | List saved checkpoints |
 | `/api/inference/run` | POST | Start inference |
-| `/api/inference/task/{id}` | GET | Inference progress/results |
+| `/api/inference/status/{task_id}` | GET | Inference progress (SSE) |
+| `/api/inference/results/{task_id}` | GET | Fetch inference results |
+| `/api/inference/stop/{task_id}` | POST | Stop inference |
 | `/api/project/export-rlt` | POST | Pack project folder into .rlt |
 | `/api/project/import-rlt` | POST | Unpack .rlt into project folder |
 | `/api/project/inspect-rlt` | POST | Read .rlt metadata without extracting |
@@ -185,6 +189,8 @@ npm run dist:linux  # Linux (AppImage + deb)
 
 ## Dependencies
 
-- **Python**: FastAPI, Uvicorn, PyTorch, Lightning, timm, OpenCV, Albumentations, OmegaConf, matplotlib, pyyaml, scipy
-- **Node**: Electron 31, electron-builder, mp4box
+(See `backend/requirements.txt` for the authoritative list.)
+
+- **Python**: FastAPI, Uvicorn, PyTorch, torchvision, Lightning, torchmetrics, timm, OpenCV (headless), Albumentations, OmegaConf, numpy, pandas, h5py (`.rlt` files), wandb (optional training logging), matplotlib, pyyaml, scipy
+- **Node**: Electron 31, electron-builder, mp4box, xlsx
 - **Test**: pytest, pytest-asyncio, httpx
