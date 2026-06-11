@@ -180,6 +180,22 @@ class TestTrainingRouter:
         })
         assert resp.status_code == 200
 
+    @pytest.mark.asyncio
+    async def test_wandb_fields_accepted(self, ac, tmp_path):
+        """W&B logging fields are optional and accepted when provided."""
+        resp = await ac.post("/api/training/start", json={
+            "label_paths": ["/fake/labels.csv"],
+            "frame_dirs": ["/fake/frames"],
+            "max_epochs": 1,
+            "checkpoint_dir": str(tmp_path / "ckpts"),
+            "use_wandb": True,
+            "project_name": "my-project",
+            "run_name": "run-001",
+            "wandb_api_key": "secret-key",
+        })
+        assert resp.status_code == 200
+        assert "task_id" in resp.json()
+
 
 # ── Inference router ──────────────────────────────────────────────────────
 
@@ -282,3 +298,82 @@ class TestInferenceRouter:
         resp = await ac.post("/api/inference/stop/test-cancel")
         assert resp.status_code == 200
         assert _tasks["test-cancel"]["cancel"] is True
+
+
+# ── Project router (.rlt export/import/inspect) ───────────────────────────
+
+class TestProjectRouter:
+    @pytest.mark.asyncio
+    async def test_export_success(self, ac, sample_project, tmp_path):
+        project_dir, manifest = sample_project
+        out = str(tmp_path / "exported.rlt")
+        resp = await ac.post("/api/project/export-rlt", json={
+            "project_dir": project_dir,
+            "output_path": out,
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "ok"
+        assert data["summary"]["labels"] == 2
+        assert data["summary"]["videos"] == len(manifest["videos"])
+        assert os.path.exists(out)
+
+    @pytest.mark.asyncio
+    async def test_export_missing_project_returns_404(self, ac, tmp_path):
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        resp = await ac.post("/api/project/export-rlt", json={
+            "project_dir": str(empty),
+            "output_path": str(tmp_path / "x.rlt"),
+        })
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_export_validation(self, ac):
+        resp = await ac.post("/api/project/export-rlt", json={})
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_import_round_trip(self, ac, sample_project, tmp_path):
+        project_dir, manifest = sample_project
+        out = str(tmp_path / "exported.rlt")
+        # Export first
+        await ac.post("/api/project/export-rlt", json={
+            "project_dir": project_dir,
+            "output_path": out,
+        })
+        # Then import into a fresh directory
+        dest = str(tmp_path / "imported")
+        resp = await ac.post("/api/project/import-rlt", json={
+            "rlt_path": out,
+            "output_dir": dest,
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "ok"
+        assert data["manifest"] == manifest
+        assert os.path.exists(os.path.join(dest, "project.json"))
+        assert os.path.exists(os.path.join(dest, "labels", "vid_a_bouts.csv"))
+
+    @pytest.mark.asyncio
+    async def test_import_missing_file_returns_404(self, ac, tmp_path):
+        resp = await ac.post("/api/project/import-rlt", json={
+            "rlt_path": str(tmp_path / "nope.rlt"),
+            "output_dir": str(tmp_path / "out"),
+        })
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_inspect(self, ac, sample_project, tmp_path):
+        project_dir, manifest = sample_project
+        out = str(tmp_path / "exported.rlt")
+        await ac.post("/api/project/export-rlt", json={
+            "project_dir": project_dir,
+            "output_path": out,
+        })
+        resp = await ac.post("/api/project/inspect-rlt", json={"rlt_path": out})
+        assert resp.status_code == 200
+        info = resp.json()
+        assert info["labels"] == 2
+        assert info["videos"] == len(manifest["videos"])
+        assert info["manifest"]["name"] == manifest["name"]

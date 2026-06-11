@@ -22,7 +22,7 @@ Real-time clip-based animal behavior classifier. An Electron desktop app for lab
 ├── preprocess_video_train.py   # Video preprocessing CLI
 ├── tune_cropping.py       # Crop parameter tuning
 ├── config_tsm.yaml        # Training hyperparameters
-└── tests/                 # pytest suite (83 tests)
+└── tests/                 # pytest suite (105 tests)
 ```
 
 ## Running the App
@@ -48,7 +48,7 @@ python -m uvicorn backend.server:app --port 8741 --host 127.0.0.1
 ## Running Tests
 
 ```bash
-pytest          # all 83 tests
+pytest          # all 105 tests
 pytest -v       # verbose
 pytest tests/test_api_routers.py   # single module
 ```

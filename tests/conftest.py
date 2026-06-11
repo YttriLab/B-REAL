@@ -146,6 +146,75 @@ def synthetic_background(tmp_path, synthetic_video):
     return bg_path
 
 
+# ── Sample project fixture (for .rlt / project router tests) ──────────────
+
+@pytest.fixture
+def sample_project(tmp_path):
+    """
+    Build a realistic project directory on disk and return (project_dir, manifest).
+
+    Includes the regenerable data (frames, backgrounds, a fake checkpoint) so
+    tests can assert that .rlt export deliberately *excludes* them.
+    """
+    proj = tmp_path / "sample_project"
+    for sub in ("labels", "frames", "backgrounds",
+                os.path.join("models", "checkpoints"),
+                os.path.join("models", "exports")):
+        os.makedirs(proj / sub, exist_ok=True)
+
+    manifest = {
+        "name": "sample_project",
+        "created": "2026-01-01",
+        "version": 1,
+        "behaviors": [
+            {"name": "grooming", "key": "1"},
+            {"name": "walking", "key": "2"},
+        ],
+        "videos": [
+            {
+                "id": "vid_a",
+                "path": "/abs/path/to/vid_a.mp4",
+                "labels": "labels/vid_a_bouts.csv",
+                "frames": "frames/vid_a/",
+                "background": "backgrounds/bg_vid_a.png",
+            },
+            {
+                "id": "vid_b",
+                "path": "/abs/path/to/vid_b.mp4",
+                "labels": "labels/vid_b_bouts.csv",
+                "frames": "frames/vid_b/",
+                "background": "backgrounds/bg_vid_b.png",
+            },
+        ],
+        "preprocessing": {"box_size": 128, "difference_threshold": 10},
+        "training": {"variant": "b0", "max_epochs": 50},
+        "models": [],
+    }
+    (proj / "project.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    # Label CSVs (the irreplaceable hand-annotation — should be packed)
+    (proj / "labels" / "vid_a_bouts.csv").write_text(
+        "start,end,behavior\n00:01.000,00:05.500,grooming\n", encoding="utf-8"
+    )
+    (proj / "labels" / "vid_b_bouts.csv").write_text(
+        "start,end,behavior\n00:02.000,00:03.000,walking\n", encoding="utf-8"
+    )
+
+    # Regenerable data (should NOT be packed)
+    rng = np.random.RandomState(1)
+    for vid in ("vid_a", "vid_b"):
+        fdir = proj / "frames" / vid
+        fdir.mkdir(exist_ok=True)
+        for i in range(3):
+            img = rng.randint(0, 255, (32, 32, 3), dtype=np.uint8)
+            cv2.imwrite(str(fdir / f"{i}.png"), img)
+        bg = rng.randint(0, 255, (32, 32, 3), dtype=np.uint8)
+        cv2.imwrite(str(proj / "backgrounds" / f"bg_{vid}.png"), bg)
+    (proj / "models" / "checkpoints" / "epoch=1.ckpt").write_bytes(b"\x00" * 1024)
+
+    return str(proj), manifest
+
+
 # ── FastAPI test client ──────────────────────────────────────────────────
 
 @pytest.fixture
