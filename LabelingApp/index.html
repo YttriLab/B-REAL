@@ -13,22 +13,31 @@
           <h1>RealtimeASOID</h1>
           <p>Label, preprocess, train, and refine animal behavior classifiers.</p>
         </div>
-        <label class="file-picker">
+        <div class="header-actions">
+          <span id="projectName" class="project-name"></span>
+          <div class="menu" id="projectMenu">
+            <button class="menu-trigger" id="projectMenuBtn" aria-haspopup="true" aria-expanded="false">
+              Project <span class="caret">&#9662;</span>
+            </button>
+            <div class="menu-panel">
+              <button id="newProject">New Project</button>
+              <button id="openProjectBtn">Open Project</button>
+              <button id="saveProject" class="hidden">Save Project</button>
+              <button id="closeProject" class="hidden">Close Project</button>
+              <div class="menu-sep"></div>
+              <button id="exportRlt" class="hidden">Export .rlt</button>
+              <button id="importRlt">Import .rlt</button>
+              <button id="importProject">Import Video+Labels</button>
+            </div>
+          </div>
+          <span id="backendStatus" class="backend-status">Backend: checking...</span>
+        </div>
+        <!-- Hidden: videos are added via the sidebar "+"; this input is kept for
+             programmatic loads (single-file pick and the unsupported-format dialog). -->
+        <label class="file-picker hidden">
           <span>Video</span>
           <input id="videoFile" type="file" accept="video/mp4,video/webm,.mp4,.webm,.avi,video/*" />
         </label>
-        <div class="project-controls">
-          <button id="newProject" class="ghost">New Project</button>
-          <button id="openProjectBtn" class="ghost">Open Project</button>
-          <span id="projectName" class="project-name"></span>
-          <button id="saveProject" class="ghost hidden">Save Project</button>
-          <button id="closeProject" class="ghost hidden">Close Project</button>
-          <button id="exportRlt" class="ghost hidden">Export .rlt</button>
-        </div>
-        <button id="importRlt" class="ghost">Import .rlt</button>
-        <button id="importProject" class="ghost">Import Video+Labels</button>
-        <span id="backendStatus" class="backend-status">Backend: checking...</span>
-        <p class="hint video-hint">Supported: MP4 (H.264), WebM. HEVC/H.265 and AVI often fail—re-encode to H.264 MP4 if needed.</p>
       </header>
 
       <!-- Tab navigation -->
@@ -73,7 +82,7 @@
               </span>
             </label>
             <label id="modeControl" class="mode-control">
-              <input id="useWebCodecs" type="checkbox" />
+              <input id="useWebCodecs" type="checkbox" checked />
               <span>WebCodecs</span>
             </label>
             <span id="webcodecsStatus" class="webcodecs-status"></span>
@@ -120,17 +129,19 @@
                 </label>
                 <button id="generateLabeledVideo">Labeled Video</button>
               </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Start</th>
-                    <th>End</th>
-                    <th>Behavior</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody id="boutsTable"></tbody>
-              </table>
+              <div class="bouts-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Start</th>
+                      <th>End</th>
+                      <th>Behavior</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="boutsTable"></tbody>
+                </table>
+              </div>
             </section>
           </div>
 

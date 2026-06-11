@@ -2178,32 +2178,53 @@ video.addEventListener("seeked", () => {
 });
 
 let trackbarSeekTimeout = null;
-trackbar.addEventListener("input", () => {
+
+// Seek to a frame from the trackbar, pausing any playback so scrubbing is
+// authoritative. seekToFrame renders the frame in both modes (canvas for
+// WebCodecs, <video> seek for HTML5) — no need to press play.
+const trackbarSeekTo = (targetIndex) => {
   if (webcodecsMode) {
-    // Stop playback when seeking with trackbar
-    if (webcodecsPlaying) {
-      stopWebcodecsPlayback();
+    if (webcodecsPlaying) stopWebcodecsPlayback();
+  } else if (!video.paused) {
+    video.pause();
+    playPauseButton.textContent = "Play";
+  }
+  seekToFrame(targetIndex);
+};
+
+trackbar.addEventListener("input", () => {
+  const targetIndex = Math.round(Number(trackbar.value) / frameDurationMs);
+  currentFrameIndex = targetIndex;
+  updateTimeDisplay();
+
+  if (webcodecsMode) {
+    // Instant feedback when the frame is already decoded; throttle the
+    // heavier decode for uncached frames while the user is dragging.
+    if (webcodecsFrameCache.has(targetIndex)) {
+      renderWebcodecsFrame(targetIndex);
     }
-    // Throttle seeks to prevent overwhelming decoder
-    if (trackbarSeekTimeout) {
-      clearTimeout(trackbarSeekTimeout);
-    }
-    const targetMs = Number(trackbar.value);
-    const targetIndex = Math.round(targetMs / frameDurationMs);
-    currentFrameIndex = targetIndex;
-    updateTimeDisplay();
+    if (trackbarSeekTimeout) clearTimeout(trackbarSeekTimeout);
     trackbarSeekTimeout = setTimeout(() => {
       trackbarSeekTimeout = null;
-      seekToFrame(targetIndex);
-    }, 50);
-    return;
+      trackbarSeekTo(targetIndex);
+    }, 40);
+  } else {
+    // Seeking a paused <video> updates the displayed frame immediately.
+    trackbarSeekTo(targetIndex);
   }
-  suppressTimeUpdate = true;
-  video.currentTime = Number(trackbar.value) / 1000;
-  currentFrameIndex = Math.round(
-    (video.currentTime * 1000) / frameDurationMs
-  );
+});
+
+// On release, land authoritatively on the final frame (covers any decode
+// dropped by the drag throttle).
+trackbar.addEventListener("change", () => {
+  if (trackbarSeekTimeout) {
+    clearTimeout(trackbarSeekTimeout);
+    trackbarSeekTimeout = null;
+  }
+  const targetIndex = Math.round(Number(trackbar.value) / frameDurationMs);
+  currentFrameIndex = targetIndex;
   updateTimeDisplay();
+  trackbarSeekTo(targetIndex);
 });
 
 playPauseButton.addEventListener("click", togglePlayPause);
@@ -2432,8 +2453,96 @@ document.getElementById("importProject").addEventListener("click", async () => {
   }
 });
 
+// Modal prompting the user how to handle an unsupported video format.
+// Resolves to "choose" | "reencode" | null (dismissed).
+function showFormatDialog(videoName) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+
+    const modal = document.createElement("div");
+    modal.className = "modal";
+
+    const title = document.createElement("h3");
+    title.textContent = "Unsupported video format";
+
+    const body = document.createElement("p");
+    body.textContent =
+      `"${videoName}" can't be played directly — its codec or container isn't supported ` +
+      `(common with HEVC/H.265 and AVI). Choose a different video that's already MP4 (H.264) ` +
+      `or WebM, or re-encode this file to H.264 MP4 with ffmpeg.`;
+
+    const actions = document.createElement("div");
+    actions.className = "modal-actions";
+
+    const chooseBtn = document.createElement("button");
+    chooseBtn.className = "primary";
+    chooseBtn.textContent = "Choose Different Video";
+
+    const reencodeBtn = document.createElement("button");
+    reencodeBtn.className = "secondary";
+    reencodeBtn.textContent = "Re-encode to MP4";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.className = "ghost";
+    cancelBtn.textContent = "Cancel";
+
+    const close = (result) => {
+      document.removeEventListener("keydown", onKey, true);
+      overlay.remove();
+      resolve(result);
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.stopPropagation(); close(null); }
+    };
+
+    chooseBtn.addEventListener("click", () => close("choose"));
+    reencodeBtn.addEventListener("click", () => close("reencode"));
+    cancelBtn.addEventListener("click", () => close(null));
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) close(null); });
+    // Capture phase so Escape closes the modal before global shortcuts see it.
+    document.addEventListener("keydown", onKey, true);
+
+    actions.append(chooseBtn, reencodeBtn, cancelBtn);
+    modal.append(title, body, actions);
+    overlay.append(modal);
+    document.body.append(overlay);
+    chooseBtn.focus();
+  });
+}
+
+const reencodeCurrentVideo = async () => {
+  if (!window.api || !window.api.reencodeVideo) {
+    setStatus("Re-encode unavailable: ffmpeg integration not present.");
+    return;
+  }
+  setStatus("Re-encoding with ffmpeg...");
+  try {
+    const result = await window.api.reencodeVideo({ inputPath: currentFile.path });
+    if (result.success) {
+      setStatus("Re-encoded successfully. Loading " + result.outputPath);
+      const newName = result.outputPath.replace(/^.*[\\/]/, "");
+      currentVideoName = newName;
+      currentFile = { name: newName, path: result.outputPath };
+      if (video.src) URL.revokeObjectURL(video.src);
+      video.src = toFileUrl(result.outputPath);
+      video.load();
+      return;
+    }
+    const isMissing = /ENOENT|not found|not recognized/i.test(result.error || "");
+    if (isMissing) {
+      setStatus("ffmpeg not found. Install ffmpeg, or run manually: ffmpeg -i input -c:v libx264 -preset fast -crf 18 -c:a aac output.mp4");
+    } else {
+      setStatus("ffmpeg re-encode failed: " + (result.error || "unknown error"));
+      console.error("[reencode] stderr:", result.stderr);
+    }
+  } catch (e) {
+    setStatus("Re-encode error: " + (e.message || e));
+  }
+};
+
 // If the video fails to load due to an unsupported codec (e.g. HEVC/H.265, AVI),
-// re-encode with ffmpeg:  ffmpeg -i input.mp4 -c:v libx264 -preset fast -crf 18 -c:a aac output.mp4
+// prompt the user — never auto-re-encode.
 video.addEventListener("error", async () => {
   const name = currentVideoName || "";
   const err = video.error;
@@ -2444,29 +2553,16 @@ video.addEventListener("error", async () => {
     || /\.avi$/i.test(name) || /\.av$/i.test(name)
     || (msg && /not supported|decode|format|codec/i.test(msg));
 
-  if (isCodecError && currentFile && currentFile.path && window.api && window.api.reencodeVideo) {
-    setStatus("Unsupported codec. Re-encoding with ffmpeg...");
-    try {
-      const result = await window.api.reencodeVideo({ inputPath: currentFile.path });
-      if (result.success) {
-        setStatus("Re-encoded successfully. Loading " + result.outputPath);
-        const newName = result.outputPath.replace(/^.*[\\/]/, "");
-        currentVideoName = newName;
-        currentFile = { name: newName, path: result.outputPath };
-        if (video.src) URL.revokeObjectURL(video.src);
-        video.src = toFileUrl(result.outputPath);
-        video.load();
-        return;
-      }
-      const isMissing = /ENOENT|not found|not recognized/i.test(result.error || "");
-      if (isMissing) {
-        setStatus("Codec not supported. Install ffmpeg to auto-re-encode, or run: ffmpeg -i input.mp4 -c:v libx264 -preset fast -crf 18 -c:a aac output.mp4");
-      } else {
-        setStatus("ffmpeg re-encode failed: " + (result.error || "unknown error"));
-        console.error("[reencode] stderr:", result.stderr);
-      }
-    } catch (e) {
-      setStatus("Re-encode error: " + (e.message || e));
+  if (isCodecError && currentFile && currentFile.path) {
+    setStatus(`"${name}" is an unsupported format.`);
+    const choice = await showFormatDialog(name);
+    if (choice === "choose") {
+      // Reuse the standard load pipeline (honors the WebCodecs default).
+      videoFileInput.click();
+    } else if (choice === "reencode") {
+      await reencodeCurrentVideo();
+    } else {
+      setStatus("Load a supported video (MP4/H.264 or WebM), or re-encode it.");
     }
     return;
   }
@@ -2474,7 +2570,7 @@ video.addEventListener("error", async () => {
   if (code === 2 || (msg && /network|abort/i.test(msg))) {
     setStatus("Video failed to load (network/abort). Try a local file or a different path.");
   } else if (isCodecError) {
-    setStatus("Codec not supported. Re-encode with: ffmpeg -i input.mp4 -c:v libx264 -preset fast -crf 18 -c:a aac output.mp4");
+    setStatus("Codec not supported. Re-encode with: ffmpeg -i input -c:v libx264 -preset fast -crf 18 -c:a aac output.mp4");
   } else {
     setStatus(`Video failed to load. Use MP4 (H.264) or WebM. ${msg ? `(${msg})` : ""}`);
   }
@@ -2496,6 +2592,7 @@ renderBehaviors();
 renderBouts();
 updateDurationDisplay();
 if (!webcodecsApiSupported()) {
+  useWebCodecsInput.checked = false;
   useWebCodecsInput.disabled = true;
   const reason = webcodecsUnavailabilityReason();
   if (reason) {
@@ -3685,6 +3782,33 @@ document.getElementById("closeProject").addEventListener("click", async () => {
   updateProjectUI();
   setStatus("Project closed.");
 });
+
+// ── Project dropdown menu ──
+(() => {
+  const menu = document.getElementById("projectMenu");
+  const trigger = document.getElementById("projectMenuBtn");
+  if (!menu || !trigger) return;
+
+  const setOpen = (open) => {
+    menu.classList.toggle("open", open);
+    trigger.setAttribute("aria-expanded", String(open));
+  };
+
+  trigger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setOpen(!menu.classList.contains("open"));
+  });
+  // Close when clicking outside, on Escape, or after picking an action.
+  document.addEventListener("click", (e) => {
+    if (!menu.contains(e.target)) setOpen(false);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") setOpen(false);
+  });
+  menu.querySelectorAll(".menu-panel button").forEach((b) =>
+    b.addEventListener("click", () => setOpen(false))
+  );
+})();
 
 // ── .rlt export / import ──
 

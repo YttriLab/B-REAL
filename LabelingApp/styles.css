@@ -2,6 +2,65 @@
   box-sizing: border-box;
 }
 
+/* Modal dialog (e.g. unsupported video format prompt) */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 20, 34, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 440px;
+  width: calc(100% - 48px);
+  box-shadow: 0 12px 40px rgba(15, 20, 34, 0.25);
+}
+
+.modal h3 {
+  margin: 0 0 8px;
+}
+
+.modal p {
+  margin: 0 0 20px;
+  color: #3b3b44;
+  line-height: 1.5;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.modal-actions button {
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+}
+
+.modal-actions button.primary {
+  background: #2563eb;
+  color: #fff;
+}
+
+.modal-actions button.secondary {
+  background: #eef1f8;
+  color: #1d1d1f;
+}
+
+.modal-actions button.ghost {
+  background: transparent;
+  color: #2563eb;
+}
+
 body {
   margin: 0;
   font-family: "Segoe UI", Arial, sans-serif;
@@ -192,6 +251,10 @@ video {
   inset: 0;
   width: 100%;
   height: 100%;
+  /* Preserve the video's aspect ratio (letterbox) instead of stretching to
+     fill the shell — matches the <video> element's max-width/height behavior.
+     Most visible in fullscreen, where the shell's aspect ratio differs most. */
+  object-fit: contain;
   display: none;
 }
 
@@ -440,6 +503,81 @@ body.webcodecs video {
   display: none;
 }
 
+/* Header right-side action cluster */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Dropdown menu (Project actions) */
+.menu {
+  position: relative;
+}
+
+.menu-trigger {
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 1px solid #d4d8e3;
+  background: #fff;
+  color: #1d1d1f;
+  cursor: pointer;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.menu-trigger:hover {
+  background: #f6f7fb;
+}
+
+.menu-trigger .caret {
+  font-size: 10px;
+  color: #5b5b66;
+}
+
+.menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 180px;
+  background: #fff;
+  border: 1px solid #e3e6ef;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 20, 34, 0.15);
+  padding: 6px;
+  display: none;
+  z-index: 100;
+}
+
+.menu.open .menu-panel {
+  display: block;
+}
+
+.menu-panel button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #1d1d1f;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.menu-panel button:hover {
+  background: #f6f7fb;
+}
+
+.menu-sep {
+  height: 1px;
+  background: #e3e6ef;
+  margin: 6px 4px;
+}
+
 .hidden {
   display: none !important;
 }
@@ -464,6 +602,19 @@ table {
   width: 100%;
   border-collapse: collapse;
   font-variant-numeric: tabular-nums;
+}
+
+/* Bouts list: cap height and scroll instead of growing unbounded */
+.bouts-table-wrap {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.bouts-table-wrap thead th {
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 1;
 }
 
 thead th {
