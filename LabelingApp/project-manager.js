@@ -186,8 +186,33 @@
 
   function addModel(modelEntry) {
     if (!activeProject) return;
-    activeProject.manifest.models.push(modelEntry);
+    if (!Array.isArray(activeProject.manifest.models)) {
+      activeProject.manifest.models = [];
+    }
+    // Dedupe by path: replace an existing entry for the same checkpoint.
+    const existingIdx = activeProject.manifest.models.findIndex(
+      (m) => m.path && modelEntry.path && m.path === modelEntry.path
+    );
+    if (existingIdx >= 0) {
+      activeProject.manifest.models[existingIdx] = modelEntry;
+    } else {
+      activeProject.manifest.models.push(modelEntry);
+    }
     saveManifest();
+  }
+
+  function getModels() {
+    if (!activeProject || !Array.isArray(activeProject.manifest.models)) return [];
+    return activeProject.manifest.models;
+  }
+
+  function updateModelPath(oldPath, newPath) {
+    if (!activeProject) return;
+    const entry = (activeProject.manifest.models || []).find((m) => m.path === oldPath);
+    if (entry) {
+      entry.path = newPath;
+      saveManifest();
+    }
   }
 
   // ── Path helpers ──────────────────────────────────────────────────────────
@@ -333,6 +358,8 @@
     updatePreprocessingConfig,
     updateTrainingConfig,
     addModel,
+    getModels,
+    updateModelPath,
 
     // Paths
     getFramesDir,

@@ -188,7 +188,16 @@ def sample_project(tmp_path):
         ],
         "preprocessing": {"box_size": 128, "difference_threshold": 10},
         "training": {"variant": "b0", "max_epochs": 50},
-        "models": [],
+        "models": [
+            {
+                "name": "epoch=1.ckpt",
+                "path": "/abs/path/to/models/checkpoints/epoch=1.ckpt",
+                "created": "2026-01-02",
+                "val_loss": 0.123,
+                "config": {"variant": "b0", "binarize": None,
+                           "num_frames": 3, "tsm_stages": [5, 6, 7]},
+            }
+        ],
     }
     (proj / "project.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 

@@ -2851,6 +2851,12 @@ document.getElementById("trainStart").addEventListener("click", async () => {
     wandb_api_key: document.getElementById("trainWandbApiKey").value.trim() || undefined,
   };
 
+  // If a project is open, save checkpoints into it so the model path is stable
+  // and can be recorded in the manifest (otherwise it lands in a temp dir).
+  if (window.projectManager && window.projectManager.isActive()) {
+    config.checkpoint_dir = window.projectManager.getCheckpointsDir();
+  }
+
   document.getElementById("trainStart").disabled = true;
   document.getElementById("trainStop").disabled = false;
   document.getElementById("trainStatus").textContent = "Starting...";
@@ -2885,6 +2891,22 @@ document.getElementById("trainStart").addEventListener("click", async () => {
           document.getElementById("trainStop").disabled = true;
           if (data.best_checkpoint) {
             document.getElementById("trainStatus").textContent = `Done! Best: ${data.best_checkpoint}`;
+            // Auto-record the trained checkpoint into the project manifest so it
+            // travels with the .rlt as a reference (re-linkable on import).
+            if (data.status === "completed" && window.projectManager && window.projectManager.isActive()) {
+              window.projectManager.addModel({
+                name: data.best_checkpoint.split(/[\\/]/).pop(),
+                path: data.best_checkpoint,
+                created: new Date().toISOString().slice(0, 10),
+                val_loss: typeof data.best_val_loss === "number" ? data.best_val_loss : null,
+                config: {
+                  variant: config.variant,
+                  binarize: config.binarize,
+                  num_frames: config.num_frames,
+                  tsm_stages: config.tsm_stages,
+                },
+              });
+            }
           }
         }
       },
@@ -2945,6 +2967,15 @@ document.getElementById("alSelectCheckpoint").addEventListener("click", async ()
   if (!res.canceled) {
     alState.checkpointPath = res.path;
     setPathDisplay("alCheckpointPath", res.path);
+    // Record manually-selected checkpoints in the project manifest too.
+    if (window.projectManager && window.projectManager.isActive()) {
+      window.projectManager.addModel({
+        name: res.path.split(/[\\/]/).pop(),
+        path: res.path,
+        created: new Date().toISOString().slice(0, 10),
+        source: "selected",
+      });
+    }
   }
 });
 
@@ -3531,6 +3562,55 @@ async function restoreProjectVideos(manifest) {
   if (videoList.length > 0) {
     switchToVideo(videoList[0].name);
   }
+
+  // Re-link any trained models whose checkpoint path no longer resolves
+  await relinkProjectModels(manifest);
+}
+
+async function fileExists(path) {
+  if (!path || !window.api || typeof window.api.getFileSize !== "function") return false;
+  try {
+    await window.api.getFileSize(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function relinkProjectModels(manifest) {
+  const models = Array.isArray(manifest.models) ? manifest.models : [];
+  if (models.length === 0) return;
+
+  const missing = [];
+  for (const m of models) {
+    if (!(await fileExists(m.path))) missing.push(m);
+  }
+  if (missing.length === 0) return;
+
+  setStatus(
+    `${missing.length} model checkpoint(s) need re-linking (copied separately, or re-train to regenerate).`
+  );
+
+  for (const m of missing) {
+    const ok = window.confirm(
+      `Model "${m.name}" was not found at:\n${m.path}\n\nLocate the checkpoint file now? ` +
+      `(Cancel to skip — you can re-train to regenerate it.)`
+    );
+    if (!ok) continue;
+    const res = await window.api.selectFile({
+      title: `Locate checkpoint for "${m.name}"`,
+      filters: [{ name: "Checkpoints", extensions: ["ckpt", "pt"] }],
+    });
+    if (res && !res.canceled) {
+      window.projectManager.updateModelPath(m.path, res.path);
+      // If this is the model the Active Learning panel points at, update it.
+      if (alState && alState.checkpointPath === m.path) {
+        alState.checkpointPath = res.path;
+        setPathDisplay("alCheckpointPath", res.path);
+      }
+      setStatus(`Re-linked model "${m.name}".`);
+    }
+  }
 }
 
 document.getElementById("newProject").addEventListener("click", async () => {
@@ -3660,7 +3740,8 @@ document.getElementById("importRlt").addEventListener("click", async () => {
     await restoreProjectVideos(result.manifest);
     setStatus(
       `Imported project "${result.manifest.name}". ` +
-      "If any video doesn't load, re-link it — frames and models will be regenerated from the video + config."
+      "Re-link any video that doesn't load; frames regenerate from the video + config, " +
+      "and models can be re-linked (if copied over) or re-trained."
     );
   } catch (err) {
     setStatus("Import failed: " + (err.message || err));

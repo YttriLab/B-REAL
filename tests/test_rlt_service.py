@@ -161,6 +161,21 @@ class TestRoundTrip:
             new = dest / "labels" / f"{vid}_bouts.csv"
             assert open(orig, encoding="utf-8").read() == new.read_text(encoding="utf-8")
 
+    def test_model_references_survive(self, sample_project, tmp_path):
+        """Trained-model references (path + metadata) travel in the manifest."""
+        project_dir, manifest = sample_project
+        rlt = str(tmp_path / "out.rlt")
+        export_rlt(project_dir, rlt)
+
+        dest = tmp_path / "imported"
+        imported = import_rlt(rlt, str(dest))
+        assert imported["models"] == manifest["models"]
+        # The checkpoint path is preserved for re-linking on the new machine
+        assert imported["models"][0]["path"] == manifest["models"][0]["path"]
+        # The model binary itself is NOT embedded — only the reference
+        with h5py.File(rlt, "r") as hf:
+            assert "models" not in hf
+
 
 # ── inspect_rlt ────────────────────────────────────────────────────────────
 
