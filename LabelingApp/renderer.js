@@ -1505,7 +1505,22 @@ const renderVideoSidebar = () => {
 
 const addVideoToList = (file) => {
   const name = file.name;
-  if (videoList.some(v => v.name === name)) return;
+  const existing = videoList.find(v => v.name === name);
+  if (existing) {
+    // Already tracked — re-link to the newly chosen path if it changed.
+    if (file.path && existing.path !== file.path) {
+      existing.path = file.path;
+      existing.isWebCodecs = useWebCodecsInput.checked;
+      saveVideoList();
+      renderVideoSidebar();
+      try {
+        if (window.projectManager && window.projectManager.isActive()) {
+          window.projectManager.setVideoPath(name, file.path);
+        }
+      } catch { /* project manager not ready */ }
+    }
+    return;
+  }
   videoList.push({
     name,
     path: file.path || "",
@@ -2633,6 +2648,51 @@ const reencodeCurrentVideo = async () => {
   }
 };
 
+// Re-link the current (failing) video to a different file. Updates the stored
+// path on the video-list entry and the project manifest, keeping the original
+// name so its labels/progress stay attached, then reloads from the new path.
+const relinkCurrentVideo = async () => {
+  if (!window.api || !window.api.selectFile) {
+    setStatus("File selection unavailable.");
+    return;
+  }
+  const targetName = currentVideoName;
+  const res = await window.api.selectFile({
+    title: targetName ? `Locate video for "${targetName}"` : "Select Video",
+    filters: [
+      { name: "Video Files", extensions: ["mp4", "webm", "avi", "mkv", "mov"] },
+      { name: "All Files", extensions: ["*"] },
+    ],
+  });
+  if (!res || res.canceled) return;
+  const newPath = res.path;
+
+  const entry = videoList.find(v => v.name === targetName);
+  if (entry) {
+    entry.path = newPath;
+    saveVideoList();
+    renderVideoSidebar();
+    try {
+      if (window.projectManager && window.projectManager.isActive()) {
+        window.projectManager.setVideoPath(targetName, newPath);
+      }
+    } catch { /* project manager not ready */ }
+    currentFile = { name: targetName, path: newPath };
+  } else {
+    // No tracked entry — treat as a fresh load.
+    currentFile = { name: newPath.split(/[\\/]/).pop(), path: newPath };
+    addVideoToList(currentFile);
+  }
+
+  setStatus(`Re-linked "${currentFile.name}". Loading…`);
+  if (useWebCodecsInput.checked && webcodecsSupported()) {
+    loadWebcodecsFile(currentFile);
+  } else {
+    setWebcodecsMode(false);
+    loadHtml5File(currentFile);
+  }
+};
+
 // If the video fails to load due to an unsupported codec (e.g. HEVC/H.265, AVI),
 // prompt the user — never auto-re-encode.
 video.addEventListener("error", async () => {
@@ -2649,8 +2709,8 @@ video.addEventListener("error", async () => {
     setStatus(`"${name}" is an unsupported format.`);
     const choice = await showFormatDialog(name);
     if (choice === "choose") {
-      // Reuse the standard load pipeline (honors the WebCodecs default).
-      videoFileInput.click();
+      // Re-link the failing video to a correctly-formatted file (persists path).
+      await relinkCurrentVideo();
     } else if (choice === "reencode") {
       await reencodeCurrentVideo();
     } else {

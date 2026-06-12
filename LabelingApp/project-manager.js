@@ -103,9 +103,15 @@
     const filename = videoPath.split(/[\\/]/).pop();
     const id = sanitizeId(filename);
 
-    // Skip duplicates
-    if (activeProject.manifest.videos.some(v => v.id === id)) {
-      return activeProject.manifest.videos.find(v => v.id === id);
+    // If this video is already tracked, refresh its path (re-link) rather than
+    // adding a duplicate.
+    const existing = activeProject.manifest.videos.find(v => v.id === id);
+    if (existing) {
+      if (existing.path !== videoPath) {
+        existing.path = videoPath;
+        saveManifest();
+      }
+      return existing;
     }
 
     const entry = {
@@ -118,6 +124,16 @@
     activeProject.manifest.videos.push(entry);
     saveManifest();
     return entry;
+  }
+
+  // Re-link a tracked video (matched by display name) to a new file path.
+  function setVideoPath(videoName, newPath) {
+    if (!activeProject) return;
+    const entry = getVideoEntry(videoName);
+    if (entry && newPath && entry.path !== newPath) {
+      entry.path = newPath;
+      saveManifest();
+    }
   }
 
   function removeVideoFromManifest(videoId) {
@@ -377,6 +393,7 @@
     // Videos
     addVideoToManifest,
     removeVideoFromManifest,
+    setVideoPath,
     getVideoEntry,
     getVideoIdFromName,
 
