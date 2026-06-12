@@ -1127,9 +1127,17 @@ const renderBehaviors = () => {
       input.style.width = Math.max(80, name.offsetWidth + 10) + "px";
 
       const commit = () => {
-        const newName = input.value.trim();
-        if (newName && newName !== behavior.name) {
-          const oldName = behavior.name;
+        const newName = normalizeBehaviorName(input.value);
+        if (!newName) { renderBehaviors(); return; }
+        const clash = behaviors.find(
+          (b) => b !== behavior && behaviorNameKey(b.name) === behaviorNameKey(newName)
+        );
+        if (clash) {
+          setStatus(`"${clash.name}" already exists; rename canceled.`);
+          renderBehaviors();
+          return;
+        }
+        if (newName !== behavior.name) {
           behavior.name = newName;
           for (const bout of bouts) {
             if (bout.behaviorId === behavior.id) bout.behaviorName = newName;
@@ -1287,6 +1295,80 @@ function loadBehaviors() {
     return [];
   }
 }
+
+// ── Behavior-name normalization & de-duplication ──────────────────────────
+// Trim ends and collapse internal whitespace runs so "face  groom",
+// "face groom ", and "face groom" are treated as one behavior.
+const normalizeBehaviorName = (s) =>
+  String(s == null ? "" : s).trim().replace(/\s+/g, " ");
+
+// Canonical matching key: normalized + case-insensitive.
+const behaviorNameKey = (s) => normalizeBehaviorName(s).toLowerCase();
+
+const findBehaviorByName = (name) => {
+  const key = behaviorNameKey(name);
+  return behaviors.find((b) => behaviorNameKey(b.name) === key);
+};
+
+// Merge existing behaviors that share a canonical name: keep the first, remap
+// every bout (current video + all stored per-video progress) to it, and clean
+// up display names. Returns the number of duplicate behaviors removed.
+const mergeDuplicateBehaviors = () => {
+  const survivors = new Map(); // canonical key -> survivor behavior
+  const idMap = new Map();     // duplicate id -> survivor id
+  const kept = [];
+  let renamed = false;
+
+  for (const b of behaviors) {
+    const key = behaviorNameKey(b.name);
+    const survivor = survivors.get(key);
+    if (survivor) {
+      idMap.set(b.id, survivor.id);
+    } else {
+      const norm = normalizeBehaviorName(b.name);
+      if (norm !== b.name) { b.name = norm; renamed = true; }
+      survivors.set(key, b);
+      kept.push(b);
+    }
+  }
+
+  if (idMap.size === 0 && !renamed) return 0;
+
+  behaviors = kept;
+  const nameById = new Map(kept.map((b) => [b.id, b.name]));
+
+  const remap = (list) => {
+    let changed = false;
+    for (const bout of list) {
+      const sid = idMap.get(bout.behaviorId);
+      if (sid) {
+        bout.behaviorId = sid;
+        bout.behaviorName = nameById.get(sid) || bout.behaviorName;
+        changed = true;
+      } else if (nameById.has(bout.behaviorId)) {
+        const nn = nameById.get(bout.behaviorId);
+        if (bout.behaviorName !== nn) { bout.behaviorName = nn; changed = true; }
+      }
+    }
+    return changed;
+  };
+
+  remap(bouts);
+
+  // Rewrite every video's stored progress so merges apply project-wide.
+  try {
+    const vids = (typeof videoList !== "undefined" && Array.isArray(videoList)) ? videoList : [];
+    for (const v of vids) {
+      const prog = loadProgress(v.name);
+      if (prog && Array.isArray(prog.bouts) && remap(prog.bouts)) {
+        localStorage.setItem(getProgressKey(v.name), JSON.stringify(prog));
+      }
+    }
+  } catch { /* ignore */ }
+
+  saveBehaviors();
+  return idMap.size;
+};
 
 const getProgressKey = (videoName) => `progress_${videoName}`;
 
@@ -1497,6 +1579,8 @@ const switchToVideo = (videoName) => {
 
   localStorage.setItem("lastActiveVideo", videoName);
   renderVideoSidebar();
+  // Load this video's saved background into the preprocess panel, if any.
+  applyVideoBackground(videoName);
 };
 
 const nextBehaviorKey = () => {
@@ -1505,9 +1589,16 @@ const nextBehaviorKey = () => {
 };
 
 const addBehavior = () => {
-  const name = behaviorNameInput.value.trim();
+  const name = normalizeBehaviorName(behaviorNameInput.value);
   if (!name) {
     setStatus("Enter a behavior name before adding.");
+    return;
+  }
+
+  const existing = findBehaviorByName(name);
+  if (existing) {
+    setStatus(`"${existing.name}" already exists (key ${existing.key}).`);
+    behaviorNameInput.value = "";
     return;
   }
 
@@ -1876,10 +1967,10 @@ const parseCsvAndImport = (content, sourceName = "CSV") => {
       const endFrame = msToFrame(endMs);
       if (startFrame === endFrame) { console.warn("[import] Row skipped (zero-length) start='" + fields[0] + "' end='" + fields[1] + "' → frame " + startFrame); skipped++; continue; }
 
-      let behavior = behaviors.find((b) => b.name === behaviorName);
+      let behavior = findBehaviorByName(behaviorName);
       if (!behavior) {
         const key = KEY_ORDER[behaviors.length] || "";
-        behavior = { id: Date.now() + "-" + Math.random(), name: behaviorName, key };
+        behavior = { id: Date.now() + "-" + Math.random(), name: normalizeBehaviorName(behaviorName), key };
         behaviors.push(behavior);
       }
 
@@ -1924,10 +2015,10 @@ const parseCsvAndImport = (content, sourceName = "CSV") => {
           startFrames[b] = frameIdx;
         } else if (!on && active[b]) {
           active[b] = false;
-          let behavior = behaviors.find((bh) => bh.name === behaviorNames[b]);
+          let behavior = findBehaviorByName(behaviorNames[b]);
           if (!behavior) {
             const key = KEY_ORDER[behaviors.length] || "";
-            behavior = { id: Date.now() + "-" + Math.random(), name: behaviorNames[b], key };
+            behavior = { id: Date.now() + "-" + Math.random(), name: normalizeBehaviorName(behaviorNames[b]), key };
             behaviors.push(behavior);
           }
           insertBoutSorted({
@@ -1946,10 +2037,10 @@ const parseCsvAndImport = (content, sourceName = "CSV") => {
     const lastFrame = parseInt(lastFields[0], 10);
     for (let b = 0; b < numBehaviors; b++) {
       if (active[b] && !isNaN(lastFrame)) {
-        let behavior = behaviors.find((bh) => bh.name === behaviorNames[b]);
+        let behavior = findBehaviorByName(behaviorNames[b]);
         if (!behavior) {
           const key = KEY_ORDER[behaviors.length] || "";
-          behavior = { id: Date.now() + "-" + Math.random(), name: behaviorNames[b], key };
+          behavior = { id: Date.now() + "-" + Math.random(), name: normalizeBehaviorName(behaviorNames[b]), key };
           behaviors.push(behavior);
         }
         insertBoutSorted({
@@ -1970,6 +2061,7 @@ const parseCsvAndImport = (content, sourceName = "CSV") => {
   }
 
   if (imported > 0) {
+    mergeDuplicateBehaviors();
     saveBehaviors();
     renderBehaviors();
     renderBouts();
@@ -2687,6 +2779,7 @@ document.querySelectorAll(".tab-bar .tab").forEach((btn) => {
     document.querySelectorAll(".tab-panel").forEach((p) => {
       p.classList.toggle("active", p.dataset.tab === tabName);
     });
+    if (tabName === "train") renderTrainVideoChecklist();
   });
 });
 
@@ -2697,7 +2790,41 @@ const ppState = {
   outputDir: null,
   taskId: null,
   sseSource: null,
+  bgByVideo: {}, // videoName -> background image path (auto-loaded on switch)
 };
+
+// Remember a background for a video (persisted in settings; also recorded on the
+// project manifest when a project is open).
+function rememberVideoBackground(videoName, absPath) {
+  if (!videoName || !absPath) return;
+  ppState.bgByVideo[videoName] = absPath;
+  try { saveSettings(); } catch { /* settings not ready */ }
+  if (window.projectManager && window.projectManager.isActive()) {
+    try { window.projectManager.setVideoBackground(videoName, absPath); } catch { /* ignore */ }
+  }
+}
+
+function resolveVideoBackground(videoName) {
+  if (!videoName) return null;
+  if (window.projectManager && window.projectManager.isActive()) {
+    const p = window.projectManager.getVideoBackgroundAbs(videoName);
+    if (p) return p;
+  }
+  return ppState.bgByVideo[videoName] || null;
+}
+
+// Load the background that belongs to a video (if any) into the preprocess panel.
+async function applyVideoBackground(videoName) {
+  const p = resolveVideoBackground(videoName);
+  if (p && await fileExists(p)) {
+    ppState.bgPath = p;
+    setPathDisplay("ppBgPath", p);
+  } else {
+    ppState.bgPath = null;
+    const el = document.getElementById("ppBgPath");
+    if (el) el.textContent = "No background";
+  }
+}
 
 // Slider value displays
 ["ppBoxSize", "ppDiffThresh", "ppDownsample", "ppOpen1", "ppClose", "ppOpen2"].forEach((id) => {
@@ -2729,13 +2856,19 @@ document.getElementById("ppComputeBg").addEventListener("click", async () => {
   if (!videoPath) { alert("Load a video first."); return; }
   const numFrames = parseInt(document.getElementById("ppBgNumFrames").value) || 500;
   document.getElementById("ppBgPath").textContent = "Computing...";
+  const body = { video_path: videoPath, num_frames: numFrames };
+  // When a project is open, write the background into the project's backgrounds/ dir.
+  if (window.projectManager && window.projectManager.isActive()) {
+    body.output_dir = window.projectManager.getBackgroundsDir();
+  }
   try {
     const res = await backendFetch("/api/preprocess/background", {
       method: "POST",
-      body: JSON.stringify({ video_path: videoPath, num_frames: numFrames }),
+      body: JSON.stringify(body),
     });
     ppState.bgPath = res.path;
     setPathDisplay("ppBgPath", res.path);
+    rememberVideoBackground(currentVideoName, res.path);
   } catch (e) {
     document.getElementById("ppBgPath").textContent = `Error: ${e.message}`;
   }
@@ -2751,6 +2884,7 @@ document.getElementById("ppSelectBg").addEventListener("click", async () => {
   if (!res.canceled) {
     ppState.bgPath = res.path;
     setPathDisplay("ppBgPath", res.path);
+    rememberVideoBackground(currentVideoName, res.path);
   }
 });
 
@@ -2807,7 +2941,17 @@ document.getElementById("ppSelectOutputDir").addEventListener("click", async () 
 document.getElementById("ppRun").addEventListener("click", async () => {
   const videoPath = getVideoPath();
   if (!videoPath) { alert("Load a video first."); return; }
-  if (!ppState.outputDir) { alert("Select an output directory first."); return; }
+
+  // When a project is open, write frames into the project's frames/<id>/ dir so
+  // they're discoverable by the training checklist. Otherwise use the chosen dir.
+  let outputDir = ppState.outputDir;
+  let outputName;
+  const pm = window.projectManager;
+  if (pm && pm.isActive()) {
+    outputDir = pm.getProjectRoot() + "/frames";
+    outputName = pm.getVideoIdFromName(currentVideoName);
+  }
+  if (!outputDir) { alert("Select an output directory first."); return; }
 
   const framerateVal = parseInt(document.getElementById("ppFramerate").value);
 
@@ -2820,10 +2964,11 @@ document.getElementById("ppRun").addEventListener("click", async () => {
       method: "POST",
       body: JSON.stringify({
         video_path: videoPath,
-        output_dir: ppState.outputDir,
+        output_dir: outputDir,
         crop_params: getCropParams(),
         desired_framerate: framerateVal || null,
         bg_path: ppState.bgPath,
+        output_name: outputName || undefined,
       }),
     });
     ppState.taskId = res.task_id;
@@ -2843,6 +2988,8 @@ document.getElementById("ppRun").addEventListener("click", async () => {
             document.getElementById("ppStatus").textContent = `Error: ${data.error}`;
           } else if (data.output_dir) {
             document.getElementById("ppStatus").textContent = `Done: ${data.output_dir}`;
+            // Newly-created frames may make this video trainable — refresh the list.
+            renderTrainVideoChecklist();
           }
         }
       },
@@ -2870,10 +3017,71 @@ document.getElementById("ppStop").addEventListener("click", async () => {
 // ── Training Panel ────────────────────────────────────────────────────────
 
 const trainState = {
-  dataSources: [],
+  dataSources: [],        // manually-added external sources
+  selectedVideos: new Set(), // project video names checked for training
   taskId: null,
   sseSource: null,
 };
+
+// Render the project videos as a checklist; checked videos become training
+// data sources (frames + labels resolved from the project).
+async function renderTrainVideoChecklist() {
+  const container = document.getElementById("trainVideoChecklist");
+  if (!container) return;
+  container.innerHTML = "";
+
+  const pm = window.projectManager;
+  if (!pm || !pm.isActive()) {
+    container.innerHTML =
+      '<p class="muted">Open a project to pick videos here, or use “Add External Source”.</p>';
+    return;
+  }
+
+  const manifest = pm.getManifest();
+  const vids = (manifest && manifest.videos) || [];
+  if (vids.length === 0) {
+    container.innerHTML = '<p class="muted">No videos in this project yet.</p>';
+    return;
+  }
+
+  for (const v of vids) {
+    const name = v.path ? v.path.split(/[\\/]/).pop() : v.id;
+    const framesDir = pm.getFramesDir(name);
+    const labelPath = pm.getVideoLabelsAbs(name);
+
+    const row = document.createElement("label");
+    row.className = "checkbox-row";
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = trainState.selectedVideos.has(name);
+    cb.addEventListener("change", () => {
+      if (cb.checked) trainState.selectedVideos.add(name);
+      else trainState.selectedVideos.delete(name);
+    });
+
+    const text = document.createElement("span");
+    text.className = "checklist-name";
+    text.textContent = name;
+
+    const status = document.createElement("span");
+    status.className = "muted checklist-status";
+    status.textContent = "checking…";
+
+    row.append(cb, text, status);
+    container.appendChild(row);
+
+    // Annotate availability of frames + labels asynchronously.
+    Promise.all([fileExists(framesDir), fileExists(labelPath)]).then(([hasFrames, hasLabels]) => {
+      status.textContent = `${hasLabels ? "✓" : "✗"} labels · ${hasFrames ? "✓" : "✗"} frames`;
+      if (!hasFrames || !hasLabels) {
+        row.title = "Missing " +
+          [!hasLabels ? "labels" : null, !hasFrames ? "frames (run Preprocess)" : null]
+            .filter(Boolean).join(" and ");
+      }
+    });
+  }
+}
 
 // Add data source
 document.getElementById("trainAddSource").addEventListener("click", async () => {
@@ -2915,14 +3123,28 @@ function renderTrainDataSources() {
 
 // Start training
 document.getElementById("trainStart").addEventListener("click", async () => {
-  if (trainState.dataSources.length === 0) { alert("Add at least one data source."); return; }
+  // Combine checked project videos with any manually-added external sources.
+  const pm = window.projectManager;
+  const projectSources = [];
+  if (pm && pm.isActive()) {
+    for (const name of trainState.selectedVideos) {
+      const frameDir = pm.getFramesDir(name);
+      const labelPath = pm.getVideoLabelsAbs(name);
+      if (frameDir && labelPath) projectSources.push({ frameDir, labelPath });
+    }
+  }
+  const sources = [...projectSources, ...trainState.dataSources];
+  if (sources.length === 0) {
+    alert("Select at least one project video, or add an external data source.");
+    return;
+  }
 
   const tsmStagesStr = document.getElementById("trainTsmStages").value;
   const tsmStages = tsmStagesStr.split(",").map((s) => parseInt(s.trim())).filter((n) => !isNaN(n));
 
   const config = {
-    label_paths: trainState.dataSources.map((s) => s.labelPath),
-    frame_dirs: trainState.dataSources.map((s) => s.frameDir),
+    label_paths: sources.map((s) => s.labelPath),
+    frame_dirs: sources.map((s) => s.frameDir),
     frames_per_group: parseInt(document.getElementById("trainFramesPerGroup").value),
     binarize: document.getElementById("trainBinarize").value.trim() || null,
     train_percent: parseFloat(document.getElementById("trainSplitTrain").value),
@@ -3400,6 +3622,7 @@ function saveSettings() {
     // Paths (last used)
     lastBgPath: ppState.bgPath,
     lastOutputDir: ppState.outputDir,
+    bgByVideo: ppState.bgByVideo,
     lastCheckpointPath: alState.checkpointPath,
     lastFrameDirPath: alState.frameDirPath,
     // Data sources
@@ -3461,6 +3684,9 @@ function loadSettings() {
     if (s.alFramesPerGroup) document.getElementById("alFramesPerGroup").value = s.alFramesPerGroup;
 
     // Restore paths
+    if (s.bgByVideo && typeof s.bgByVideo === "object") {
+      ppState.bgByVideo = s.bgByVideo;
+    }
     if (s.lastBgPath) {
       ppState.bgPath = s.lastBgPath;
       setPathDisplay("ppBgPath", s.lastBgPath);
@@ -3587,6 +3813,15 @@ document.getElementById("toggleSidebar").addEventListener("click", () => {
 
 // Render sidebar on startup and auto-load last active video
 renderVideoSidebar();
+// Clean up duplicate behaviors (spacing/case variants) from older saved data.
+{
+  const merged = mergeDuplicateBehaviors();
+  if (merged > 0) {
+    renderBehaviors();
+    renderBouts();
+    setStatus(`Merged ${merged} duplicate behavior${merged === 1 ? "" : "s"}.`);
+  }
+}
 {
   const lastActive = localStorage.getItem("lastActiveVideo");
   if (lastActive && videoList.some(v => v.name === lastActive)) {
@@ -3616,6 +3851,7 @@ function updateProjectUI() {
     closeBtn.classList.add("hidden");
     exportRltBtn.classList.add("hidden");
   }
+  renderTrainVideoChecklist();
 }
 
 async function restoreProjectVideos(manifest) {
@@ -3623,7 +3859,7 @@ async function restoreProjectVideos(manifest) {
   if (Array.isArray(manifest.behaviors) && manifest.behaviors.length > 0) {
     behaviors = manifest.behaviors.map((b, i) => ({
       id: Date.now() + "-" + i,
-      name: b.name,
+      name: normalizeBehaviorName(b.name),
       key: b.key || KEY_ORDER[i] || ""
     }));
     saveBehaviors();
@@ -3654,6 +3890,10 @@ async function restoreProjectVideos(manifest) {
       }
     }
   }
+
+  // Collapse any duplicate behaviors introduced across the manifest + labels.
+  mergeDuplicateBehaviors();
+  renderBehaviors();
 
   // Load first video
   if (videoList.length > 0) {

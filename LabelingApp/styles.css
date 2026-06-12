@@ -1093,6 +1093,35 @@ button.danger:disabled {
 
 /* ═══ Data sources list ═══ */
 
+.video-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.video-checklist .checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: #f6f7fb;
+  cursor: pointer;
+}
+
+.video-checklist .checklist-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-checklist .checklist-status {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .data-sources {
   display: flex;
   flex-direction: column;

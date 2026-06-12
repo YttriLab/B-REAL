@@ -22,7 +22,7 @@ Real-time clip-based animal behavior classifier. An Electron desktop app for lab
 ├── preprocess_video_train.py   # Video preprocessing CLI
 ├── tune_cropping.py       # Crop parameter tuning
 ├── config_tsm.yaml        # Training hyperparameters
-└── tests/                 # pytest suite (105 tests)
+└── tests/                 # pytest suite (106 tests)
 ```
 
 ## Running the App
@@ -48,7 +48,7 @@ python -m uvicorn backend.server:app --port 8741 --host 127.0.0.1
 ## Running Tests
 
 ```bash
-pytest          # all 105 tests
+pytest          # all 106 tests
 pytest -v       # verbose
 pytest tests/test_api_routers.py   # single module
 ```
@@ -72,8 +72,10 @@ my_experiment/
 
 - Video paths are **absolute** (stay where they are); all other paths are **relative** to project root
 - `project-manager.js` manages project state; `saveProgress()` dual-writes to both localStorage and project labels
-- New/Open/Close Project buttons in the header; last project auto-restored on startup
+- Project actions live in the header **Project ▾** dropdown; last project auto-restored on startup
 - Backward compatible: app works without a project (localStorage-only mode)
+- **When a project is open, artifacts route into it automatically:** Compute Background writes to `backgrounds/bg_<name>.png` and records the path on the video's manifest entry (auto-loaded when you switch videos); Preprocess writes frames to `frames/<id>/`. Without a project these default beside the source video / to a chosen output dir.
+- **Training data sources** are a checklist of the project's videos (frames + labels resolved from the manifest); "Add External Source" remains for custom/out-of-project dirs.
 
 ## .rlt File Format
 

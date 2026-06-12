@@ -217,6 +217,37 @@
 
   // ── Path helpers ──────────────────────────────────────────────────────────
 
+  const isAbsolutePath = (p) => /^([a-zA-Z]:[\\/]|\/)/.test(p);
+
+  const toAbsolute = (relOrAbs) => {
+    if (!relOrAbs) return null;
+    return isAbsolutePath(relOrAbs) ? relOrAbs : activeProject.rootDir + "/" + relOrAbs;
+  };
+
+  // Store a background path on a video entry (relative to the project root when
+  // possible, so the project stays portable).
+  function setVideoBackground(videoName, absPath) {
+    if (!activeProject || !absPath) return;
+    const entry = getVideoEntry(videoName);
+    if (!entry) return;
+    const root = activeProject.rootDir.replace(/\\/g, "/").replace(/\/$/, "");
+    const norm = String(absPath).replace(/\\/g, "/");
+    entry.background = norm.startsWith(root + "/") ? norm.slice(root.length + 1) : absPath;
+    saveManifest();
+  }
+
+  function getVideoBackgroundAbs(videoName) {
+    if (!activeProject) return null;
+    const entry = getVideoEntry(videoName);
+    return entry && entry.background ? toAbsolute(entry.background) : null;
+  }
+
+  function getVideoLabelsAbs(videoName) {
+    if (!activeProject) return null;
+    const entry = getVideoEntry(videoName);
+    return entry && entry.labels ? toAbsolute(entry.labels) : null;
+  }
+
   function getFramesDir(videoName) {
     if (!activeProject) return null;
     const entry = getVideoEntry(videoName);
@@ -367,6 +398,9 @@
     getModelsDir,
     getCheckpointsDir,
     getExportsDir,
+    setVideoBackground,
+    getVideoBackgroundAbs,
+    getVideoLabelsAbs,
 
     // .rlt file format
     exportRlt,
