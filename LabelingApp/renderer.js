@@ -3325,11 +3325,48 @@ const alState = {
 // Threshold slider
 const alThresholdSlider = document.getElementById("alThreshold");
 const alThresholdOutput = document.getElementById("alThresholdVal");
+const alMinSegmentInput = document.getElementById("alMinSegment");
 alThresholdSlider.addEventListener("input", () => {
   alThresholdOutput.textContent = parseFloat(alThresholdSlider.value).toFixed(2);
   renderUncertaintyOverlay();
   updateAlStats();
 });
+
+// Minimum consecutive-segment length filter
+alMinSegmentInput.addEventListener("input", () => {
+  renderUncertaintyOverlay();
+  updateAlStats();
+});
+
+const getMinSegmentLength = () => Math.max(1, parseInt(alMinSegmentInput.value, 10) || 1);
+
+// Runs of consecutive frames with uncertainty >= threshold, of length >= minLen.
+// Returns [{ start, end, length }] (inclusive frame indices). Frames with no
+// prediction (value < 0) break a run.
+function getUncertainSegments(arr, threshold, minLen) {
+  const segs = [];
+  let runStart = -1;
+  for (let i = 0; i <= arr.length; i++) {
+    const uncertain = i < arr.length && arr[i] >= 0 && arr[i] >= threshold;
+    if (uncertain && runStart === -1) {
+      runStart = i;
+    } else if (!uncertain && runStart !== -1) {
+      const length = i - runStart;
+      if (length >= minLen) segs.push({ start: runStart, end: i - 1, length });
+      runStart = -1;
+    }
+  }
+  return segs;
+}
+
+// Per-frame membership mask for qualifying segments.
+function getUncertainMask(arr, threshold, minLen) {
+  const mask = new Uint8Array(arr.length);
+  for (const seg of getUncertainSegments(arr, threshold, minLen)) {
+    for (let i = seg.start; i <= seg.end; i++) mask[i] = 1;
+  }
+  return mask;
+}
 
 // Show on timeline toggle
 document.getElementById("alShowTimeline").addEventListener("change", () => {
@@ -3497,12 +3534,21 @@ function updateAlStats() {
   const sorted = [...uncertainties].sort((a, b) => a - b);
   const mean = uncertainties.reduce((a, b) => a + b, 0) / uncertainties.length;
   const median = sorted[Math.floor(sorted.length / 2)];
-  const above = uncertainties.filter((u) => u >= threshold).length;
+
+  // Filter to qualifying consecutive segments (>= min length).
+  const minLen = getMinSegmentLength();
+  const segments = alState.uncertaintyArray
+    ? getUncertainSegments(alState.uncertaintyArray, threshold, minLen)
+    : [];
+  const framesInSegments = segments.reduce((sum, s) => sum + s.length, 0);
 
   document.getElementById("alTotalFrames").textContent = frames.length;
   document.getElementById("alMeanUncertainty").textContent = mean.toFixed(3);
   document.getElementById("alMedianUncertainty").textContent = median.toFixed(3);
-  document.getElementById("alAboveThreshold").textContent = `${above} (${((above / frames.length) * 100).toFixed(1)}%)`;
+  document.getElementById("alAboveThreshold").textContent =
+    `${framesInSegments} (${((framesInSegments / frames.length) * 100).toFixed(1)}%)`;
+  document.getElementById("alSegments").textContent =
+    `${segments.length} (≥${minLen} frame${minLen === 1 ? "" : "s"})`;
 
   // Misclassified count
   const misArr = alState.misclassifiedArray;
@@ -3541,6 +3587,9 @@ function renderUncertaintyOverlay() {
   if (N === 0 || W === 0) return;
 
   const threshold = parseFloat(alThresholdSlider.value);
+  const minLen = getMinSegmentLength();
+  // Only frames inside qualifying segments get the threshold marker.
+  const mask = getUncertainMask(arr, threshold, minLen);
 
   for (let px = 0; px < W; px++) {
     const startFrame = Math.floor((px / W) * N);
@@ -3548,8 +3597,10 @@ function renderUncertaintyOverlay() {
 
     // Get max uncertainty in this pixel's frame range
     let maxU = -1;
+    let inSegment = false;
     for (let i = startFrame; i < endFrame; i++) {
       if (arr[i] >= 0 && arr[i] > maxU) maxU = arr[i];
+      if (mask[i]) inSegment = true;
     }
 
     if (maxU < 0) {
@@ -3562,8 +3613,8 @@ function renderUncertaintyOverlay() {
     }
     ucCtx.fillRect(px, 0, 1, H);
 
-    // Draw threshold marker
-    if (maxU >= threshold) {
+    // Draw threshold marker only for qualifying segments
+    if (inSegment) {
       ucCtx.fillStyle = "rgba(0, 0, 0, 0.3)";
       ucCtx.fillRect(px, 0, 1, 3);
     }
@@ -3598,28 +3649,22 @@ window.addEventListener("resize", () => {
   if (alState.uncertaintyArray) renderUncertaintyOverlay();
 });
 
-// Jump to next uncertain frame
+// Jump to the start of the next qualifying uncertain segment
 document.getElementById("alJumpNext").addEventListener("click", () => {
   if (!alState.uncertaintyArray) { alert("Run inference first."); return; }
   const threshold = parseFloat(alThresholdSlider.value);
-  const arr = alState.uncertaintyArray;
-  const start = currentFrameIndex + 1;
+  const minLen = getMinSegmentLength();
+  const segments = getUncertainSegments(alState.uncertaintyArray, threshold, minLen);
 
-  // Search forward
-  for (let i = start; i < arr.length; i++) {
-    if (arr[i] >= threshold) {
-      seekToFrame(i);
-      return;
-    }
+  if (segments.length === 0) {
+    alert(`No uncertain segments of ${minLen}+ consecutive frames above threshold.`);
+    return;
   }
-  // Wrap around
-  for (let i = 0; i < start && i < arr.length; i++) {
-    if (arr[i] >= threshold) {
-      seekToFrame(i);
-      return;
-    }
-  }
-  alert("No uncertain frames found above threshold.");
+
+  // Next segment starting after the current frame, else wrap to the first.
+  const next = segments.find((s) => s.start > currentFrameIndex) || segments[0];
+  seekToFrame(next.start);
+  setStatus(`Uncertain segment: frames ${next.start}–${next.end} (${next.length} frames).`);
 });
 
 // Jump to next misclassified frame
@@ -3678,6 +3723,7 @@ function saveSettings() {
     trainBsWindow: parseInt(document.getElementById("trainBsWindow").value),
     // Active learning
     alThreshold: parseFloat(alThresholdSlider.value),
+    alMinSegment: getMinSegmentLength(),
     alFramesPerGroup: parseInt(document.getElementById("alFramesPerGroup").value),
     // Paths (last used)
     lastBgPath: ppState.bgPath,
@@ -3741,6 +3787,7 @@ function loadSettings() {
       alThresholdSlider.value = s.alThreshold;
       alThresholdOutput.textContent = s.alThreshold.toFixed(2);
     }
+    if (s.alMinSegment !== undefined) alMinSegmentInput.value = s.alMinSegment;
     if (s.alFramesPerGroup) document.getElementById("alFramesPerGroup").value = s.alFramesPerGroup;
 
     // Restore paths

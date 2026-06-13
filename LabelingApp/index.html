@@ -374,6 +374,12 @@
                 </label>
               </div>
               <div class="form-row">
+                <label><span>Min segment length (frames):</span>
+                  <input id="alMinSegment" type="number" min="1" step="1" value="1" />
+                </label>
+                <span class="hint">Only flag runs of this many consecutive low-confidence frames.</span>
+              </div>
+              <div class="form-row">
                 <label class="checkbox-label">
                   <input id="alShowTimeline" type="checkbox" checked />
                   <span>Show on Timeline</span>
@@ -386,6 +392,7 @@
                 <div>Mean uncertainty: <span id="alMeanUncertainty">-</span></div>
                 <div>Median uncertainty: <span id="alMedianUncertainty">-</span></div>
                 <div>Above threshold: <span id="alAboveThreshold">-</span></div>
+                <div>Uncertain segments: <span id="alSegments">-</span></div>
                 <div>Misclassified: <span id="alMisclassified">-</span></div>
                 <div>Class names: <span id="alClassNames">-</span></div>
               </div>
