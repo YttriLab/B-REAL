@@ -2863,7 +2863,6 @@ document.querySelectorAll(".tab-bar .tab").forEach((btn) => {
 
 const ppState = {
   bgPath: null,
-  outputDir: null,
   taskId: null,
   sseSource: null,
   bgByVideo: {}, // videoName -> background image path (auto-loaded on switch)
@@ -3003,31 +3002,15 @@ document.getElementById("ppPreview").addEventListener("click", async () => {
   }
 });
 
-// Output directory
-document.getElementById("ppSelectOutputDir").addEventListener("click", async () => {
-  if (!window.api) return;
-  const res = await window.api.selectDirectory();
-  if (!res.canceled) {
-    ppState.outputDir = res.path;
-    setPathDisplay("ppOutputDir", res.path);
-  }
-});
-
-// Run preprocessing
+// Run preprocessing — frames always go into the active project's frames/<id>/.
 document.getElementById("ppRun").addEventListener("click", async () => {
   const videoPath = getVideoPath();
   if (!videoPath) { alert("Load a video first."); return; }
 
-  // When a project is open, write frames into the project's frames/<id>/ dir so
-  // they're discoverable by the training checklist. Otherwise use the chosen dir.
-  let outputDir = ppState.outputDir;
-  let outputName;
   const pm = window.projectManager;
-  if (pm && pm.isActive()) {
-    outputDir = pm.getProjectRoot() + "/frames";
-    outputName = pm.getVideoIdFromName(currentVideoName);
-  }
-  if (!outputDir) { alert("Select an output directory first."); return; }
+  if (!pm || !pm.isActive()) { alert("Open a project first."); return; }
+  const outputDir = pm.getProjectRoot() + "/frames";
+  const outputName = pm.getVideoIdFromName(currentVideoName);
 
   const framerateVal = parseInt(document.getElementById("ppFramerate").value);
 
@@ -3044,7 +3027,7 @@ document.getElementById("ppRun").addEventListener("click", async () => {
         crop_params: getCropParams(),
         desired_framerate: framerateVal || null,
         bg_path: ppState.bgPath,
-        output_name: outputName || undefined,
+        output_name: outputName,
       }),
     });
     ppState.taskId = res.task_id;
@@ -3743,7 +3726,6 @@ function saveSettings() {
     alFramesPerGroup: parseInt(document.getElementById("alFramesPerGroup").value),
     // Paths (last used)
     lastBgPath: ppState.bgPath,
-    lastOutputDir: ppState.outputDir,
     bgByVideo: ppState.bgByVideo,
     lastCheckpointPath: alState.checkpointPath,
     lastFrameDirPath: alState.frameDirPath,
@@ -3814,10 +3796,6 @@ function loadSettings() {
       ppState.bgPath = s.lastBgPath;
       setPathDisplay("ppBgPath", s.lastBgPath);
     }
-    if (s.lastOutputDir) {
-      ppState.outputDir = s.lastOutputDir;
-      setPathDisplay("ppOutputDir", s.lastOutputDir);
-    }
     if (s.lastCheckpointPath) {
       alState.checkpointPath = s.lastCheckpointPath;
       setPathDisplay("alCheckpointPath", s.lastCheckpointPath);
@@ -3858,11 +3836,13 @@ document.querySelectorAll(".tab-panel input, .tab-panel select").forEach((el) =>
 const _origPpStatus = document.getElementById("ppStatus");
 const _origPpObserver = new MutationObserver(() => {
   const text = _origPpStatus.textContent;
-  if (text.startsWith("Done:") && ppState.outputDir) {
-    // Auto-set AL frame directory to last preprocessing output
-    if (!alState.frameDirPath) {
-      alState.frameDirPath = ppState.outputDir;
-      setPathDisplay("alFrameDirPath", ppState.outputDir);
+  if (text.startsWith("Done:")) {
+    // Auto-set AL frame directory to the project frames dir for this video.
+    const pm = window.projectManager;
+    const frameDir = pm && pm.isActive() ? pm.getFramesDir(currentVideoName) : null;
+    if (frameDir && !alState.frameDirPath) {
+      alState.frameDirPath = frameDir;
+      setPathDisplay("alFrameDirPath", frameDir);
     }
   }
 });
@@ -3977,7 +3957,27 @@ function updateProjectUI() {
     exportRltBtn.classList.add("hidden");
   }
   renderTrainVideoChecklist();
+  updateProjectGate();
 }
+
+// Show the project gate (blocking overlay) whenever no project is active.
+function updateProjectGate() {
+  const gate = document.getElementById("projectGate");
+  if (!gate) return;
+  const active = window.projectManager && window.projectManager.isActive();
+  gate.classList.toggle("hidden", Boolean(active));
+}
+
+// Gate buttons reuse the existing Project-menu handlers.
+document.getElementById("gateNewProject").addEventListener("click", () => {
+  document.getElementById("newProject").click();
+});
+document.getElementById("gateOpenProject").addEventListener("click", () => {
+  document.getElementById("openProjectBtn").click();
+});
+document.getElementById("gateImportRlt").addEventListener("click", () => {
+  document.getElementById("importRlt").click();
+});
 
 async function restoreProjectVideos(manifest) {
   // Restore behaviors from manifest
@@ -4252,6 +4252,8 @@ document.getElementById("importRlt").addEventListener("click", async () => {
       localStorage.removeItem("lastProjectDir");
     }
   }
+  // Show the gate if nothing restored (no project active).
+  updateProjectGate();
 })();
 
 // ── Save settings on page unload ──────────────────────────────────────────

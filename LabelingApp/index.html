@@ -40,6 +40,19 @@
         </label>
       </header>
 
+      <!-- Project gate: shown until a project is open -->
+      <div id="projectGate" class="project-gate hidden">
+        <div class="project-gate-card">
+          <h2>Open a project to begin</h2>
+          <p>RealtimeASOID keeps your videos, labels, frames, and models together in a project.</p>
+          <div class="project-gate-actions">
+            <button id="gateNewProject" class="primary">New Project</button>
+            <button id="gateOpenProject">Open Project</button>
+            <button id="gateImportRlt">Import .rlt</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Tab navigation -->
       <nav class="tab-bar">
         <button class="tab active" data-tab="label">Label</button>
@@ -201,10 +214,7 @@
               </div>
 
               <h3>Run Preprocessing</h3>
-              <div class="form-row">
-                <button id="ppSelectOutputDir">Output Directory</button>
-                <span id="ppOutputDir" class="path-display">Not set</span>
-              </div>
+              <p class="hint">Frames are saved into the project at <code>frames/&lt;video&gt;/</code>.</p>
               <div class="form-row">
                 <label><span>Framerate:</span>
                   <input id="ppFramerate" type="number" value="30" min="1" max="240" />

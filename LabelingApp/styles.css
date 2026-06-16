@@ -236,6 +236,68 @@ body[data-tab="train"] .player {
   display: none;
 }
 
+/* Project gate — blocks the workspace until a project is open */
+.project-gate {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 20, 34, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 900;
+}
+
+.project-gate.hidden {
+  display: none;
+}
+
+.project-gate-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 32px 36px;
+  max-width: 460px;
+  width: calc(100% - 48px);
+  text-align: center;
+  box-shadow: 0 12px 40px rgba(15, 20, 34, 0.25);
+}
+
+.project-gate-card h2 {
+  margin: 0 0 8px;
+}
+
+.project-gate-card p {
+  margin: 0 0 24px;
+  color: #3b3b44;
+  line-height: 1.5;
+}
+
+.project-gate-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.project-gate-actions button {
+  padding: 9px 16px;
+  border-radius: 6px;
+  border: 1px solid #d4d8e3;
+  background: #fff;
+  color: #1d1d1f;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.project-gate-actions button.primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.project-gate-actions button:hover {
+  filter: brightness(0.97);
+}
+
 .video-shell {
   background: #111;
   border-radius: 8px;

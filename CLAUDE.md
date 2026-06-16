@@ -73,8 +73,8 @@ my_experiment/
 - Video paths are **absolute** (stay where they are); all other paths are **relative** to project root
 - `project-manager.js` manages project state; `saveProgress()` dual-writes to both localStorage and project labels
 - Project actions live in the header **Project ▾** dropdown; last project auto-restored on startup
-- Backward compatible: app works without a project (localStorage-only mode)
-- **When a project is open, artifacts route into it automatically:** Compute Background writes to `backgrounds/bg_<name>.png` and records the path on the video's manifest entry (auto-loaded when you switch videos); Preprocess writes frames to `frames/<id>/`. Without a project these default beside the source video / to a chosen output dir.
+- **A project is required.** On startup, if none is active, a blocking gate overlay (`#projectGate`, shown/hidden by `updateProjectGate()`) offers New / Open / Import .rlt — the workspace is unusable until a project exists. (`localStorage` is still used as a per-video progress cache, but the app no longer runs in a standalone no-project mode.)
+- **Artifacts route into the project automatically:** Compute Background writes to `backgrounds/bg_<name>.png` and records the path on the video's manifest entry (auto-loaded when you switch videos); Preprocess writes frames to `frames/<id>/` (there is no manual output-directory setting).
 - **Training data sources** are a checklist of the project's videos (frames + labels resolved from the manifest); "Add External Source" remains for custom/out-of-project dirs.
 
 ## .rlt File Format

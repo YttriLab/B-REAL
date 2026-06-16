@@ -67,7 +67,7 @@ npm run dist:linux   # Linux (AppImage + deb)
 ## Usage walkthrough
 
 ### 1. Create or open a project
-Use the **Project ▾** menu in the header → *New Project* (choose a folder) or *Open Project*. A project keeps your videos, labels, configs, and models together and auto-restores on next launch. You can also work without a project (labels persist locally in the app).
+A project is required. On launch a gate prompts you to **New Project** (choose a folder), **Open Project**, or **Import .rlt** — these are also in the header **Project ▾** menu. A project keeps your videos, labels, configs, frames, and models together (videos in `frames/<id>/`, backgrounds in `backgrounds/`) and auto-restores on next launch.
 
 ### 2. Add videos
 Click **+** in the **Videos** sidebar to add one or more video files. They appear in the sidebar; click one to load it.
