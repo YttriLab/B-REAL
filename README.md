@@ -81,13 +81,13 @@ In the **Label** tab, add behaviors (e.g. *grooming*, *walking*). Each is auto-a
 Play or step through the video and press a behavior's number key **once to start** a bout and **again to end** it. Bouts appear in the scrollable list, where you can edit times, reassign behaviors, or jump to a bout's start/end.
 
 ### 5. Preprocess
-In the **Preprocess** tab: compute a background, tune the crop preview, then run preprocessing to extract animal-centered frames for each video.
+In the **Preprocess** tab: compute a background, tune the crop preview, then run preprocessing. It extracts **only the labeled frames** (plus a short clip lead-in), cropped to the animal, into the project — so label first, then preprocess.
 
 ### 6. Train
 In the **Train** tab: add data sources (frame dir + label CSV), set hyperparameters, and start training. Watch live loss/accuracy. Optionally enable **Weights & Biases** logging (project name, run name, and API key — the key is passed to the training process via environment variable and never written to disk). When a project is open, the best checkpoint is saved into it and recorded automatically.
 
 ### 7. Infer & refine (Active Learning)
-In the **Active Learning** tab: select a checkpoint and frame directory, run inference, and a per-frame **uncertainty heatmap** (green → red) plus **misclassification markers** appear on the timeline. Jump to the next uncertain/misclassified frame, fix the label, and iterate.
+In the **Active Learning** tab: select a checkpoint and run inference — it scores the **current video on the fly** (no frame directory needed), so it can flag uncertain regions you haven't labeled yet. A per-frame **uncertainty heatmap** (green → red) plus **misclassification markers** appear on the timeline. Jump to the next uncertain segment / misclassified frame, fix the label, and iterate.
 
 ---
 

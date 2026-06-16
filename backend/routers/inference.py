@@ -20,7 +20,11 @@ router = APIRouter()
 
 class InferenceRequest(BaseModel):
     checkpoint_path: str
-    frame_dir: str
+    # Either a pre-extracted frame_dir, OR a video for on-the-fly inference.
+    frame_dir: Optional[str] = None
+    video_path: Optional[str] = None
+    bg_path: Optional[str] = None
+    crop_params: Optional[dict] = None
     frames_per_group: int = 3
     image_size: int = 224
     extra_model_config: Optional[dict] = None
@@ -31,6 +35,8 @@ class InferenceRequest(BaseModel):
 @router.post("/run")
 async def api_run_inference(req: InferenceRequest):
     """Start inference in background. Returns task_id."""
+    if not req.video_path and not req.frame_dir:
+        raise HTTPException(status_code=422, detail="Provide either video_path or frame_dir")
     try:
         task_id = start_inference(
             checkpoint_path=req.checkpoint_path,
@@ -38,6 +44,9 @@ async def api_run_inference(req: InferenceRequest):
             frames_per_group=req.frames_per_group,
             image_size=req.image_size,
             model_config=req.extra_model_config,
+            video_path=req.video_path,
+            bg_path=req.bg_path,
+            crop_params=req.crop_params,
         )
         return {"task_id": task_id}
     except Exception as e:

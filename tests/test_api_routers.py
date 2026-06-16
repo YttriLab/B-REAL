@@ -229,8 +229,40 @@ class TestInferenceRouter:
         assert "task_id" in resp.json()
 
     @pytest.mark.asyncio
+    async def test_run_video_backed(self, ac, synthetic_video, synthetic_background, monkeypatch):
+        import model_tsm
+        import torch
+
+        class FakeModel(torch.nn.Module):
+            num_classes = 2
+            class_names = ["a", "b"]
+            def forward(self, x):
+                return torch.tensor([[0.5, 0.5]] * x.shape[0])
+            def eval(self):
+                return self
+            def to(self, device):
+                return self
+
+        monkeypatch.setattr(
+            model_tsm.TSMClassifier,
+            "load_from_checkpoint",
+            staticmethod(lambda *a, **kw: FakeModel()),
+        )
+
+        video_path, _ = synthetic_video
+        resp = await ac.post("/api/inference/run", json={
+            "checkpoint_path": "fake.ckpt",
+            "video_path": video_path,
+            "bg_path": synthetic_background,
+            "crop_params": {"box_size": 32, "difference_threshold": 5},
+        })
+        assert resp.status_code == 200
+        assert "task_id" in resp.json()
+
+    @pytest.mark.asyncio
     async def test_run_validation(self, ac):
-        resp = await ac.post("/api/inference/run", json={})
+        # Neither video_path nor frame_dir → 422
+        resp = await ac.post("/api/inference/run", json={"checkpoint_path": "x.ckpt"})
         assert resp.status_code == 422
 
     @pytest.mark.asyncio

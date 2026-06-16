@@ -215,12 +215,7 @@
               </div>
 
               <h3>Run Preprocessing</h3>
-              <p class="hint">Frames are saved into the project at <code>frames/&lt;video&gt;/</code>.</p>
-              <div class="form-row">
-                <label><span>Framerate:</span>
-                  <input id="ppFramerate" type="number" value="30" min="1" max="240" />
-                </label>
-              </div>
+              <p class="hint">Only labeled frames are extracted, saved into the project at <code>frames/&lt;video&gt;/</code>.</p>
               <div class="form-row">
                 <button id="ppRun" class="primary">Run Preprocessing</button>
                 <button id="ppStop" class="danger" disabled>Stop</button>
@@ -360,10 +355,7 @@
                 <button id="alSelectCheckpoint">Select Checkpoint</button>
                 <span id="alCheckpointPath" class="path-display">No checkpoint</span>
               </div>
-              <div class="form-row">
-                <button id="alSelectFrameDir">Select Frame Directory</button>
-                <span id="alFrameDirPath" class="path-display">Not set</span>
-              </div>
+              <p class="hint">Inference runs on the current video on the fly — no frame directory needed.</p>
               <div class="form-row">
                 <label><span>Frames per group:</span>
                   <input id="alFramesPerGroup" type="number" value="3" min="2" max="10" />

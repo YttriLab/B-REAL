@@ -74,7 +74,7 @@ my_experiment/
 - `project-manager.js` manages project state; `saveProgress()` dual-writes to both localStorage and project labels
 - Project actions live in the header **Project ▾** dropdown; last project auto-restored on startup
 - **A project is required.** On startup, if none is active, a blocking gate overlay (`#projectGate`, shown/hidden by `updateProjectGate()`) offers New / Open / Import .rlt — the workspace is unusable until a project exists. (`localStorage` is still used as a per-video progress cache, but the app no longer runs in a standalone no-project mode.)
-- **Artifacts route into the project automatically:** Compute Background writes to `backgrounds/bg_<name>.png` and records the path on the video's manifest entry (auto-loaded when you switch videos); Preprocess writes frames to `frames/<id>/` (there is no manual output-directory setting).
+- **Artifacts route into the project automatically:** Compute Background writes to `backgrounds/bg_<name>.png` and records the path on the video's manifest entry (auto-loaded when you switch videos); Preprocess writes **only labeled** frames to `frames/<id>/` named by native index (no manual output-directory setting). Active Learning needs no frame dir — it infers on the fly from the video.
 - **Training data sources** are a checklist of the project's videos (frames + labels resolved from the manifest); "Add External Source" remains for custom/out-of-project dirs.
 
 ## .rlt File Format
@@ -132,11 +132,12 @@ Projects export to a single HDF5 `.rlt` file in **two flavors** (mirroring SLEAP
 
 ## Workflow Pipeline
 
-1. **Preprocess**: Video → background subtraction → contour detection → center-of-mass crop → flat PNGs (`output_dir/video_name/0.png, 1.png, ...`)
-2. **Label**: Load video in player, define behaviors (keys 1-9, 0), annotate temporal bouts, export CSV
+1. **Label**: Load video in player, define behaviors (keys 1-9, 0), annotate temporal bouts.
+2. **Preprocess**: Video → background subtraction → contour detection → center-of-mass crop. Extracts **only labeled frames** (each bout expanded by `frames_per_group-1` lead-in for clip context), named by **native frame index**: `frames/<id>/<nativeIndex>.png`. The renderer computes the ranges from the video's bouts and sends `frame_ranges` to `/api/preprocess/run`.
 3. **Train**: Frame dirs + label CSVs → TSM classifier (EfficientNet backbone) → checkpoint in `lightning_logs/`. Optional W&B logging (project/run name, API key passed via env var to subprocess)
-4. **Infer**: Checkpoint + frame dir → per-frame predictions + normalized entropy uncertainty
-5. **Active Learning**: Uncertainty heatmap (green→red) + misclassification markers (magenta ticks) on timeline, jump to next uncertain/misclassified frame for relabeling
+4. **Infer / Active Learning**: Checkpoint + **the video itself** → `inference_service.run_inference_video` decodes + crops frames on the fly (same `FindRatBoundingBox` + background as training) → per-frame predictions + normalized entropy, indexed by native frame number. No pre-extracted frame dir. Uncertainty heatmap (green→red) + misclassification ticks on the timeline; jump to next uncertain segment / misclassified frame for relabeling.
+
+**Frame-index invariant:** native video frame number is the single canonical index across labels (`time` column), extracted frame filenames, and inference output. There is no framerate downsampling.
 
 ## CSV Formats
 

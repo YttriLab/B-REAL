@@ -157,16 +157,124 @@ def run_inference(
     }
 
 
+def run_inference_video(
+    checkpoint_path: str,
+    video_path: str,
+    bg_path: str | None,
+    crop_params: dict,
+    frames_per_group: int = 3,
+    image_size: int = 224,
+    num_frames_bg: int = 500,
+    model_config: dict | None = None,
+    on_progress: callable = None,
+    cancel_flag: callable = None,
+) -> dict:
+    """
+    Run per-frame inference by decoding + cropping the video on the fly — no
+    pre-extracted frame directory. Frames are cropped with the SAME pipeline as
+    training (FindRatBoundingBox + background), so the model sees the same
+    distribution. Results are indexed by native frame number, matching the
+    label/timeline index space.
+    """
+    from model_tsm import TSMClassifier
+    from tune_cropping import FindRatBoundingBox, get_background_avg
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    load_kwargs = model_config or {}
+    model = TSMClassifier.load_from_checkpoint(
+        checkpoint_path, map_location=device, strict=False, **load_kwargs
+    )
+    model.to(device)
+    model.eval()
+
+    num_classes = model.num_classes
+    class_names = model.class_names
+
+    if bg_path:
+        bg = cv2.imread(bg_path, cv2.IMREAD_GRAYSCALE).astype(np.float32)
+    else:
+        bg = get_background_avg(video_path, num_frames_bg)
+    cropper = FindRatBoundingBox(bg, **crop_params)
+
+    transform = _build_val_transform(image_size)
+    cap = cv2.VideoCapture(video_path)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    T = frames_per_group
+    window = []  # rolling window of the last T cropped RGB frames
+    results = []
+    frame_index = 0
+
+    with torch.no_grad():
+        while True:
+            if cancel_flag and cancel_flag():
+                break
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            # Crop, then match _load_frame's BGR->RGB conversion exactly.
+            *_, cropped = cropper(frame)
+            rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
+            window.append(rgb)
+            if len(window) > T:
+                window.pop(0)
+
+            if len(window) == T:
+                targets = {"image": window[0]}
+                for i in range(1, T):
+                    targets[f"image{i}"] = window[i]
+                transformed = transform(**targets)
+                tensors = [transformed["image"]]
+                for i in range(1, T):
+                    tensors.append(transformed[f"image{i}"])
+                clip = torch.stack(tensors).unsqueeze(0).to(device)
+
+                logits = model(clip)
+                probs = F.softmax(logits, dim=1).squeeze(0)
+                entropy = -(probs * torch.log(probs + 1e-10)).sum()
+                max_entropy = math.log(num_classes)
+                normalized_entropy = (entropy / max_entropy).item() if max_entropy > 0 else 0.0
+
+                results.append({
+                    "index": frame_index,
+                    "predictions": probs.cpu().tolist(),
+                    "uncertainty": normalized_entropy,
+                    "predicted_class": probs.argmax().item(),
+                })
+                if on_progress:
+                    on_progress(len(results), max(0, total_frames - (T - 1)))
+
+            frame_index += 1
+
+    cap.release()
+    return {
+        "frames": results,
+        "class_names": class_names,
+        "total_frames": frame_index,
+        "frames_per_group": T,
+    }
+
+
 # ── Async task management ─────────────────────────────────────────────────
 
 def start_inference(
     checkpoint_path: str,
-    frame_dir: str,
+    frame_dir: str | None = None,
     frames_per_group: int = 3,
     image_size: int = 224,
     model_config: dict | None = None,
+    video_path: str | None = None,
+    bg_path: str | None = None,
+    crop_params: dict | None = None,
 ) -> str:
-    """Launch inference in a background thread. Returns task_id."""
+    """
+    Launch inference in a background thread. Returns task_id.
+
+    If ``video_path`` is given, frames are decoded + cropped on the fly
+    (Active Learning). Otherwise it reads a pre-extracted ``frame_dir``.
+    """
     task_id = str(uuid.uuid4())
     task = {
         "status": "running",
@@ -184,15 +292,28 @@ def start_inference(
                 task["progress"] = done
                 task["total"] = total
 
-            result = run_inference(
-                checkpoint_path=checkpoint_path,
-                frame_dir=frame_dir,
-                frames_per_group=frames_per_group,
-                image_size=image_size,
-                model_config=model_config,
-                on_progress=on_progress,
-                cancel_flag=lambda: task["cancel"],
-            )
+            if video_path:
+                result = run_inference_video(
+                    checkpoint_path=checkpoint_path,
+                    video_path=video_path,
+                    bg_path=bg_path,
+                    crop_params=crop_params or {},
+                    frames_per_group=frames_per_group,
+                    image_size=image_size,
+                    model_config=model_config,
+                    on_progress=on_progress,
+                    cancel_flag=lambda: task["cancel"],
+                )
+            else:
+                result = run_inference(
+                    checkpoint_path=checkpoint_path,
+                    frame_dir=frame_dir,
+                    frames_per_group=frames_per_group,
+                    image_size=image_size,
+                    model_config=model_config,
+                    on_progress=on_progress,
+                    cancel_flag=lambda: task["cancel"],
+                )
 
             if task["cancel"]:
                 task["status"] = "cancelled"

@@ -3003,6 +3003,26 @@ document.getElementById("ppPreview").addEventListener("click", async () => {
 });
 
 // Run preprocessing — frames always go into the active project's frames/<id>/.
+// Merge the current video's bouts into inclusive [start, end] native-index
+// ranges, each extended by `leadIn` frames so the clip context exists on disk.
+function computeLabeledFrameRanges(boutList, leadIn) {
+  if (!Array.isArray(boutList) || boutList.length === 0) return [];
+  const raw = boutList
+    .filter((b) => Number.isFinite(b.startFrame) && Number.isFinite(b.endFrame))
+    .map((b) => [
+      Math.max(0, Math.min(b.startFrame, b.endFrame) - leadIn),
+      Math.max(b.startFrame, b.endFrame),
+    ])
+    .sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const [s, e] of raw) {
+    const last = merged[merged.length - 1];
+    if (last && s <= last[1] + 1) last[1] = Math.max(last[1], e);
+    else merged.push([s, e]);
+  }
+  return merged;
+}
+
 document.getElementById("ppRun").addEventListener("click", async () => {
   const videoPath = getVideoPath();
   if (!videoPath) { alert("Load a video first."); return; }
@@ -3012,7 +3032,14 @@ document.getElementById("ppRun").addEventListener("click", async () => {
   const outputDir = pm.getProjectRoot() + "/frames";
   const outputName = pm.getVideoIdFromName(currentVideoName);
 
-  const framerateVal = parseInt(document.getElementById("ppFramerate").value);
+  // Only labeled regions are extracted (training needs nothing else; AL reads
+  // the video on the fly). Extend each bout by frames_per_group-1 for clip context.
+  const leadIn = (parseInt(document.getElementById("trainFramesPerGroup").value, 10) || 3) - 1;
+  const frameRanges = computeLabeledFrameRanges(bouts, leadIn);
+  if (frameRanges.length === 0) {
+    alert("No labeled bouts for this video — label some frames first (only labeled frames are extracted).");
+    return;
+  }
 
   document.getElementById("ppRun").disabled = true;
   document.getElementById("ppStop").disabled = false;
@@ -3025,7 +3052,7 @@ document.getElementById("ppRun").addEventListener("click", async () => {
         video_path: videoPath,
         output_dir: outputDir,
         crop_params: getCropParams(),
-        desired_framerate: framerateVal || null,
+        frame_ranges: frameRanges,
         bg_path: ppState.bgPath,
         output_name: outputName,
       }),
@@ -3313,7 +3340,6 @@ document.getElementById("trainStop").addEventListener("click", async () => {
 
 const alState = {
   checkpointPath: null,
-  frameDirPath: null,
   taskId: null,
   sseSource: null,
   results: null, // { frames: [...], class_names: [...] }
@@ -3394,20 +3420,14 @@ document.getElementById("alSelectCheckpoint").addEventListener("click", async ()
   }
 });
 
-// Select frame directory
-document.getElementById("alSelectFrameDir").addEventListener("click", async () => {
-  if (!window.api) return;
-  const res = await window.api.selectDirectory();
-  if (!res.canceled) {
-    alState.frameDirPath = res.path;
-    setPathDisplay("alFrameDirPath", res.path);
-  }
-});
-
-// Run inference
+// Run inference — decodes + crops the current video on the fly (no frame dir).
 document.getElementById("alRunInference").addEventListener("click", async () => {
   if (!alState.checkpointPath) { alert("Select a checkpoint first."); return; }
-  if (!alState.frameDirPath) { alert("Select a frame directory first."); return; }
+  const videoPath = getVideoPath();
+  if (!videoPath) { alert("Load a video first."); return; }
+
+  const pm = window.projectManager;
+  const bgPath = pm && pm.isActive() ? pm.getVideoBackgroundAbs(currentVideoName) : ppState.bgPath;
 
   const framesPerGroup = parseInt(document.getElementById("alFramesPerGroup").value) || 3;
 
@@ -3420,7 +3440,9 @@ document.getElementById("alRunInference").addEventListener("click", async () => 
       method: "POST",
       body: JSON.stringify({
         checkpoint_path: alState.checkpointPath,
-        frame_dir: alState.frameDirPath,
+        video_path: videoPath,
+        bg_path: bgPath || null,
+        crop_params: getCropParams(),
         frames_per_group: framesPerGroup,
       }),
     });
@@ -3702,7 +3724,6 @@ function saveSettings() {
     // Crop params
     cropParams: getCropParams(),
     bgNumFrames: parseInt(document.getElementById("ppBgNumFrames").value),
-    ppFramerate: parseInt(document.getElementById("ppFramerate").value),
     // Training config
     trainVariant: document.getElementById("trainVariant").value,
     trainFramesPerGroup: parseInt(document.getElementById("trainFramesPerGroup").value),
@@ -3728,7 +3749,6 @@ function saveSettings() {
     lastBgPath: ppState.bgPath,
     bgByVideo: ppState.bgByVideo,
     lastCheckpointPath: alState.checkpointPath,
-    lastFrameDirPath: alState.frameDirPath,
     // Data sources
     trainDataSources: trainState.dataSources,
   };
@@ -3758,7 +3778,6 @@ function loadSettings() {
       setSlider("ppOpen2", "ppOpen2Val", s.cropParams.open2_kernel);
     }
     if (s.bgNumFrames) document.getElementById("ppBgNumFrames").value = s.bgNumFrames;
-    if (s.ppFramerate) document.getElementById("ppFramerate").value = s.ppFramerate;
 
     // Training config
     const setVal = (id, val) => { if (val !== undefined && val !== null) document.getElementById(id).value = val; };
@@ -3800,10 +3819,6 @@ function loadSettings() {
       alState.checkpointPath = s.lastCheckpointPath;
       setPathDisplay("alCheckpointPath", s.lastCheckpointPath);
     }
-    if (s.lastFrameDirPath) {
-      alState.frameDirPath = s.lastFrameDirPath;
-      setPathDisplay("alFrameDirPath", s.lastFrameDirPath);
-    }
 
     // Restore data sources
     if (s.trainDataSources && s.trainDataSources.length) {
@@ -3828,25 +3843,6 @@ document.querySelectorAll(".tab-panel input, .tab-panel select").forEach((el) =>
   el.addEventListener("input", debouncedSave);
   el.addEventListener("change", debouncedSave);
 });
-
-// ── Auto-populate paths ───────────────────────────────────────────────────
-// After preprocessing completes, auto-populate frame dir in Active Learning
-// After CSV export, auto-populate label path in Training
-
-const _origPpStatus = document.getElementById("ppStatus");
-const _origPpObserver = new MutationObserver(() => {
-  const text = _origPpStatus.textContent;
-  if (text.startsWith("Done:")) {
-    // Auto-set AL frame directory to the project frames dir for this video.
-    const pm = window.projectManager;
-    const frameDir = pm && pm.isActive() ? pm.getFramesDir(currentVideoName) : null;
-    if (frameDir && !alState.frameDirPath) {
-      alState.frameDirPath = frameDir;
-      setPathDisplay("alFrameDirPath", frameDir);
-    }
-  }
-});
-_origPpObserver.observe(_origPpStatus, { childList: true, characterData: true, subtree: true });
 
 // ── Enhanced error handling for backend operations ────────────────────────
 

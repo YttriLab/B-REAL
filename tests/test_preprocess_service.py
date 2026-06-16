@@ -125,31 +125,32 @@ class TestCropVideoFlat:
         indices = sorted(int(f.replace(".png", "")) for f in pngs)
         assert indices == list(range(num_frames))
 
-    def test_framerate_downsampling(self, synthetic_video, tmp_path):
+    def test_sparse_extraction_only_writes_requested_frames(self, synthetic_video, tmp_path):
         video_path, _ = synthetic_video
-        out_dir = str(tmp_path / "cropped_ds")
+        out_dir = str(tmp_path / "cropped_sparse")
         os.makedirs(out_dir, exist_ok=True)
-        # Video is 30fps, downsample to 15fps → skip_size=2 → half the frames
+        # Only frames 5..8 (inclusive) — named by native index.
         result = crop_video_flat(
             video_path=video_path,
             output_dir=out_dir,
             crop_params={"box_size": 32, "difference_threshold": 5},
-            desired_framerate=15,
+            frame_ranges=[[5, 8]],
         )
-        pngs = [f for f in os.listdir(result) if f.endswith(".png")]
-        assert len(pngs) == 15
+        pngs = sorted(int(f.replace(".png", "")) for f in os.listdir(result) if f.endswith(".png"))
+        assert pngs == [5, 6, 7, 8]
 
-    def test_invalid_framerate_raises(self, synthetic_video, tmp_path):
+    def test_sparse_extraction_merges_multiple_ranges(self, synthetic_video, tmp_path):
         video_path, _ = synthetic_video
-        out_dir = str(tmp_path / "cropped_bad_fps")
+        out_dir = str(tmp_path / "cropped_sparse2")
         os.makedirs(out_dir, exist_ok=True)
-        with pytest.raises(ValueError, match="not an integer multiple"):
-            crop_video_flat(
-                video_path=video_path,
-                output_dir=out_dir,
-                crop_params={"box_size": 32, "difference_threshold": 5},
-                desired_framerate=7,
-            )
+        result = crop_video_flat(
+            video_path=video_path,
+            output_dir=out_dir,
+            crop_params={"box_size": 32, "difference_threshold": 5},
+            frame_ranges=[[1, 2], [10, 12]],
+        )
+        pngs = sorted(int(f.replace(".png", "")) for f in os.listdir(result) if f.endswith(".png"))
+        assert pngs == [1, 2, 10, 11, 12]
 
     def test_cancel_stops_early(self, synthetic_video, tmp_path):
         video_path, num_frames = synthetic_video

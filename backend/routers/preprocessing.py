@@ -45,7 +45,8 @@ class RunRequest(BaseModel):
     video_path: str
     output_dir: str
     crop_params: CropParams = CropParams()
-    desired_framerate: Optional[int] = None
+    # Inclusive [start, end] native-index ranges to extract. None = all frames.
+    frame_ranges: Optional[list[list[int]]] = None
     bg_path: Optional[str] = None
     num_frames_bg: int = 500
     output_name: Optional[str] = None
@@ -86,7 +87,7 @@ async def api_run_preprocessing(req: RunRequest):
             video_path=req.video_path,
             output_dir=req.output_dir,
             crop_params=req.crop_params.model_dump(),
-            desired_framerate=req.desired_framerate,
+            frame_ranges=req.frame_ranges,
             bg_path=req.bg_path,
             num_frames_bg=req.num_frames_bg,
             output_name=req.output_name,

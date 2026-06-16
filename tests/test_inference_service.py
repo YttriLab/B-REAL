@@ -178,6 +178,53 @@ class TestRunInference:
         assert progress_log[-1] == (18, 18)
 
 
+# ── run_inference_video (on-the-fly Active Learning) ─────────────────────
+
+class TestRunInferenceVideo:
+    @pytest.fixture
+    def mock_model(self, monkeypatch):
+        class FakeModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.num_classes = 3
+                self.class_names = ["walk", "groom", "rear"]
+                self.linear = torch.nn.Linear(1, 3)
+
+            def forward(self, x):
+                return torch.tensor([[1.0, 0.5, 0.2]] * x.shape[0])
+
+            def eval(self):
+                return self
+
+            def to(self, device):
+                return self
+
+        fake = FakeModel()
+        import model_tsm
+        monkeypatch.setattr(model_tsm.TSMClassifier, "load_from_checkpoint", staticmethod(lambda *a, **k: fake))
+        return fake
+
+    def test_results_indexed_by_native_frame(self, synthetic_video, synthetic_background, mock_model):
+        from backend.services.inference_service import run_inference_video
+
+        video_path, num_frames = synthetic_video
+        results = run_inference_video(
+            checkpoint_path="fake.ckpt",
+            video_path=video_path,
+            bg_path=synthetic_background,
+            crop_params={"box_size": 32, "difference_threshold": 5},
+            frames_per_group=3,
+            image_size=64,
+        )
+        assert results["class_names"] == ["walk", "groom", "rear"]
+        # T=3 over num_frames → results for native indices 2..num_frames-1.
+        indices = [f["index"] for f in results["frames"]]
+        assert indices == list(range(2, num_frames))
+        for f in results["frames"]:
+            assert 0.0 <= f["uncertainty"] <= 1.0
+            assert abs(sum(f["predictions"]) - 1.0) < 1e-4
+
+
 # ── start_inference (async task) ─────────────────────────────────────────
 
 class TestStartInference:

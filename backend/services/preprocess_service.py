@@ -94,11 +94,29 @@ def preview_frame(
 
 # ── Full video preprocessing (flat frame output) ──────────────────────────
 
+def _wanted_set(frame_ranges, total_frames):
+    """Build the set of native frame indices to extract from inclusive ranges.
+
+    Returns None when no ranges are given (meaning: extract every frame).
+    """
+    if not frame_ranges:
+        return None
+    wanted = set()
+    for r in frame_ranges:
+        start, end = int(r[0]), int(r[1])
+        if end < start:
+            start, end = end, start
+        start = max(0, start)
+        for i in range(start, end + 1):
+            wanted.add(i)
+    return wanted
+
+
 def crop_video_flat(
     video_path: str,
     output_dir: str,
     crop_params: dict,
-    desired_framerate: int | None = None,
+    frame_ranges: list | None = None,
     bg_path: str | None = None,
     num_frames_bg: int = 500,
     output_name: str | None = None,
@@ -106,9 +124,15 @@ def crop_video_flat(
     cancel_flag: Callable[[], bool] | None = None,
 ) -> str:
     """
-    Extract cropped frames from a video, saving each as a flat PNG.
+    Extract cropped frames from a video, each saved as a flat PNG named by its
+    native (0-based) video frame index: output_dir/video_name/{frame}.png.
 
-    Output: output_dir/video_name/0.png, 1.png, 2.png, ...
+    If ``frame_ranges`` (a list of inclusive [start, end] native-index pairs) is
+    given, only those frames are written — the label-aware "sparse" extraction
+    used for training. If omitted, every frame is extracted (back-compat).
+
+    Naming by native frame index keeps the extracted frames aligned with the
+    label CSV ``time`` column and the app's timeline.
 
     Returns the output subdirectory path.
     """
@@ -123,28 +147,15 @@ def crop_video_flat(
         bg = get_background_avg(video_path, num_frames_bg)
 
     cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    if not fps:
-        raise ValueError("Cannot read framerate from video")
+    wanted = _wanted_set(frame_ranges, total_frames)
+    target_total = len(wanted) if wanted is not None else total_frames
 
-    # Framerate downsampling
-    if desired_framerate is not None:
-        if fps % desired_framerate == 0:
-            skip_size = int(fps // desired_framerate)
-        else:
-            raise ValueError(
-                f"Video framerate ({fps}) not an integer multiple of desired framerate ({desired_framerate})"
-            )
-    else:
-        skip_size = 1
-
-    estimated_output = total_frames // skip_size
     cropper = FindRatBoundingBox(bg, **crop_params)
 
-    frame_counter = 0
-    processed_counter = 0
+    frame_index = 0
+    written = 0
 
     while True:
         if cancel_flag and cancel_flag():
@@ -154,19 +165,15 @@ def crop_video_flat(
         if not ret:
             break
 
-        if frame_counter % skip_size != 0:
-            frame_counter += 1
-            continue
+        if wanted is None or frame_index in wanted:
+            *_, cropped = cropper(frame)
+            out_path = os.path.join(out_sub_dir, f"{frame_index}.png")
+            cv2.imwrite(out_path, cropped)
+            written += 1
+            if on_progress:
+                on_progress(written, target_total)
 
-        *_, cropped = cropper(frame)
-        out_path = os.path.join(out_sub_dir, f"{processed_counter}.png")
-        cv2.imwrite(out_path, cropped)
-
-        frame_counter += 1
-        processed_counter += 1
-
-        if on_progress:
-            on_progress(processed_counter, estimated_output)
+        frame_index += 1
 
     cap.release()
     return out_sub_dir
@@ -176,7 +183,7 @@ def start_preprocessing(
     video_path: str,
     output_dir: str,
     crop_params: dict,
-    desired_framerate: int | None = None,
+    frame_ranges: list | None = None,
     bg_path: str | None = None,
     num_frames_bg: int = 500,
     output_name: str | None = None,
@@ -203,7 +210,7 @@ def start_preprocessing(
                 video_path=video_path,
                 output_dir=output_dir,
                 crop_params=crop_params,
-                desired_framerate=desired_framerate,
+                frame_ranges=frame_ranges,
                 bg_path=bg_path,
                 num_frames_bg=num_frames_bg,
                 output_name=output_name,
