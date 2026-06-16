@@ -177,6 +177,47 @@ class TestRoundTrip:
             assert "models" not in hf
 
 
+# ── Package export (package=True bundles everything) ───────────────────────
+
+class TestPackageExport:
+    def test_embeds_regenerable_data(self, sample_project, tmp_path):
+        project_dir, _ = sample_project
+        rlt = str(tmp_path / "pkg.rlt")
+        summary = export_rlt(project_dir, rlt, package=True)
+        assert summary["packaged"] is True
+        assert summary["frames"] == 6      # 2 videos x 3 frames (sample_project)
+        assert summary["backgrounds"] == 2
+        assert summary["checkpoints"] == 1
+        with h5py.File(rlt, "r") as hf:
+            assert hf.attrs["packaged"]
+            assert "frames" in hf and "backgrounds" in hf and "models" in hf
+
+    def test_round_trip_restores_files(self, sample_project, tmp_path):
+        project_dir, _ = sample_project
+        rlt = str(tmp_path / "pkg.rlt")
+        export_rlt(project_dir, rlt, package=True)
+
+        dest = tmp_path / "imported"
+        import_rlt(rlt, str(dest))
+        # Frames, backgrounds, and the checkpoint are materialized on disk.
+        assert (dest / "frames" / "vid_a" / "0.png").exists()
+        assert (dest / "frames" / "vid_b" / "2.png").exists()
+        assert (dest / "backgrounds" / "bg_vid_a.png").exists()
+        assert (dest / "models" / "checkpoints" / "epoch=1.ckpt").exists()
+        # Bytes survive intact
+        orig = os.path.join(project_dir, "frames", "vid_a", "0.png")
+        assert open(orig, "rb").read() == (dest / "frames" / "vid_a" / "0.png").read_bytes()
+
+    def test_inspect_reports_package(self, sample_project, tmp_path):
+        project_dir, _ = sample_project
+        rlt = str(tmp_path / "pkg.rlt")
+        export_rlt(project_dir, rlt, package=True)
+        info = inspect_rlt(rlt)
+        assert info["packaged"] is True
+        assert info["frames"] == 6
+        assert info["checkpoints"] == 1
+
+
 # ── inspect_rlt ────────────────────────────────────────────────────────────
 
 class TestInspectRlt:

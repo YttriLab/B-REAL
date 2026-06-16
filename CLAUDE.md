@@ -79,22 +79,26 @@ my_experiment/
 
 ## .rlt File Format
 
-Projects can be exported to a single `.rlt` file — a **lightweight, uncompressed HDF5** modeled on SLEAP's base `.slp` format. It stores only the irreplaceable parts of a project; regenerable data is rebuilt after import.
+Projects export to a single HDF5 `.rlt` file in **two flavors** (mirroring SLEAP's `.slp` vs `.pkg.slp`):
 
-**Stored:** manifest (project info, behaviors, all config), video references (paths + filenames), and hand-annotated label bouts.
-**Not stored:** preprocessed frames, backgrounds, model checkpoints (all regenerable from videos + config).
+- **Lightweight** (default, "Export .rlt (labels only)") — manifest + video references + hand-annotated label bouts. Small, shareable; frames/backgrounds/models are regenerated after import.
+- **Package** (`package=True`, "Export Package .rlt (everything)") — all of the above PLUS preprocessed frames (gzip), background images, and model checkpoints/exports. A self-contained, train-anywhere bundle (large).
 
 **HDF5 layout:**
 ```
-/                               (attr: rlt_version = 2)
+/                               (attrs: rlt_version = 3, packaged)
 /                               (attr: manifest — JSON string with paths + config)
 /labels/{video_id}              (dataset: UTF-8 CSV string of bouts)
+/frames/{video_id}/{idx}        (dataset: uint8 PNG bytes, gzip)   [package only]
+/backgrounds/{video_id}         (dataset: uint8 PNG bytes, gzip)   [package only]
+/models/checkpoints/{name}      (dataset: uint8 blob)              [package only]
+/models/exports/{name}          (dataset: uint8 blob)              [package only]
 ```
 
-- Video paths are preserved in the manifest; on import, the app prompts to re-link any video whose path doesn't resolve on the new machine (SLEAP-style)
-- On import, `import_rlt` writes `project.json` + label CSVs and creates the standard empty subdirs (`frames/`, `backgrounds/`, `models/`) for regenerated data
-- Export/import goes through the backend (`/api/project/export-rlt`, `/api/project/import-rlt`, `/api/project/inspect-rlt`)
-- `rlt_service.py` handles all HDF5 read/write via `h5py`; no compression (labels are small text)
+- Video paths are preserved in the manifest; on import the app prompts to re-link any video whose path doesn't resolve (SLEAP-style)
+- `import_rlt` auto-detects which groups are present and restores accordingly (labels always; frames/backgrounds/models if packaged), writing `project.json` + the standard subdirs
+- Export/import goes through the backend (`/api/project/export-rlt` with `package` flag, `/api/project/import-rlt`, `/api/project/inspect-rlt`)
+- `rlt_service.py` handles all HDF5 read/write via `h5py`
 
 ## Key Patterns
 

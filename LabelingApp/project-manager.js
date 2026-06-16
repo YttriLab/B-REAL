@@ -297,13 +297,15 @@
 
   // ── .rlt export / import ────────────────────────────────────────────────
 
-  async function exportRlt() {
+  async function exportRlt(options) {
     if (!activeProject) {
       throw new Error("No active project to export.");
     }
     await flushManifest();
 
-    const defaultName = (activeProject.manifest.name || "project") + ".rlt";
+    const pkg = !!(options && options.package);
+    const suffix = pkg ? "-package.rlt" : ".rlt";
+    const defaultName = (activeProject.manifest.name || "project") + suffix;
     const saveResult = await window.api.rltSaveDialog({ defaultPath: defaultName });
     if (saveResult.canceled) return null;
 
@@ -314,6 +316,7 @@
       body: JSON.stringify({
         project_dir: activeProject.rootDir,
         output_path: saveResult.path,
+        package: pkg,
       }),
     });
     if (!res.ok) {

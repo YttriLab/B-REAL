@@ -3944,17 +3944,20 @@ function updateProjectUI() {
   const saveBtn = document.getElementById("saveProject");
   const closeBtn = document.getElementById("closeProject");
   const exportRltBtn = document.getElementById("exportRlt");
+  const exportRltPkgBtn = document.getElementById("exportRltPackage");
   if (window.projectManager && window.projectManager.isActive()) {
     const manifest = window.projectManager.getManifest();
     nameEl.textContent = manifest.name || "Untitled";
     saveBtn.classList.remove("hidden");
     closeBtn.classList.remove("hidden");
     exportRltBtn.classList.remove("hidden");
+    exportRltPkgBtn.classList.remove("hidden");
   } else {
     nameEl.textContent = "";
     saveBtn.classList.add("hidden");
     closeBtn.classList.add("hidden");
     exportRltBtn.classList.add("hidden");
+    exportRltPkgBtn.classList.add("hidden");
   }
   renderTrainVideoChecklist();
   updateProjectGate();
@@ -4177,7 +4180,7 @@ document.getElementById("closeProject").addEventListener("click", async () => {
 
 // ── .rlt export / import ──
 
-document.getElementById("exportRlt").addEventListener("click", async () => {
+async function doExportRlt(pkg) {
   if (!window.projectManager || !window.projectManager.isActive()) return;
   // Save all current state first
   saveProgress();
@@ -4191,21 +4194,29 @@ document.getElementById("exportRlt").addEventListener("click", async () => {
   }
   await window.projectManager.flushManifest();
 
-  setStatus("Exporting project to .rlt...");
+  setStatus(pkg ? "Exporting full package (.rlt) — this can take a while..." : "Exporting project to .rlt...");
   try {
-    const result = await window.projectManager.exportRlt();
+    const result = await window.projectManager.exportRlt({ package: pkg });
     if (!result) {
       setStatus("Export canceled.");
       return;
     }
     const s = result.summary;
-    setStatus(
-      `Exported .rlt: ${s.videos} video reference(s), ${s.labels} label set(s).`
-    );
+    if (s.packaged) {
+      setStatus(
+        `Exported package .rlt: ${s.videos} video(s), ${s.labels} label set(s), ` +
+        `${s.frames} frames, ${s.backgrounds} backgrounds, ${s.checkpoints} checkpoints, ${s.exports} exports.`
+      );
+    } else {
+      setStatus(`Exported .rlt: ${s.videos} video reference(s), ${s.labels} label set(s).`);
+    }
   } catch (err) {
     setStatus("Export failed: " + (err.message || err));
   }
-});
+}
+
+document.getElementById("exportRlt").addEventListener("click", () => doExportRlt(false));
+document.getElementById("exportRltPackage").addEventListener("click", () => doExportRlt(true));
 
 document.getElementById("importRlt").addEventListener("click", async () => {
   if (!window.projectManager) {
