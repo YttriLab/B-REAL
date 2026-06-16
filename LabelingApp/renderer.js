@@ -1458,18 +1458,32 @@ const getBoutCountForVideo = (videoName) => {
   return progress && Array.isArray(progress.bouts) ? progress.bouts.length : 0;
 };
 
+// Set the .content grid columns based on whether the video sidebar and the
+// player are shown. The player is hidden on the Train tab (it never uses video).
+const updateContentLayout = () => {
+  const contentEl = document.querySelector(".content");
+  if (!contentEl) return;
+  const sidebarShown = videoList.length > 0;
+  const playerShown = document.body.dataset.tab !== "train";
+  let cols;
+  if (sidebarShown && playerShown) cols = "auto 2.2fr 1fr";
+  else if (!sidebarShown && playerShown) cols = "2.2fr 1fr";
+  else if (sidebarShown && !playerShown) cols = "auto 1fr";
+  else cols = "1fr";
+  contentEl.style.gridTemplateColumns = cols;
+};
+
 const renderVideoSidebar = () => {
   const sidebar = document.getElementById("videoSidebar");
   const listEl = document.getElementById("videoListEl");
-  const contentEl = document.querySelector(".content");
 
   if (videoList.length === 0) {
     sidebar.classList.add("hidden");
-    contentEl.style.gridTemplateColumns = "2.2fr 1fr";
+    updateContentLayout();
     return;
   }
   sidebar.classList.remove("hidden");
-  contentEl.style.gridTemplateColumns = "auto 2.2fr 1fr";
+  updateContentLayout();
 
   listEl.innerHTML = "";
   videoList.forEach((entry) => {
@@ -2839,6 +2853,8 @@ document.querySelectorAll(".tab-bar .tab").forEach((btn) => {
     document.querySelectorAll(".tab-panel").forEach((p) => {
       p.classList.toggle("active", p.dataset.tab === tabName);
     });
+    document.body.dataset.tab = tabName;
+    updateContentLayout();
     if (tabName === "train") renderTrainVideoChecklist();
   });
 });
@@ -3919,7 +3935,9 @@ document.getElementById("toggleSidebar").addEventListener("click", () => {
 });
 
 // Render sidebar on startup and auto-load last active video
+document.body.dataset.tab = "label"; // matches the default active tab
 renderVideoSidebar();
+updateContentLayout();
 // Clean up duplicate behaviors (spacing/case variants) from older saved data.
 {
   const merged = mergeDuplicateBehaviors();

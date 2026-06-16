@@ -230,6 +230,12 @@ body {
   box-shadow: 0 4px 12px rgba(15, 20, 34, 0.08);
 }
 
+/* The Train tab never uses the video — hide the player (it stays in the DOM,
+   so video state survives). The .content grid columns are reflowed in JS. */
+body[data-tab="train"] .player {
+  display: none;
+}
+
 .video-shell {
   background: #111;
   border-radius: 8px;
