@@ -31,6 +31,7 @@ const KEY_ORDER = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
 let behaviors = loadBehaviors();
 let bouts = [];
 let activeStarts = new Map();
+const selectedBehaviorIds = new Set(); // behaviors ticked for merging
 
 const insertBoutSorted = (bout) => {
   let i = bouts.length;
@@ -1100,6 +1101,7 @@ const renderBehaviors = () => {
     empty.className = "muted";
     empty.textContent = "No behaviors yet.";
     behaviorList.appendChild(empty);
+    updateMergeButton();
     return;
   }
 
@@ -1109,6 +1111,17 @@ const renderBehaviors = () => {
     if (activeStarts.has(behavior.id)) {
       row.classList.add("behavior-active");
     }
+
+    const mergeCheck = document.createElement("input");
+    mergeCheck.type = "checkbox";
+    mergeCheck.className = "merge-check";
+    mergeCheck.title = "Select to merge";
+    mergeCheck.checked = selectedBehaviorIds.has(behavior.id);
+    mergeCheck.addEventListener("change", () => {
+      if (mergeCheck.checked) selectedBehaviorIds.add(behavior.id);
+      else selectedBehaviorIds.delete(behavior.id);
+      updateMergeButton();
+    });
 
     const keyBadge = document.createElement("span");
     keyBadge.className = "key-badge";
@@ -1172,17 +1185,20 @@ const renderBehaviors = () => {
     removeButton.addEventListener("click", () => {
       behaviors = behaviors.filter((item) => item.id !== behavior.id);
       activeStarts.delete(behavior.id);
+      selectedBehaviorIds.delete(behavior.id);
       saveBehaviors();
       renderBehaviors();
       renderBouts();
     });
 
+    row.appendChild(mergeCheck);
     row.appendChild(keyBadge);
     row.appendChild(name);
     row.appendChild(activeIndicator);
     row.appendChild(removeButton);
     behaviorList.appendChild(row);
   });
+  updateMergeButton();
 };
 
 const renderBouts = () => {
@@ -1369,6 +1385,125 @@ const mergeDuplicateBehaviors = () => {
   saveBehaviors();
   return idMap.size;
 };
+
+// Reassign every bout from `fromIds` to `target` (id + name), across the current
+// video and all stored per-video progress.
+const reassignBoutsToBehavior = (fromIds, target) => {
+  const fromSet = new Set(fromIds);
+  const apply = (list) => {
+    let changed = false;
+    for (const bout of list) {
+      if (fromSet.has(bout.behaviorId)) {
+        bout.behaviorId = target.id;
+        bout.behaviorName = target.name;
+        changed = true;
+      }
+    }
+    return changed;
+  };
+  apply(bouts);
+  try {
+    const vids = (typeof videoList !== "undefined" && Array.isArray(videoList)) ? videoList : [];
+    for (const v of vids) {
+      const prog = loadProgress(v.name);
+      if (prog && Array.isArray(prog.bouts) && apply(prog.bouts)) {
+        localStorage.setItem(getProgressKey(v.name), JSON.stringify(prog));
+      }
+    }
+  } catch { /* ignore */ }
+};
+
+// Destructively merge `ids` into the behavior `targetId`: reassign their bouts
+// to the target and remove the others.
+const mergeBehaviors = (ids, targetId) => {
+  const target = behaviors.find((b) => b.id === targetId);
+  if (!target) return;
+  const fromIds = ids.filter((id) => id !== targetId && behaviors.some((b) => b.id === id));
+  if (fromIds.length === 0) return;
+
+  reassignBoutsToBehavior(fromIds, target);
+  const removeSet = new Set(fromIds);
+  behaviors = behaviors.filter((b) => !removeSet.has(b.id));
+  for (const id of removeSet) { activeStarts.delete(id); selectedBehaviorIds.delete(id); }
+  selectedBehaviorIds.delete(targetId);
+
+  saveBehaviors();
+  renderBehaviors();
+  renderBouts();
+  saveProgress();
+  setStatus(`Merged ${fromIds.length + 1} behaviors into "${target.name}".`);
+};
+
+// Show/hide the "Merge selected" button based on how many behaviors are ticked.
+function updateMergeButton() {
+  const btn = document.getElementById("mergeBehaviors");
+  if (!btn) return;
+  const count = behaviors.filter((b) => selectedBehaviorIds.has(b.id)).length;
+  btn.classList.toggle("hidden", count < 2);
+  btn.textContent = count >= 2 ? `Merge ${count} selected` : "Merge selected";
+}
+
+// Modal to pick which selected behavior to keep. Resolves to its id, or null.
+function chooseMergeTarget(selected) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    const modal = document.createElement("div");
+    modal.className = "modal";
+
+    const title = document.createElement("h3");
+    title.textContent = "Merge behaviors";
+    const body = document.createElement("p");
+    body.textContent =
+      `Combine ${selected.length} behaviors into one. Their bouts are reassigned ` +
+      `to the kept behavior, and the others are removed. This can't be undone.`;
+
+    const label = document.createElement("label");
+    label.textContent = "Keep: ";
+    const select = document.createElement("select");
+    for (const b of selected) {
+      const opt = document.createElement("option");
+      opt.value = b.id;
+      opt.textContent = `${b.name} (key ${b.key})`;
+      select.appendChild(opt);
+    }
+    label.appendChild(select);
+
+    const actions = document.createElement("div");
+    actions.className = "modal-actions";
+    const mergeBtn = document.createElement("button");
+    mergeBtn.className = "primary";
+    mergeBtn.textContent = "Merge";
+    const cancelBtn = document.createElement("button");
+    cancelBtn.className = "ghost";
+    cancelBtn.textContent = "Cancel";
+
+    const close = (val) => {
+      document.removeEventListener("keydown", onKey, true);
+      overlay.remove();
+      resolve(val);
+    };
+    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); close(null); } };
+    mergeBtn.addEventListener("click", () => close(select.value));
+    cancelBtn.addEventListener("click", () => close(null));
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) close(null); });
+    document.addEventListener("keydown", onKey, true);
+
+    actions.append(mergeBtn, cancelBtn);
+    modal.append(title, body, label, actions);
+    overlay.append(modal);
+    document.body.append(overlay);
+    select.focus();
+  });
+}
+
+document.getElementById("mergeBehaviors").addEventListener("click", async () => {
+  const selected = behaviors.filter((b) => selectedBehaviorIds.has(b.id));
+  if (selected.length < 2) return;
+  const targetId = await chooseMergeTarget(selected);
+  if (!targetId) return;
+  mergeBehaviors(selected.map((b) => b.id), targetId);
+});
 
 const getProgressKey = (videoName) => `progress_${videoName}`;
 

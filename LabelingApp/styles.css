@@ -523,12 +523,17 @@ body.webcodecs video {
 
 .behavior-row {
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  grid-template-columns: auto auto 1fr auto auto;
   gap: 12px;
   align-items: center;
   padding: 8px 10px;
   border-radius: 8px;
   background: #f6f7fb;
+}
+
+.behavior-row .merge-check {
+  margin: 0;
+  cursor: pointer;
 }
 
 .behavior-row.behavior-active {

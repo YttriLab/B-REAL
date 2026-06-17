@@ -102,6 +102,7 @@ Projects export to a single HDF5 `.rlt` file in **two flavors** (mirroring SLEAP
 
 ## Key Patterns
 
+- **Behavior names**: normalized (trim + collapse internal whitespace, case-insensitive match) at every create/import/rename site; `mergeDuplicateBehaviors()` collapses existing duplicates on load. **Merge UI**: tick behavior rows + "Merge selected" → `mergeBehaviors(ids, targetId)` reassigns their bouts to one survivor (across the current video + all stored per-video progress via `reassignBoutsToBehavior`) and removes the rest (destructive).
 - **Async task management**: Services use background tasks with task IDs, progress callbacks, and cancellation support. Task registries are module-level dicts cleared between tests via `autouse` fixture.
 - **Pydantic v2**: `model_config` is a reserved field name — use `extra_model_config` instead.
 - **CSV import**: `parseCsvAndImport(content, sourceName)` is the reusable core; `importCsv()` and Import Project both delegate to it.
