@@ -231,12 +231,21 @@ def start_training(config: dict) -> str:
             task["process"] = proc
             task["status"] = "running"
 
-            proc.wait()
+            # communicate() drains stdout/stderr concurrently — required to avoid
+            # a deadlock where the subprocess blocks on a full OS pipe buffer
+            # while we wait() on it.
+            stdout_b, stderr_b = proc.communicate()
 
             if proc.returncode != 0:
-                stderr = proc.stderr.read().decode("utf-8", errors="replace")
+                stderr = (stderr_b or b"").decode("utf-8", errors="replace").strip()
+                stdout = (stdout_b or b"").decode("utf-8", errors="replace").strip()
+                # Some crashes print the useful traceback to stdout (or nothing to
+                # stderr at all); fall back so the user never sees a bare "error".
+                detail = stderr or stdout or f"Training process exited with code {proc.returncode} (no output)."
+                # error must be set before status: the SSE poller breaks as soon
+                # as it sees status=="error", so the detail has to be there first.
+                task["error"] = detail[-2000:]  # Last 2000 chars
                 task["status"] = "error"
-                task["error"] = stderr[-2000:]  # Last 2000 chars
             else:
                 # Read final metrics line for completion info
                 try:
@@ -249,8 +258,8 @@ def start_training(config: dict) -> str:
                 except Exception:
                     task["status"] = "completed"
         except Exception as e:
+            task["error"] = str(e) or repr(e)
             task["status"] = "error"
-            task["error"] = str(e)
 
     thread = threading.Thread(target=_run, daemon=True)
     thread.start()
@@ -273,6 +282,11 @@ def read_latest_metrics(task_id: str) -> dict:
         if lines:
             latest = json.loads(lines[-1])
             latest["status"] = task["status"]
+            # If the run errored after writing some metrics, the last line is a
+            # normal "training" record with no error field — attach the detail so
+            # the client doesn't just see a bare "error".
+            if task["status"] == "error" and task.get("error"):
+                latest["error"] = task["error"]
             return latest
     except Exception:
         pass

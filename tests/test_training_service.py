@@ -93,6 +93,21 @@ class TestReadLatestMetrics:
         assert result["train_loss"] == 0.3
         assert result["status"] == "running"
 
+    def test_error_detail_attached_when_metrics_exist(self, tmp_path):
+        """A run that errors after writing metrics still surfaces task['error']."""
+        from backend.services.training_service import _tasks
+        metrics_file = tmp_path / "metrics.jsonl"
+        metrics_file.write_text(json.dumps({"epoch": 0, "train_loss": 1.5}) + "\n")
+
+        _tasks["errored-test"] = {
+            "status": "error",
+            "metrics_path": str(metrics_file),
+            "error": "Traceback: boom",
+        }
+        result = read_latest_metrics("errored-test")
+        assert result["status"] == "error"
+        assert result["error"] == "Traceback: boom"
+
 
 # ── stop_training ────────────────────────────────────────────────────────
 

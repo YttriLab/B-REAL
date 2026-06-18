@@ -3482,6 +3482,15 @@ document.getElementById("trainStart").addEventListener("click", async () => {
           trainState.sseSource?.close();
           document.getElementById("trainStart").disabled = false;
           document.getElementById("trainStop").disabled = true;
+          if (data.status === "error") {
+            const detail = (data.error || "").trim();
+            const statusEl = document.getElementById("trainStatus");
+            statusEl.textContent = detail
+              ? `Error: ${detail.split("\n").pop()}`
+              : "Error (no details returned by backend)";
+            statusEl.title = detail || "";
+            if (detail) console.error("[training] subprocess failed:\n" + detail);
+          }
           if (data.best_checkpoint) {
             document.getElementById("trainStatus").textContent = `Done! Best: ${data.best_checkpoint}`;
             // Auto-record the trained checkpoint into the project manifest so it
