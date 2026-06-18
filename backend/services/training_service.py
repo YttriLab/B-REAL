@@ -42,6 +42,7 @@ TRAIN_SCRIPT = r'''
 import sys
 import os
 import json
+import numpy as np
 import torch
 import lightning as L
 from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping, Callback
@@ -54,50 +55,96 @@ from model import load_data, MultiImageDataModule, train_test_split
 from model_tsm import TSMClassifier
 
 
+def _emit(metrics_path, payload):
+    """Append one JSON-lines event to the metrics file (tailed by the SSE endpoint)."""
+    with open(metrics_path, "a") as f:
+        f.write(json.dumps(payload) + "\n")
+
+
 class MetricsWriter(Callback):
     """Write per-epoch metrics to a JSON-lines file for the SSE endpoint."""
 
-    def __init__(self, metrics_path: str, max_epochs: int):
+    def __init__(self, metrics_path: str, max_epochs: int, patience: int):
         super().__init__()
         self.metrics_path = metrics_path
         self.max_epochs = max_epochs
+        self.patience = patience
+        self.best_val_loss = float("inf")
+        self.stagnation = 0  # epochs since val_loss last improved (early-stopping counter)
 
     def on_train_epoch_end(self, trainer, pl_module):
+        val_loss = float(trainer.callback_metrics.get("val_loss", 0))
+        # Track best val_loss and how many epochs we've gone without improving it
+        # (mirrors EarlyStopping's wait_count so the UI can show progress to stop).
+        if val_loss < self.best_val_loss:
+            self.best_val_loss = val_loss
+            self.stagnation = 0
+        else:
+            self.stagnation += 1
+
         metrics = {
             "epoch": trainer.current_epoch,
             "total_epochs": self.max_epochs,
             "train_loss": float(trainer.callback_metrics.get("train_loss", 0)),
             "train_acc": float(trainer.callback_metrics.get("train_balanced_acc", 0)),
-            "val_loss": float(trainer.callback_metrics.get("val_loss", 0)),
+            "val_loss": val_loss,
             "val_acc": float(trainer.callback_metrics.get("val_balanced_acc", 0)),
             "val_mcc": float(trainer.callback_metrics.get("val_mcc", 0)),
             "lr": float(trainer.optimizers[0].param_groups[0]["lr"]),
+            "best_val_loss": self.best_val_loss,
+            "stagnation_epochs": self.stagnation,
+            "patience": self.patience,
             "status": "training",
         }
-        with open(self.metrics_path, "a") as f:
-            f.write(json.dumps(metrics) + "\n")
+        _emit(self.metrics_path, metrics)
 
 
 def main():
     config_path = sys.argv[1]
     metrics_path = sys.argv[2]
 
+    def info(message, **extra):
+        """Surface a human-readable startup/progress line to the UI via the SSE stream."""
+        print(message, flush=True)
+        _emit(metrics_path, {"status": "starting", "message": message, **extra})
+
     config = OmegaConf.load(config_path)
     torch.set_float32_matmul_precision("medium")
 
+    dl = OmegaConf.to_container(config.data_loading, resolve=True)
+    accel = "cuda" if torch.cuda.is_available() else "cpu"
+    info(f"Device: {accel.upper()}"
+         + (f" ({torch.cuda.get_device_name(0)})" if accel == "cuda" else ""))
+    info(f"Loading data from {len(dl['frame_dirs'])} source(s)...")
+
     # Load data
-    all_file_paths, all_labels, all_class_names_union, all_boundary_dists = load_data(
-        **OmegaConf.to_container(config.data_loading, resolve=True)
-    )
+    all_file_paths, all_labels, all_class_names_union, all_boundary_dists = load_data(**dl)
+
+    total_samples = sum(len(d) for d in all_labels)
+    flat = [lbl for d in all_labels for lbl in d]
+    dist = {all_class_names_union[i]: int(c)
+            for i, c in zip(*np.unique(flat, return_counts=True))} if flat else {}
+    info(f"Loaded {total_samples} samples across {len(all_labels)} dataset(s).")
+    info(f"Classes ({len(all_class_names_union)}): {', '.join(all_class_names_union)}")
+    info(f"Class distribution: {dist}")
+    if total_samples == 0:
+        raise RuntimeError(
+            "No training samples found. Have you run Preprocess so the labeled "
+            "frames exist on disk, and do the frame indices match the labels?"
+        )
 
     train_data, valid_data, test_data, test_clip_sizes = train_test_split(
         all_file_paths, all_labels, all_boundary_dists,
         **OmegaConf.to_container(config.data, resolve=True)
     )
+    info(f"Split: {len(train_data[1])} train / {len(valid_data[1])} val / {len(test_data[1])} test")
 
     # Class weights
     class_ids, counts = torch.unique(torch.tensor(train_data[1]), return_counts=True)
     weights = counts.sum() / counts
+
+    info(f"Building model (variant {config.model.get('variant', 'b0')}, "
+         f"max {config.max_epochs} epochs)...")
 
     data_module = MultiImageDataModule(train_data, valid_data, test_data)
 
@@ -121,12 +168,13 @@ def main():
         dirpath=checkpoint_dir,
         monitor="val_loss", mode="min", save_top_k=1
     )
+    patience = config.callbacks.early_stopping_patience
     early_stop_cb = EarlyStopping(
         monitor="val_loss",
-        patience=config.callbacks.early_stopping_patience,
+        patience=patience,
         mode="min",
     )
-    metrics_cb = MetricsWriter(metrics_path, config.max_epochs)
+    metrics_cb = MetricsWriter(metrics_path, config.max_epochs, patience)
 
     # Logger (optional wandb)
     logger = None
@@ -146,6 +194,7 @@ def main():
         accelerator="auto",
     )
 
+    info(f"Starting training (early stopping after {patience} stagnant epochs)...")
     trainer.fit(model, data_module)
 
     # Write completion
@@ -264,6 +313,30 @@ def start_training(config: dict) -> str:
     thread = threading.Thread(target=_run, daemon=True)
     thread.start()
     return task_id
+
+
+def read_all_metrics(task_id: str) -> list[dict]:
+    """Read every JSON-lines event written so far (for ordered SSE streaming)."""
+    task = get_task(task_id)
+    if not task:
+        return []
+    metrics_path = task.get("metrics_path")
+    if not metrics_path or not os.path.exists(metrics_path):
+        return []
+    out = []
+    try:
+        with open(metrics_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    out.append(json.loads(line))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return out
 
 
 def read_latest_metrics(task_id: str) -> dict:

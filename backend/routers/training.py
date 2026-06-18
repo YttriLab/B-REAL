@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from backend.services.training_service import (
     start_training,
     read_latest_metrics,
+    read_all_metrics,
     stop_training,
     list_checkpoints,
     get_task,
@@ -134,10 +135,19 @@ async def api_training_status(task_id: str):
         raise HTTPException(status_code=404, detail="Task not found")
 
     async def event_stream():
+        # Stream every event line in order (startup info messages + per-epoch
+        # metrics), not just the latest, so nothing written between polls is lost.
+        sent = 0
         while True:
-            metrics = read_latest_metrics(task_id)
-            yield f"data: {json.dumps(metrics)}\n\n"
-            if metrics.get("status") in ("completed", "error", "cancelled"):
+            lines = read_all_metrics(task_id)
+            while sent < len(lines):
+                yield f"data: {json.dumps(lines[sent])}\n\n"
+                sent += 1
+            # Terminal states (error/cancelled) live on the task, not the file —
+            # emit a final event carrying status + error detail, then stop.
+            status = get_task(task_id).get("status")
+            if status in ("completed", "error", "cancelled"):
+                yield f"data: {json.dumps(read_latest_metrics(task_id))}\n\n"
                 break
             await asyncio.sleep(1.0)
 

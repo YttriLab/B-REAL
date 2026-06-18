@@ -9,6 +9,7 @@ import pytest
 from backend.services.training_service import (
     get_task,
     list_checkpoints,
+    read_all_metrics,
     read_latest_metrics,
     start_training,
     stop_training,
@@ -107,6 +108,29 @@ class TestReadLatestMetrics:
         result = read_latest_metrics("errored-test")
         assert result["status"] == "error"
         assert result["error"] == "Traceback: boom"
+
+
+# ── read_all_metrics ───────────────────────────────────────────────────────
+
+class TestReadAllMetrics:
+    def test_returns_all_lines_in_order(self, tmp_path):
+        from backend.services.training_service import _tasks
+        metrics_file = tmp_path / "metrics.jsonl"
+        events = [
+            {"status": "starting", "message": "Loading data..."},
+            {"status": "starting", "message": "Loaded 100 samples."},
+            {"status": "training", "epoch": 0, "best_val_loss": 0.5, "stagnation_epochs": 0},
+        ]
+        metrics_file.write_text("\n".join(json.dumps(e) for e in events) + "\n")
+        _tasks["all-metrics-test"] = {"status": "training", "metrics_path": str(metrics_file)}
+
+        result = read_all_metrics("all-metrics-test")
+        assert len(result) == 3
+        assert [e.get("message") for e in result[:2]] == ["Loading data...", "Loaded 100 samples."]
+        assert result[2]["stagnation_epochs"] == 0
+
+    def test_nonexistent_task(self):
+        assert read_all_metrics("nope") == []
 
 
 # ── stop_training ────────────────────────────────────────────────────────

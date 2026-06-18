@@ -1137,6 +1137,21 @@ button.danger:disabled {
   font-weight: 600;
 }
 
+.train-log {
+  margin-top: 10px;
+  padding: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #1e1e24;
+  color: #d6d6e0;
+  border-radius: 8px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* ═══ Preview area ═══ */
 
 .preview-area {

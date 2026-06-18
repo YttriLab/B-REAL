@@ -3508,6 +3508,13 @@ document.getElementById("trainStart").addEventListener("click", async () => {
   document.getElementById("trainStop").disabled = false;
   document.getElementById("trainStatus").textContent = "Starting...";
   document.getElementById("trainMetrics").style.display = "grid";
+  const trainLogEl = document.getElementById("trainLog");
+  trainLogEl.textContent = "";
+  trainLogEl.style.display = "block";
+  const appendTrainLog = (line) => {
+    trainLogEl.textContent += (trainLogEl.textContent ? "\n" : "") + line;
+    trainLogEl.scrollTop = trainLogEl.scrollHeight;
+  };
 
   try {
     const res = await backendFetch("/api/training/start", {
@@ -3519,15 +3526,39 @@ document.getElementById("trainStart").addEventListener("click", async () => {
     trainState.sseSource = backendSSE(
       `/api/training/status/${res.task_id}`,
       (data) => {
-        document.getElementById("trainStatus").textContent = data.status || "training";
+        // Verbose startup/progress lines from the subprocess.
+        if (data.message) {
+          appendTrainLog(data.message);
+          document.getElementById("trainStatus").textContent = data.message;
+        } else {
+          document.getElementById("trainStatus").textContent = data.status || "training";
+        }
         if (data.epoch !== undefined) {
           document.getElementById("trainEpoch").textContent = data.epoch + 1;
           document.getElementById("trainTotalEpochs").textContent = data.total_epochs || "-";
           const pct = data.total_epochs ? Math.round(((data.epoch + 1) / data.total_epochs) * 100) : 0;
           document.getElementById("trainProgress").value = pct;
+          // Per-epoch summary line in the log (skip the final completion event,
+          // which carries no train_loss).
+          if (data.train_loss !== undefined && data.status === "training") {
+            const parts = [
+              `epoch ${data.epoch + 1}/${data.total_epochs || "?"}`,
+              `train_loss ${data.train_loss.toFixed(4)}`,
+              `val_loss ${data.val_loss.toFixed(4)}`,
+            ];
+            if (data.stagnation_epochs !== undefined)
+              parts.push(`stagnation ${data.stagnation_epochs}/${data.patience}`);
+            appendTrainLog(parts.join("  "));
+          }
         }
         if (data.train_loss !== undefined) document.getElementById("trainLossVal").textContent = data.train_loss.toFixed(4);
         if (data.val_loss !== undefined) document.getElementById("trainValLoss").textContent = data.val_loss.toFixed(4);
+        if (data.best_val_loss !== undefined && isFinite(data.best_val_loss))
+          document.getElementById("trainBestValLoss").textContent = data.best_val_loss.toFixed(4);
+        if (data.stagnation_epochs !== undefined) {
+          const patience = data.patience !== undefined ? data.patience : "-";
+          document.getElementById("trainStagnation").textContent = `${data.stagnation_epochs} / ${patience}`;
+        }
         if (data.train_acc !== undefined) document.getElementById("trainAccVal").textContent = (data.train_acc * 100).toFixed(1) + "%";
         if (data.val_acc !== undefined) document.getElementById("trainValAcc").textContent = (data.val_acc * 100).toFixed(1) + "%";
         if (data.lr !== undefined) document.getElementById("trainLrVal").textContent = data.lr.toExponential(2);
@@ -3543,7 +3574,12 @@ document.getElementById("trainStart").addEventListener("click", async () => {
               ? `Error: ${detail.split("\n").pop()}`
               : "Error (no details returned by backend)";
             statusEl.title = detail || "";
-            if (detail) console.error("[training] subprocess failed:\n" + detail);
+            if (detail) {
+              console.error("[training] subprocess failed:\n" + detail);
+              appendTrainLog("\nERROR:\n" + detail);
+            }
+          } else if (data.status === "cancelled") {
+            appendTrainLog("\nCancelled.");
           }
           if (data.best_checkpoint) {
             document.getElementById("trainStatus").textContent = `Done! Best: ${data.best_checkpoint}`;
