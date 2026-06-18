@@ -30,7 +30,12 @@ async def ac():
 async def test_health(ac):
     resp = await ac.get("/api/health")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok"}
+    body = resp.json()
+    assert body["status"] == "ok"
+    # Health also reports the interpreter + GPU the backend will train on.
+    assert "device" in body
+    assert "cuda_available" in body["device"]
+    assert "python" in body["device"]
 
 
 # ── Preprocessing router ────────────────────────────────────────────────

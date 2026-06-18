@@ -112,9 +112,21 @@ def main():
     torch.set_float32_matmul_precision("medium")
 
     dl = OmegaConf.to_container(config.data_loading, resolve=True)
-    accel = "cuda" if torch.cuda.is_available() else "cpu"
-    info(f"Device: {accel.upper()}"
-         + (f" ({torch.cuda.get_device_name(0)})" if accel == "cuda" else ""))
+    if torch.cuda.is_available():
+        info(f"Device: CUDA ({torch.cuda.get_device_name(0)})")
+    else:
+        # Explain WHY we fell back to CPU so the log is self-diagnosing.
+        reasons = [f"torch {torch.__version__}", f"torch.version.cuda={torch.version.cuda}"]
+        if torch.version.cuda is None:
+            reasons.append("this is a CPU-only torch build — reinstall the CUDA wheel")
+        cvd = os.environ.get("CUDA_VISIBLE_DEVICES")
+        if cvd is not None and cvd.strip() in ("", "-1"):
+            reasons.append(f"CUDA_VISIBLE_DEVICES={cvd!r} hides all GPUs")
+        try:
+            torch.zeros(1).cuda()  # surface the real CUDA init error, if any
+        except Exception as e:
+            reasons.append(f"cuda init failed: {type(e).__name__}: {e}")
+        info("Device: CPU — GPU unavailable (" + "; ".join(reasons) + ")")
     info(f"Loading data from {len(dl['frame_dirs'])} source(s)...")
 
     # Load data
