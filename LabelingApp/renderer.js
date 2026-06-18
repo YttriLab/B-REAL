@@ -1566,10 +1566,10 @@ const saveProgress = () => {
   // Auto-save labels to project directory
   try {
     if (window.projectManager && window.projectManager.isActive() && currentVideoName) {
-      const csv = generateBoutsCsv(bouts);
+      const csv = generateTrainingLabelCsv(bouts);
       window.projectManager.saveVideoLabels(currentVideoName, csv).catch(() => {});
     }
-  } catch { /* project manager not ready or generateBoutsCsv not yet defined */ }
+  } catch { /* project manager not ready or generators not yet defined */ }
   // Update sidebar bout counts
   try { renderVideoSidebar(); } catch { /* sidebar not ready yet */ }
   // Rebuild misclassification overlay when bouts change
@@ -2071,6 +2071,47 @@ const generateBoutsCsv = (boutsArr) => {
   return [header, ...rows].join("\n");
 };
 
+// Frame-indexed one-hot matrix — the canonical project label format consumed by
+// the trainer (model.py::load_data). The `time` column is the NATIVE frame index
+// (same index space as the extracted `{n}.png` files), and there is one 0/1
+// column per behavior that has bouts. `load_data` takes argmax over each row to
+// get the frame's class, so exactly one column is set per row.
+//
+// Only frames that fall inside a bout get a row (sparse — matching sparse frame
+// extraction). Lead-in / gap frames are intentionally omitted: on disk they act
+// only as triplet context for a labeled frame, never as labeled samples, so they
+// must not appear in the label map (an all-zero row would otherwise argmax to the
+// first behavior and mislabel the frame).
+const generateTrainingLabelCsv = (boutsArr) => {
+  // Behavior columns: names that actually have bouts, in first-appearance order.
+  const behaviorNames = [];
+  const seen = new Set();
+  for (const bout of boutsArr) {
+    if (!seen.has(bout.behaviorName)) {
+      seen.add(bout.behaviorName);
+      behaviorNames.push(bout.behaviorName);
+    }
+  }
+  if (behaviorNames.length === 0) return "time\n"; // no labels yet
+
+  // frame index → behavior column (bouts are non-overlapping; if any do overlap,
+  // last-write-wins, which is fine for an argmax one-hot).
+  const frameToCol = new Map();
+  for (const bout of boutsArr) {
+    const col = behaviorNames.indexOf(bout.behaviorName);
+    for (let f = bout.startFrame; f <= bout.endFrame; f++) frameToCol.set(f, col);
+  }
+
+  const frames = [...frameToCol.keys()].sort((a, b) => a - b);
+  const header = ["time", ...behaviorNames.map(csvEscape)].join(",");
+  const rows = frames.map((f) => {
+    const cols = new Array(behaviorNames.length).fill(0);
+    cols[frameToCol.get(f)] = 1;
+    return f + "," + cols.join(",");
+  });
+  return [header, ...rows].join("\n");
+};
+
 const exportCsv = async () => {
   if (bouts.length === 0) {
     setStatus("No bouts to export yet.");
@@ -2200,11 +2241,38 @@ const parseCsvAndImport = (content, sourceName = "CSV") => {
     const numBehaviors = behaviorNames.length;
     const active = new Array(numBehaviors).fill(false);
     const startFrames = new Array(numBehaviors).fill(0);
+    let prevFrame = null;
+
+    const closeBout = (b, endFrame) => {
+      let behavior = findBehaviorByName(behaviorNames[b]);
+      if (!behavior) {
+        const key = KEY_ORDER[behaviors.length] || "";
+        behavior = { id: Date.now() + "-" + Math.random(), name: normalizeBehaviorName(behaviorNames[b]), key };
+        behaviors.push(behavior);
+      }
+      insertBoutSorted({
+        behaviorId: behavior.id,
+        behaviorName: behavior.name,
+        startFrame: startFrames[b],
+        endFrame
+      });
+      imported++;
+    };
 
     for (const line of dataLines) {
       const fields = parseCsvLine(line);
       const frameIdx = parseInt(fields[0], 10);
       if (isNaN(frameIdx)) continue;
+
+      // Sparse matrices (only labeled frames present) have no explicit "off"
+      // row at a bout's end — a gap in the frame index implies the run ended at
+      // the previous present frame. Close any still-open bouts at that boundary.
+      if (prevFrame !== null && frameIdx > prevFrame + 1) {
+        for (let b = 0; b < numBehaviors; b++) {
+          if (active[b]) { active[b] = false; closeBout(b, prevFrame); }
+        }
+      }
+      prevFrame = frameIdx;
 
       for (let b = 0; b < numBehaviors; b++) {
         const val = parseFloat(fields[b + 1]);
@@ -2215,42 +2283,16 @@ const parseCsvAndImport = (content, sourceName = "CSV") => {
           startFrames[b] = frameIdx;
         } else if (!on && active[b]) {
           active[b] = false;
-          let behavior = findBehaviorByName(behaviorNames[b]);
-          if (!behavior) {
-            const key = KEY_ORDER[behaviors.length] || "";
-            behavior = { id: Date.now() + "-" + Math.random(), name: normalizeBehaviorName(behaviorNames[b]), key };
-            behaviors.push(behavior);
-          }
-          insertBoutSorted({
-            behaviorId: behavior.id,
-            behaviorName: behavior.name,
-            startFrame: startFrames[b],
-            endFrame: frameIdx - 1
-          });
-          imported++;
+          closeBout(b, frameIdx - 1);
         }
       }
     }
 
-    // Close any still-active bouts at the last frame
+    // Close any still-active bouts at the last present frame
     const lastFields = parseCsvLine(dataLines[dataLines.length - 1]);
     const lastFrame = parseInt(lastFields[0], 10);
     for (let b = 0; b < numBehaviors; b++) {
-      if (active[b] && !isNaN(lastFrame)) {
-        let behavior = findBehaviorByName(behaviorNames[b]);
-        if (!behavior) {
-          const key = KEY_ORDER[behaviors.length] || "";
-          behavior = { id: Date.now() + "-" + Math.random(), name: normalizeBehaviorName(behaviorNames[b]), key };
-          behaviors.push(behavior);
-        }
-        insertBoutSorted({
-          behaviorId: behavior.id,
-          behaviorName: behavior.name,
-          startFrame: startFrames[b],
-          endFrame: lastFrame
-        });
-        imported++;
-      }
+      if (active[b] && !isNaN(lastFrame)) closeBout(b, lastFrame);
     }
 
     setStatus(`Imported ${imported} bouts (from frame-level labels) from ${sourceName}`);
@@ -3387,7 +3429,19 @@ document.getElementById("trainStart").addEventListener("click", async () => {
     for (const name of trainState.selectedVideos) {
       const frameDir = pm.getFramesDir(name);
       const labelPath = pm.getVideoLabelsAbs(name);
-      if (frameDir && labelPath) projectSources.push({ frameDir, labelPath });
+      if (!frameDir || !labelPath) continue;
+      // Regenerate the on-disk label file from the canonical (frame-indexed)
+      // bouts right before training. This guarantees the trainer reads the
+      // frame-indexed one-hot format `load_data` expects — and migrates any
+      // label file still saved in the old timestamp bout format.
+      const videoBouts = name === currentVideoName
+        ? bouts
+        : ((loadProgress(name) || {}).bouts || []);
+      if (videoBouts.length > 0) {
+        try { await pm.saveVideoLabels(name, generateTrainingLabelCsv(videoBouts)); }
+        catch { /* fall back to whatever is on disk */ }
+      }
+      projectSources.push({ frameDir, labelPath });
     }
   }
   const sources = [...projectSources, ...trainState.dataSources];
@@ -4298,7 +4352,7 @@ document.getElementById("newProject").addEventListener("click", async () => {
       videoBouts = progress && Array.isArray(progress.bouts) ? progress.bouts : [];
     }
     if (videoBouts.length > 0) {
-      const csv = generateBoutsCsv(videoBouts);
+      const csv = generateTrainingLabelCsv(videoBouts);
       window.projectManager.saveVideoLabels(v.name, csv).catch(() => {});
     }
   }
@@ -4331,7 +4385,7 @@ document.getElementById("saveProject").addEventListener("click", async () => {
     if (v.name === currentVideoName) continue; // already saved by saveProgress
     const stored = loadProgress(v.name);
     if (stored && Array.isArray(stored.bouts) && stored.bouts.length > 0) {
-      const csv = generateBoutsCsv(stored.bouts);
+      const csv = generateTrainingLabelCsv(stored.bouts);
       await window.projectManager.saveVideoLabels(v.name, csv);
     }
   }
@@ -4385,7 +4439,7 @@ async function doExportRlt(pkg) {
     if (v.name === currentVideoName) continue;
     const stored = loadProgress(v.name);
     if (stored && Array.isArray(stored.bouts) && stored.bouts.length > 0) {
-      const csv = generateBoutsCsv(stored.bouts);
+      const csv = generateTrainingLabelCsv(stored.bouts);
       await window.projectManager.saveVideoLabels(v.name, csv);
     }
   }

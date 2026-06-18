@@ -110,7 +110,7 @@ A project is a folder:
 ```
 my_experiment/
 ├── project.json     # manifest: videos, behaviors, configs, model refs
-├── labels/          # bout CSVs per video
+├── labels/          # frame-indexed one-hot label CSVs per video
 ├── frames/          # preprocessed frames (regenerable)
 ├── backgrounds/     # computed backgrounds (regenerable)
 └── models/          # checkpoints + TorchScript exports
