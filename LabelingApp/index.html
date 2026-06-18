@@ -296,10 +296,10 @@
               </div>
 
               <h3>Options</h3>
+              <label><span>Positive class (binarize):</span></label>
+              <div id="trainBinarizeList" class="behavior-checklist"></div>
+              <p class="hint">Tick one or more behaviors to train a binary classifier (checked = positive, rest = "other"). Leave all unchecked for multi-class.</p>
               <div class="form-grid">
-                <label><span>Binarize (behavior):</span>
-                  <input id="trainBinarize" type="text" placeholder="e.g. grooming (leave empty for multi-class)" />
-                </label>
                 <label class="checkbox-label">
                   <input id="trainBoundarySmoothing" type="checkbox" checked />
                   <span>Boundary Smoothing</span>

@@ -32,6 +32,7 @@ let behaviors = loadBehaviors();
 let bouts = [];
 let activeStarts = new Map();
 const selectedBehaviorIds = new Set(); // behaviors ticked for merging
+const binarizeSelected = new Set();    // behavior NAMES forming the positive class (Train tab)
 
 const insertBoutSorted = (bout) => {
   let i = bouts.length;
@@ -1102,6 +1103,7 @@ const renderBehaviors = () => {
     empty.textContent = "No behaviors yet.";
     behaviorList.appendChild(empty);
     updateMergeButton();
+    renderBinarizeChecklist();
     return;
   }
 
@@ -1199,7 +1201,41 @@ const renderBehaviors = () => {
     behaviorList.appendChild(row);
   });
   updateMergeButton();
+  renderBinarizeChecklist();
 };
+
+// Render the Train-tab "Positive class (binarize)" checklist from the current
+// behaviors. Tracked by behavior NAME (stable across project reloads, and the
+// name is what the training payload needs).
+function renderBinarizeChecklist() {
+  const container = document.getElementById("trainBinarizeList");
+  if (!container) return;
+  container.innerHTML = "";
+
+  if (behaviors.length === 0) {
+    container.innerHTML = '<p class="muted">No behaviors yet.</p>';
+    return;
+  }
+  // Drop names that no longer exist (renamed/removed/merged behaviors).
+  const names = new Set(behaviors.map((b) => b.name));
+  for (const n of [...binarizeSelected]) if (!names.has(n)) binarizeSelected.delete(n);
+
+  for (const b of behaviors) {
+    const row = document.createElement("label");
+    row.className = "checkbox-row";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = binarizeSelected.has(b.name);
+    cb.addEventListener("change", () => {
+      if (cb.checked) binarizeSelected.add(b.name);
+      else binarizeSelected.delete(b.name);
+    });
+    const span = document.createElement("span");
+    span.textContent = b.name;
+    row.append(cb, span);
+    container.appendChild(row);
+  }
+}
 
 const renderBouts = () => {
   boutsTable.innerHTML = "";
@@ -3363,11 +3399,28 @@ document.getElementById("trainStart").addEventListener("click", async () => {
   const tsmStagesStr = document.getElementById("trainTsmStages").value;
   const tsmStages = tsmStagesStr.split(",").map((s) => parseInt(s.trim())).filter((n) => !isNaN(n));
 
+  // Positive class from the binarize checklist:
+  //   0 checked → multi-class; 1 → binarize that behavior;
+  //   ≥2 → union them into one positive label (label_union), then binarize it.
+  const positive = behaviors.map((b) => b.name).filter((n) => binarizeSelected.has(n));
+  let binarize = null;
+  let labelUnion = null;
+  if (positive.length === 1) {
+    binarize = positive[0];
+  } else if (positive.length >= 2) {
+    const existing = new Set(behaviors.map((b) => b.name));
+    let unionName = "positive";
+    while (existing.has(unionName)) unionName += "_";
+    binarize = unionName;
+    labelUnion = { [unionName]: positive };
+  }
+
   const config = {
     label_paths: sources.map((s) => s.labelPath),
     frame_dirs: sources.map((s) => s.frameDir),
     frames_per_group: parseInt(document.getElementById("trainFramesPerGroup").value),
-    binarize: document.getElementById("trainBinarize").value.trim() || null,
+    binarize: binarize,
+    label_union: labelUnion,
     train_percent: parseFloat(document.getElementById("trainSplitTrain").value),
     val_percent: parseFloat(document.getElementById("trainSplitVal").value),
     test_percent: parseFloat(document.getElementById("trainSplitTest").value),
@@ -3872,7 +3925,7 @@ function saveSettings() {
     trainSplitTrain: parseFloat(document.getElementById("trainSplitTrain").value),
     trainSplitVal: parseFloat(document.getElementById("trainSplitVal").value),
     trainSplitTest: parseFloat(document.getElementById("trainSplitTest").value),
-    trainBinarize: document.getElementById("trainBinarize").value,
+    binarizeSelected: [...binarizeSelected],
     trainBoundarySmoothing: document.getElementById("trainBoundarySmoothing").checked,
     trainBsEpsilon: parseFloat(document.getElementById("trainBsEpsilon").value),
     trainBsWindow: parseInt(document.getElementById("trainBsWindow").value),
@@ -3929,7 +3982,11 @@ function loadSettings() {
     setVal("trainSplitTrain", s.trainSplitTrain);
     setVal("trainSplitVal", s.trainSplitVal);
     setVal("trainSplitTest", s.trainSplitTest);
-    setVal("trainBinarize", s.trainBinarize);
+    if (Array.isArray(s.binarizeSelected)) {
+      binarizeSelected.clear();
+      s.binarizeSelected.forEach((n) => binarizeSelected.add(n));
+      renderBinarizeChecklist();
+    }
     setChecked("trainBoundarySmoothing", s.trainBoundarySmoothing);
     setVal("trainBsEpsilon", s.trainBsEpsilon);
     setVal("trainBsWindow", s.trainBsWindow);

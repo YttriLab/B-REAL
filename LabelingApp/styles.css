@@ -1166,14 +1166,16 @@ button.danger:disabled {
 
 /* ═══ Data sources list ═══ */
 
-.video-checklist {
+.video-checklist,
+.behavior-checklist {
   display: flex;
   flex-direction: column;
   gap: 4px;
   margin-bottom: 8px;
 }
 
-.video-checklist .checkbox-row {
+.video-checklist .checkbox-row,
+.behavior-checklist .checkbox-row {
   display: flex;
   align-items: center;
   gap: 8px;
