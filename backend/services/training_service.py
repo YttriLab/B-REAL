@@ -255,14 +255,17 @@ def start_training(config: dict) -> str:
     # Extract API key before writing config to disk
     wandb_api_key = config.pop("wandb_api_key", None)
 
-    with open(config_path, "w") as f:
-        yaml.dump(config, f, default_flow_style=False)
+    # Always write UTF-8 — the default on Windows is the locale codec (cp1252),
+    # which mangles non-ASCII chars in the script (e.g. em dashes) into bytes
+    # Python can't decode when it imports the file as UTF-8 source.
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
 
-    with open(script_path, "w") as f:
+    with open(script_path, "w", encoding="utf-8") as f:
         f.write(TRAIN_SCRIPT)
 
     # Touch metrics file
-    open(metrics_path, "w").close()
+    open(metrics_path, "w", encoding="utf-8").close()
 
     task = {
         "status": "starting",
@@ -279,6 +282,10 @@ def start_training(config: dict) -> str:
         try:
             env = os.environ.copy()
             env["PROJECT_ROOT"] = PROJECT_ROOT
+            # Force UTF-8 for the child's source/IO so non-ASCII (em dashes in
+            # log messages, unicode in paths) never trips the locale codec.
+            env["PYTHONUTF8"] = "1"
+            env["PYTHONIOENCODING"] = "utf-8"
             if wandb_api_key:
                 env["WANDB_API_KEY"] = wandb_api_key
 
