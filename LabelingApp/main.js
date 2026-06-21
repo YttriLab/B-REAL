@@ -11,8 +11,19 @@ let backendProcess = null;
 
 // ── Backend lifecycle ─────────────────────────────────────────────────────
 
+// Choose the Python interpreter that runs the backend (and therefore training).
+// An explicit RTASOID_PYTHON / PYTHON override lets the user point at a specific
+// conda/venv interpreter — e.g. one with a CUDA-enabled torch — instead of
+// whatever bare `python` happens to be first on PATH / the active conda env.
+function resolveBackendPython() {
+  const override = process.env.RTASOID_PYTHON || process.env.PYTHON;
+  if (override && override.trim()) return override.trim();
+  return process.platform === "win32" ? "python" : "python3";
+}
+
 function startBackend() {
-  const pythonCmd = process.platform === "win32" ? "python" : "python3";
+  const pythonCmd = resolveBackendPython();
+  console.log(`[backend] launching with interpreter: ${pythonCmd}`);
   backendProcess = spawn(
     pythonCmd,
     ["-m", "uvicorn", "backend.server:app", "--port", String(BACKEND_PORT), "--host", "127.0.0.1"],

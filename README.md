@@ -181,6 +181,25 @@ The resulting `.pt` is compatible with `Bonsai.ML.Torch`'s `LoadScriptModule` fo
 | **WebCodecs unavailable** | The checkbox disables itself and falls back to HTML5 playback automatically. |
 | **Re-encode / labeled-video fails** | Install ffmpeg and make sure it's on your `PATH`. |
 | **Training is very slow** | Use a CUDA GPU; CPU training works but is much slower. |
+| **Training runs on CPU despite having a GPU** | The training log shows `Device: CPU — GPU unavailable (...)` with the reason. Usually the backend is running a Python whose torch is a CPU-only build (`torch.version.cuda=None`). Check `GET /api/health` → `device.python` to see *which* interpreter the backend uses. Fix by either (a) installing a CUDA torch wheel into that environment, or (b) pointing the app at a CUDA-enabled environment via the `RTASOID_PYTHON` env var (see below). |
+
+### Selecting the backend Python interpreter
+
+The app launches the backend with bare `python` (the active conda env / first on `PATH`). To force a specific interpreter — e.g. a conda env with a CUDA-enabled torch — set **`RTASOID_PYTHON`** to its `python.exe` before launching:
+
+```powershell
+# Windows (PowerShell)
+$env:RTASOID_PYTHON = "C:\Users\you\anaconda3\envs\realtime_gpu\python.exe"
+cd LabelingApp; npm start
+```
+
+```bash
+# macOS / Linux
+export RTASOID_PYTHON="$HOME/miniconda3/envs/realtime_gpu/bin/python"
+cd LabelingApp && npm start
+```
+
+The chosen interpreter is printed to the console as `[backend] launching with interpreter: ...`, and `/api/health` reports its torch/CUDA status.
 
 ---
 

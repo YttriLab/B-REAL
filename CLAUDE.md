@@ -37,7 +37,7 @@ npm install
 npm start
 ```
 
-The Electron main process spawns `uvicorn backend.server:app --port 8741` automatically and tears it down on exit.
+The Electron main process spawns `uvicorn backend.server:app --port 8741` automatically and tears it down on exit. It uses bare `python` (active conda env / first on `PATH`) unless **`RTASOID_PYTHON`** (or `PYTHON`) is set to a specific interpreter — use that to pin a CUDA-enabled env. `main.js::resolveBackendPython()` picks it; the chosen interpreter is logged as `[backend] launching with interpreter: ...`, and `GET /api/health` reports its torch/CUDA status (`device` block).
 
 ## Running the Backend Standalone
 
