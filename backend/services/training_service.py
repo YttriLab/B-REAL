@@ -209,6 +209,17 @@ def main():
     info(f"Starting training (early stopping after {patience} stagnant epochs)...")
     trainer.fit(model, data_module)
 
+    # Run the test pass so test metrics + per-clip videos get logged (to W&B when
+    # enabled). test_step / on_test_epoch_end only execute under trainer.test(),
+    # so without this the standalone script's test logging never happened here.
+    best_ckpt = checkpoint_cb.best_model_path or None
+    try:
+        info("Running test pass (logging test metrics / clips)...")
+        trainer.test(model, data_module, ckpt_path=best_ckpt or "best")
+    except Exception as e:
+        # Don't fail a successful training run just because testing/logging did.
+        info(f"Test pass skipped: {type(e).__name__}: {e}")
+
     # Write completion
     completion = {
         "status": "completed",
