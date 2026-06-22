@@ -4065,6 +4065,40 @@ document.getElementById("alJumpNextMisclassified").addEventListener("click", () 
   alert("No misclassified frames found.");
 });
 
+// Export model predictions as a frame-indexed one-hot matrix — the SAME format
+// as labels (generateTrainingLabelCsv), so they can be re-imported as labels.
+const generatePredictionsCsv = () => {
+  const frames = alState.results.frames;
+  const classNames = alState.results.class_names || [];
+  const header = ["time", ...classNames.map(csvEscape)].join(",");
+  const rows = frames.map((f) => {
+    const cols = new Array(classNames.length).fill(0);
+    if (f.predicted_class >= 0 && f.predicted_class < classNames.length) {
+      cols[f.predicted_class] = 1;
+    }
+    return f.index + "," + cols.join(",");
+  });
+  return [header, ...rows].join("\n");
+};
+
+document.getElementById("alExportPredictions").addEventListener("click", async () => {
+  if (!alState.results || !alState.results.frames.length) {
+    alert("Run inference first.");
+    return;
+  }
+  if (!window.api || !window.api.saveCsv) {
+    setStatus("CSV export is unavailable.");
+    return;
+  }
+  const content = generatePredictionsCsv();
+  const baseName = currentVideoName ? currentVideoName.replace(/\.[^/.]+$/, "") : "video";
+  const result = await window.api.saveCsv({
+    defaultPath: `${baseName}-predictions.csv`,
+    content,
+  });
+  setStatus(result.canceled ? "Export canceled." : `Predictions saved to ${result.filePath}`);
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Phase 6: Polish — localStorage persistence, auto-populate, error handling
 // ═══════════════════════════════════════════════════════════════════════════
