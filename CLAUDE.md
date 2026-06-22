@@ -123,6 +123,7 @@ Projects export to a single HDF5 `.rlt` file in **two flavors** (mirroring SLEAP
 | `/api/training/status/{task_id}` | GET | SSE stream of training metrics |
 | `/api/training/stop/{task_id}` | POST | Stop training |
 | `/api/training/checkpoints` | GET | List saved checkpoints |
+| `/api/training/export-torchscript` | POST | Export a `.ckpt` → TorchScript `.pt` (Train tab GUI button) |
 | `/api/inference/run` | POST | Start inference |
 | `/api/inference/status/{task_id}` | GET | Inference progress (SSE) |
 | `/api/inference/results/{task_id}` | GET | Fetch inference results |

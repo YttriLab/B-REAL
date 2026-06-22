@@ -71,6 +71,13 @@ class CheckpointSearchRequest(BaseModel):
     search_dirs: Optional[list[str]] = None
 
 
+class ExportTorchscriptRequest(BaseModel):
+    checkpoint_path: str
+    output_name: str = "tsm_model"
+    output_dir: str
+    tsm_stages: Optional[list[int]] = None
+
+
 # ── Endpoints ──────────────────────────────────────────────────────────────
 
 @router.post("/start")
@@ -169,3 +176,30 @@ async def api_list_checkpoints(search_dirs: Optional[str] = None):
     dirs = search_dirs.split(",") if search_dirs else None
     checkpoints = list_checkpoints(dirs)
     return {"checkpoints": checkpoints}
+
+
+@router.post("/export-torchscript")
+async def api_export_torchscript(req: ExportTorchscriptRequest):
+    """Export a .ckpt to a single TorchScript .pt (for Bonsai / real-time rigs)."""
+    import os
+
+    if not os.path.exists(req.checkpoint_path):
+        raise HTTPException(status_code=404, detail=f"Checkpoint not found: {req.checkpoint_path}")
+
+    def _run():
+        import torch
+        from convert_torchscript_tsm import export_model
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        return export_model(
+            checkpoint_path=req.checkpoint_path,
+            output_name=req.output_name,
+            output_dir=req.output_dir,
+            device=device,
+            tsm_stages=req.tsm_stages,
+        )
+
+    try:
+        output_path = await asyncio.to_thread(_run)
+        return {"output_path": output_path}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")

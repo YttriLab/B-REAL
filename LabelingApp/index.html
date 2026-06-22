@@ -329,6 +329,22 @@
                 </label>
               </div>
 
+              <h3>Export to TorchScript</h3>
+              <p class="hint">Convert a checkpoint to a single <code>.pt</code> (Bonsai / real-time rigs). Uses the TSM stages set above.</p>
+              <div class="form-row">
+                <button id="trainExportSelectCkpt">Select Checkpoint</button>
+                <span id="trainExportCkptPath" class="path-display">Last trained best checkpoint</span>
+              </div>
+              <div class="form-grid">
+                <label><span>Output name:</span>
+                  <input id="trainExportName" type="text" value="tsm_model" placeholder="tsm_model" />
+                </label>
+              </div>
+              <div class="form-row">
+                <button id="trainExportRun">Export .pt</button>
+                <span id="trainExportStatus" class="muted"></span>
+              </div>
+
               <div class="form-row" style="margin-top:16px;">
                 <button id="trainStart" class="primary">Start Training</button>
                 <button id="trainStop" class="danger" disabled>Stop</button>

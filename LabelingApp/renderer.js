@@ -3320,6 +3320,8 @@ const trainState = {
   selectedVideos: new Set(), // project video names checked for training
   taskId: null,
   sseSource: null,
+  lastBestCheckpoint: null, // best .ckpt from the most recent completed run
+  exportCkptPath: null,     // user-picked checkpoint for TorchScript export
 };
 
 // Render the project videos as a checklist; checked videos become training
@@ -3583,6 +3585,7 @@ document.getElementById("trainStart").addEventListener("click", async () => {
           }
           if (data.best_checkpoint) {
             document.getElementById("trainStatus").textContent = `Done! Best: ${data.best_checkpoint}`;
+            trainState.lastBestCheckpoint = data.best_checkpoint;
             // Auto-record the trained checkpoint into the project manifest so it
             // travels with the .rlt as a reference (re-linkable on import).
             if (data.status === "completed" && window.projectManager && window.projectManager.isActive()) {
@@ -3620,6 +3623,70 @@ document.getElementById("trainStop").addEventListener("click", async () => {
     try {
       await backendFetch(`/api/training/stop/${trainState.taskId}`, { method: "POST" });
     } catch { /* ignore */ }
+  }
+});
+
+// ── TorchScript export ─────────────────────────────────────────────────────
+
+document.getElementById("trainExportSelectCkpt").addEventListener("click", async () => {
+  if (!window.api || !window.api.selectFile) return;
+  const res = await window.api.selectFile({
+    title: "Select Checkpoint (.ckpt)",
+    filters: [{ name: "Checkpoint", extensions: ["ckpt"] }],
+  });
+  if (res.canceled) return;
+  trainState.exportCkptPath = res.path;
+  document.getElementById("trainExportCkptPath").textContent = res.path;
+});
+
+document.getElementById("trainExportRun").addEventListener("click", async () => {
+  const statusEl = document.getElementById("trainExportStatus");
+  const checkpointPath = trainState.exportCkptPath || trainState.lastBestCheckpoint;
+  if (!checkpointPath) {
+    statusEl.textContent = "No checkpoint — train a model or pick a .ckpt first.";
+    return;
+  }
+
+  // Save into the project's models/exports when a project is open; otherwise ask.
+  const pm = window.projectManager;
+  let outputDir = pm && pm.isActive() ? pm.getExportsDir() : null;
+  if (!outputDir) {
+    const dirRes = await window.api.selectDirectory({ title: "Select output folder for .pt" });
+    if (dirRes.canceled) return;
+    outputDir = dirRes.path;
+  }
+
+  const outputName = (document.getElementById("trainExportName").value || "tsm_model").trim();
+  const tsmStages = document.getElementById("trainTsmStages").value
+    .split(",").map((s) => parseInt(s.trim())).filter((n) => !isNaN(n));
+
+  const btn = document.getElementById("trainExportRun");
+  btn.disabled = true;
+  statusEl.textContent = "Exporting…";
+  try {
+    const res = await backendFetch("/api/training/export-torchscript", {
+      method: "POST",
+      body: JSON.stringify({
+        checkpoint_path: checkpointPath,
+        output_name: outputName,
+        output_dir: outputDir,
+        tsm_stages: tsmStages.length ? tsmStages : null,
+      }),
+    });
+    statusEl.textContent = `Exported: ${res.output_path}`;
+    // Record the export in the project manifest so it travels with the .rlt.
+    if (pm && pm.isActive() && pm.addModel) {
+      pm.addModel({
+        name: res.output_path.split(/[\\/]/).pop(),
+        path: res.output_path,
+        created: new Date().toISOString().slice(0, 10),
+        kind: "torchscript",
+      });
+    }
+  } catch (e) {
+    statusEl.textContent = `Export failed: ${e.message}`;
+  } finally {
+    btn.disabled = false;
   }
 });
 
