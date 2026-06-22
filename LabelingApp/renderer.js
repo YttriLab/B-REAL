@@ -1634,7 +1634,7 @@ const getBoutCountForVideo = (videoName) => {
 const updateContentLayout = () => {
   const contentEl = document.querySelector(".content");
   if (!contentEl) return;
-  const sidebarShown = videoList.length > 0;
+  const sidebarShown = true; // sidebar is always visible (holds the Add button)
   const playerShown = document.body.dataset.tab !== "train";
   let cols;
   if (sidebarShown && playerShown) cols = "auto 2.2fr 1fr";
@@ -1648,15 +1648,19 @@ const renderVideoSidebar = () => {
   const sidebar = document.getElementById("videoSidebar");
   const listEl = document.getElementById("videoListEl");
 
-  if (videoList.length === 0) {
-    sidebar.classList.add("hidden");
-    updateContentLayout();
-    return;
-  }
+  // Keep the sidebar (and its "+" Add button) visible even with no videos —
+  // otherwise deleting the last video would hide the only way to add more.
   sidebar.classList.remove("hidden");
   updateContentLayout();
 
   listEl.innerHTML = "";
+  if (videoList.length === 0) {
+    const li = document.createElement("li");
+    li.className = "video-list-empty muted";
+    li.textContent = "No videos yet — click + to add.";
+    listEl.appendChild(li);
+    return;
+  }
   videoList.forEach((entry) => {
     const li = document.createElement("li");
     li.className = "video-list-item" + (entry.name === currentVideoName ? " active" : "");
@@ -4474,28 +4478,20 @@ document.getElementById("newProject").addEventListener("click", async () => {
   const result = await window.projectManager.createProject();
   if (!result) return;
 
-  // Sync current state into the new project
+  // A new project starts empty — clear the current session so the previously
+  // open project's videos/bouts don't carry over into it.
+  videoList = [];
+  saveVideoList();
+  currentVideoName = "";
+  currentFile = null;
+  if (video.src) { URL.revokeObjectURL(video.src); video.removeAttribute("src"); }
+  resetSession();
+  renderVideoSidebar();
+  // Seed the manifest with the (global) behavior set.
   window.projectManager.updateBehaviors(behaviors);
-  for (const v of videoList) {
-    if (v.path) window.projectManager.addVideoToManifest(v.path);
-  }
-  // Save bouts for ALL videos (current + others from localStorage)
-  for (const v of videoList) {
-    let videoBouts;
-    if (v.name === currentVideoName) {
-      videoBouts = bouts;
-    } else {
-      const progress = loadProgress(v.name);
-      videoBouts = progress && Array.isArray(progress.bouts) ? progress.bouts : [];
-    }
-    if (videoBouts.length > 0) {
-      const csv = generateTrainingLabelCsv(videoBouts);
-      window.projectManager.saveVideoLabels(v.name, csv).catch(() => {});
-    }
-  }
 
   updateProjectUI();
-  setStatus(`Project "${result.manifest.name}" created.`);
+  setStatus(`Project "${result.manifest.name}" created (empty).`);
 });
 
 document.getElementById("openProjectBtn").addEventListener("click", async () => {

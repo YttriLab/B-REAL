@@ -191,9 +191,18 @@ def run_inference_video(
     num_classes = model.num_classes
     class_names = model.class_names
 
+    bg = None
     if bg_path:
-        bg = cv2.imread(bg_path, cv2.IMREAD_GRAYSCALE).astype(np.float32)
-    else:
+        loaded = cv2.imread(bg_path, cv2.IMREAD_GRAYSCALE)
+        if loaded is not None:
+            bg = loaded.astype(np.float32)
+        else:
+            # cv2.imread silently returns None for a missing/unreadable file;
+            # fall back to computing the background from the video itself rather
+            # than crashing with "'NoneType' object has no attribute 'astype'".
+            print(f"[inference] background not readable at {bg_path}; "
+                  f"computing it from the video instead.", flush=True)
+    if bg is None:
         bg = get_background_avg(video_path, num_frames_bg)
     cropper = FindRatBoundingBox(bg, **crop_params)
 
