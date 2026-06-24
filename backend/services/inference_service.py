@@ -177,7 +177,7 @@ def run_inference_video(
     label/timeline index space.
     """
     from model_tsm import TSMClassifier
-    from tune_cropping import FindRatBoundingBox, get_background_avg
+    from tune_cropping import FindRatBoundingBox, get_background_avg, pop_resize_factor, resize_frame
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -204,6 +204,9 @@ def run_inference_video(
                   f"computing it from the video instead.", flush=True)
     if bg is None:
         bg = get_background_avg(video_path, num_frames_bg)
+    # Apply the same full-frame pre-resize used in training so crops match.
+    crop_params, resize_factor = pop_resize_factor(crop_params)
+    bg = resize_frame(bg, resize_factor)
     cropper = FindRatBoundingBox(bg, **crop_params)
 
     transform = _build_val_transform(image_size)
@@ -223,6 +226,8 @@ def run_inference_video(
             if not ret:
                 break
 
+            if resize_factor != 1.0:
+                frame = cv2.resize(frame, (bg.shape[1], bg.shape[0]), interpolation=cv2.INTER_AREA)
             # Crop, then match _load_frame's BGR->RGB conversion exactly.
             *_, cropped = cropper(frame)
             rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)

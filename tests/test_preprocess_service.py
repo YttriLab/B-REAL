@@ -95,6 +95,18 @@ class TestPreviewFrame:
         assert result["frame_width"] == 64
         assert result["frame_height"] == 64
 
+    def test_resize_factor_reports_original_and_resized(self, synthetic_video, synthetic_background):
+        video_path, _ = synthetic_video
+        result = preview_frame(
+            video_path=video_path,
+            bg_path=synthetic_background,
+            frame_index=5,
+            crop_params={"box_size": 32, "difference_threshold": 5, "resize_factor": 0.5},
+        )
+        # frame_width/height stay the ORIGINAL source size; resized_* is what's processed.
+        assert result["frame_width"] == 64 and result["frame_height"] == 64
+        assert result["resized_width"] == 32 and result["resized_height"] == 32
+
     def test_invalid_frame_index_raises(self, synthetic_video, synthetic_background):
         video_path, _ = synthetic_video
         with pytest.raises(RuntimeError, match="Could not read frame"):
@@ -124,6 +136,26 @@ class TestCropVideoFlat:
         # Check sequential naming
         indices = sorted(int(f.replace(".png", "")) for f in pngs)
         assert indices == list(range(num_frames))
+
+    def test_resize_factor_shrinks_output(self, synthetic_video, tmp_path):
+        video_path, _ = synthetic_video
+        # box_size larger than the frame → crop is the whole (resized) frame,
+        # so the saved PNG dimensions directly reflect the pre-resize.
+        full = str(tmp_path / "full")
+        half = str(tmp_path / "half")
+        os.makedirs(full, exist_ok=True)
+        os.makedirs(half, exist_ok=True)
+        crop_video_flat(video_path=video_path, output_dir=full,
+                        crop_params={"box_size": 200, "difference_threshold": 5},
+                        frame_ranges=[[5, 5]])
+        crop_video_flat(video_path=video_path, output_dir=half,
+                        crop_params={"box_size": 200, "difference_threshold": 5, "resize_factor": 0.5},
+                        frame_ranges=[[5, 5]])
+        import cv2
+        full_img = cv2.imread(os.path.join(full, os.listdir(full)[0], "5.png"))
+        half_img = cv2.imread(os.path.join(half, os.listdir(half)[0], "5.png"))
+        assert full_img.shape[0] == 64 and full_img.shape[1] == 64
+        assert half_img.shape[0] == 32 and half_img.shape[1] == 32
 
     def test_sparse_extraction_only_writes_requested_frames(self, synthetic_video, tmp_path):
         video_path, _ = synthetic_video

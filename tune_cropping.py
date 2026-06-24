@@ -2,6 +2,30 @@ import cv2
 import numpy as np
 from functools import partial
 
+
+def pop_resize_factor(crop_params: dict):
+    """Split a full-frame pre-resize out of crop_params.
+
+    crop_params is otherwise splatted straight into FindRatBoundingBox(**...),
+    which would reject an unknown 'resize_factor' kwarg. This returns
+    (clean_params, factor) where factor (default 1.0) scales the entire frame
+    (and background) before cropping. Values <= 0 are treated as 1.0 (no resize).
+    """
+    cp = dict(crop_params or {})
+    try:
+        rf = float(cp.pop("resize_factor", 1.0))
+    except (TypeError, ValueError):
+        rf = 1.0
+    return cp, (rf if rf and rf > 0 else 1.0)
+
+
+def resize_frame(img, factor):
+    """Resize a full frame/background by `factor` (INTER_AREA). No-op at 1.0."""
+    if img is None or factor == 1.0:
+        return img
+    return cv2.resize(img, None, fx=factor, fy=factor, interpolation=cv2.INTER_AREA)
+
+
 class FindRatBoundingBox():
     def __init__(self, bg, difference_threshold=5, box_size=100, 
                  downsample_factor=1, open1_kernel=4, close_kernel=15, open2_kernel=10):

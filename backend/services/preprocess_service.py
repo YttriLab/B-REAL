@@ -12,7 +12,7 @@ from typing import Callable, Optional
 import cv2
 import numpy as np
 
-from tune_cropping import FindRatBoundingBox, get_background_avg
+from tune_cropping import FindRatBoundingBox, get_background_avg, pop_resize_factor, resize_frame
 
 # ── Task registry ──────────────────────────────────────────────────────────
 
@@ -63,7 +63,10 @@ def preview_frame(
 
     Returns dict with keys: original_bbox, mask, cropped
     """
+    crop_params, resize_factor = pop_resize_factor(crop_params)
+
     bg = cv2.imread(bg_path, cv2.IMREAD_GRAYSCALE).astype(np.float32)
+    bg = resize_frame(bg, resize_factor)
     cropper = FindRatBoundingBox(bg, **crop_params)
 
     cap = cv2.VideoCapture(video_path)
@@ -73,9 +76,15 @@ def preview_frame(
     if not ret:
         raise RuntimeError(f"Could not read frame {frame_index} from {video_path}")
 
+    orig_w, orig_h = frame.shape[1], frame.shape[0]
+    if resize_factor != 1.0:
+        # Resize the whole frame to exactly the (resized) background dims so the
+        # detection/crop pipeline operates on the smaller image.
+        frame = cv2.resize(frame, (bg.shape[1], bg.shape[0]), interpolation=cv2.INTER_AREA)
+
     (x, y, w, h), _small, mask, cropped = cropper(frame)
 
-    # Draw bounding box on original frame
+    # Draw bounding box on the (resized) frame that was actually processed.
     s = crop_params.get("downsample_factor", 1)
     frame_bbox = frame.copy()
     cv2.rectangle(frame_bbox, (x * s, y * s), ((x + w) * s, (y + h) * s), (0, 255, 0), 2)
@@ -87,8 +96,11 @@ def preview_frame(
         "original_bbox": _encode_image(frame_bbox),
         "mask": _encode_image(mask_bgr),
         "cropped": _encode_image(cropped),
-        "frame_width": frame.shape[1],
-        "frame_height": frame.shape[0],
+        "frame_width": orig_w,           # source video frame size
+        "frame_height": orig_h,
+        "resized_width": frame.shape[1],  # size actually processed/saved
+        "resized_height": frame.shape[0],
+        "resize_factor": resize_factor,
     }
 
 
@@ -140,11 +152,14 @@ def crop_video_flat(
     out_sub_dir = os.path.join(output_dir, vid_name)
     os.makedirs(out_sub_dir, exist_ok=True)
 
+    crop_params, resize_factor = pop_resize_factor(crop_params)
+
     # Background
     if bg_path:
         bg = cv2.imread(bg_path, cv2.IMREAD_GRAYSCALE).astype(np.float32)
     else:
         bg = get_background_avg(video_path, num_frames_bg)
+    bg = resize_frame(bg, resize_factor)
 
     cap = cv2.VideoCapture(video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -166,6 +181,8 @@ def crop_video_flat(
             break
 
         if wanted is None or frame_index in wanted:
+            if resize_factor != 1.0:
+                frame = cv2.resize(frame, (bg.shape[1], bg.shape[0]), interpolation=cv2.INTER_AREA)
             *_, cropped = cropper(frame)
             out_path = os.path.join(out_sub_dir, f"{frame_index}.png")
             cv2.imwrite(out_path, cropped)

@@ -3083,6 +3083,8 @@ const ppState = {
   taskId: null,
   sseSource: null,
   bgByVideo: {}, // videoName -> background image path (auto-loaded on switch)
+  frameW: null,  // original source frame size (from last preview)
+  frameH: null,
 };
 
 // Remember a background for a video (persisted in settings; also recorded on the
@@ -3127,6 +3129,17 @@ async function applyVideoBackground(videoName) {
   }
 });
 
+// Resize slider shows a percent and live-updates the processed-size readout.
+(() => {
+  const slider = document.getElementById("ppResize");
+  const output = document.getElementById("ppResizeVal");
+  if (!slider) return;
+  slider.addEventListener("input", () => {
+    if (output) output.textContent = `${slider.value}%`;
+    updateResizedSizeDisplay();
+  });
+})();
+
 function getCropParams() {
   return {
     box_size: parseInt(document.getElementById("ppBoxSize").value),
@@ -3135,7 +3148,21 @@ function getCropParams() {
     open1_kernel: parseInt(document.getElementById("ppOpen1").value),
     close_kernel: parseInt(document.getElementById("ppClose").value),
     open2_kernel: parseInt(document.getElementById("ppOpen2").value),
+    resize_factor: (parseInt(document.getElementById("ppResize").value) || 100) / 100,
   };
+}
+
+// Update the "Processed" size readout from the stored original frame size and
+// the current resize slider (so it reacts live without re-running a preview).
+function updateResizedSizeDisplay() {
+  const el = document.getElementById("ppResizedSize");
+  if (!el) return;
+  const factor = (parseInt(document.getElementById("ppResize").value) || 100) / 100;
+  if (ppState.frameW && ppState.frameH) {
+    el.textContent = `${Math.round(ppState.frameW * factor)} × ${Math.round(ppState.frameH * factor)}`;
+  } else {
+    el.textContent = "—";
+  }
 }
 
 function getVideoPath() {
@@ -3196,6 +3223,20 @@ document.getElementById("ppPreview").addEventListener("click", async () => {
         crop_params: getCropParams(),
       }),
     });
+
+    // Update the frame-size readouts from the original (source) dims.
+    if (res.frame_width && res.frame_height) {
+      ppState.frameW = res.frame_width;
+      ppState.frameH = res.frame_height;
+      document.getElementById("ppFrameSize").textContent =
+        `${res.frame_width} × ${res.frame_height}`;
+    }
+    if (res.resized_width && res.resized_height) {
+      document.getElementById("ppResizedSize").textContent =
+        `${res.resized_width} × ${res.resized_height}`;
+    } else {
+      updateResizedSizeDisplay();
+    }
 
     // Draw base64 images to canvases
     const pairs = [
@@ -4168,6 +4209,12 @@ function loadSettings() {
       setSlider("ppOpen1", "ppOpen1Val", s.cropParams.open1_kernel);
       setSlider("ppClose", "ppCloseVal", s.cropParams.close_kernel);
       setSlider("ppOpen2", "ppOpen2Val", s.cropParams.open2_kernel);
+      if (s.cropParams.resize_factor) {
+        const pct = Math.round(s.cropParams.resize_factor * 100);
+        setSlider("ppResize", "ppResizeVal", pct);
+        const out = document.getElementById("ppResizeVal");
+        if (out) out.textContent = `${pct}%`;
+      }
     }
     if (s.bgNumFrames) document.getElementById("ppBgNumFrames").value = s.bgNumFrames;
 

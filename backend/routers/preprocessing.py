@@ -32,6 +32,8 @@ class CropParams(BaseModel):
     open1_kernel: int = 4
     close_kernel: int = 15
     open2_kernel: int = 10
+    # Full-frame pre-resize applied before cropping (1.0 = original size).
+    resize_factor: float = 1.0
 
 
 class PreviewRequest(BaseModel):
