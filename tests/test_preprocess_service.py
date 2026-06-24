@@ -95,6 +95,22 @@ class TestPreviewFrame:
         assert result["frame_width"] == 64
         assert result["frame_height"] == 64
 
+    def test_difference_mode_absolute_detects_brighter(self):
+        """Directional misses a uniformly-brighter frame; absolute detects it."""
+        from tune_cropping import FindRatBoundingBox
+        bg = np.full((64, 64), 100, dtype=np.float32)
+        frame = np.full((64, 64, 3), 200, dtype=np.uint8)  # brighter than bg everywhere
+
+        directional = FindRatBoundingBox(bg, difference_threshold=5, box_size=20,
+                                         difference_mode="directional")
+        bb_d, *_ = directional(frame)
+        assert bb_d[2] == 64 and bb_d[3] == 64  # nothing darker -> previous full-frame box
+
+        absolute = FindRatBoundingBox(bg, difference_threshold=5, box_size=20,
+                                      difference_mode="absolute")
+        bb_a, *_ = absolute(frame)
+        assert bb_a[2] == 20 and bb_a[3] == 20  # change detected -> fixed-size box
+
     def test_resize_factor_reports_original_and_resized(self, synthetic_video, synthetic_background):
         video_path, _ = synthetic_video
         result = preview_frame(

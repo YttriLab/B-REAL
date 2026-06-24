@@ -199,6 +199,13 @@
                   <input id="ppDiffThresh" type="range" min="1" max="50" value="5" />
                 </label>
                 <label>
+                  <span>Diff Mode:</span>
+                  <select id="ppDiffMode">
+                    <option value="directional">Directional (darker than bg)</option>
+                    <option value="absolute">Absolute (|frame − bg|)</option>
+                  </select>
+                </label>
+                <label>
                   <span>Downsample: <output id="ppDownsampleVal">1</output></span>
                   <input id="ppDownsample" type="range" min="1" max="4" value="1" />
                 </label>

@@ -28,6 +28,8 @@ class BackgroundRequest(BaseModel):
 class CropParams(BaseModel):
     box_size: int = 220
     difference_threshold: int = 5
+    # "directional" (subject darker than bg) or "absolute" (|frame - bg|).
+    difference_mode: str = "directional"
     downsample_factor: int = 1
     open1_kernel: int = 4
     close_kernel: int = 15

@@ -3144,6 +3144,7 @@ function getCropParams() {
   return {
     box_size: parseInt(document.getElementById("ppBoxSize").value),
     difference_threshold: parseInt(document.getElementById("ppDiffThresh").value),
+    difference_mode: document.getElementById("ppDiffMode").value,
     downsample_factor: parseInt(document.getElementById("ppDownsample").value),
     open1_kernel: parseInt(document.getElementById("ppOpen1").value),
     close_kernel: parseInt(document.getElementById("ppClose").value),
@@ -4205,6 +4206,7 @@ function loadSettings() {
       };
       setSlider("ppBoxSize", "ppBoxSizeVal", s.cropParams.box_size);
       setSlider("ppDiffThresh", "ppDiffThreshVal", s.cropParams.difference_threshold);
+      if (s.cropParams.difference_mode) document.getElementById("ppDiffMode").value = s.cropParams.difference_mode;
       setSlider("ppDownsample", "ppDownsampleVal", s.cropParams.downsample_factor);
       setSlider("ppOpen1", "ppOpen1Val", s.cropParams.open1_kernel);
       setSlider("ppClose", "ppCloseVal", s.cropParams.close_kernel);

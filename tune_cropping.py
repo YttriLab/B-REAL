@@ -27,9 +27,13 @@ def resize_frame(img, factor):
 
 
 class FindRatBoundingBox():
-    def __init__(self, bg, difference_threshold=5, box_size=100, 
-                 downsample_factor=1, open1_kernel=4, close_kernel=15, open2_kernel=10):
+    def __init__(self, bg, difference_threshold=5, box_size=100,
+                 downsample_factor=1, open1_kernel=4, close_kernel=15, open2_kernel=10,
+                 difference_mode="directional"):
         self.difference_threshold = difference_threshold
+        # "directional" = subject is darker than background (small - bg < -t);
+        # "absolute" = any change from background (|small - bg| > t).
+        self.difference_mode = difference_mode
         self.box_size = box_size
         self.downsample_factor = downsample_factor
         self.open1_kernel = open1_kernel
@@ -51,7 +55,12 @@ class FindRatBoundingBox():
             gray = frame
         
         small = self.resizer(gray)
-        thresholded = ((small - self.bg < -self.difference_threshold)*255).astype(np.uint8)
+        diff = small - self.bg
+        if self.difference_mode == "absolute":
+            mask = np.abs(diff) > self.difference_threshold
+        else:  # "directional": subject darker than background
+            mask = diff < -self.difference_threshold
+        thresholded = (mask * 255).astype(np.uint8)
         opened = cv2.morphologyEx(thresholded, cv2.MORPH_OPEN, 
                                   np.ones((self.open1_kernel, self.open1_kernel), np.uint8))
         closed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, 
