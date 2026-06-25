@@ -12,12 +12,24 @@ let backendProcess = null;
 // ── Backend lifecycle ─────────────────────────────────────────────────────
 
 // Choose the Python interpreter that runs the backend (and therefore training).
-// An explicit RTASOID_PYTHON / PYTHON override lets the user point at a specific
-// conda/venv interpreter — e.g. one with a CUDA-enabled torch — instead of
-// whatever bare `python` happens to be first on PATH / the active conda env.
+// Resolution order:
+//   1. RTASOID_PYTHON / PYTHON env override (advanced escape hatch).
+//   2. The project-local pixi env at <root>/.pixi/envs/default — created by
+//      `pixi install`. This is the supported setup: no manual env or env var.
+//   3. Bare `python` / `python3` on PATH (legacy / not recommended).
+function pixiEnvPython() {
+  return process.platform === "win32"
+    ? path.join(BACKEND_CWD, ".pixi", "envs", "default", "python.exe")
+    : path.join(BACKEND_CWD, ".pixi", "envs", "default", "bin", "python");
+}
+
 function resolveBackendPython() {
   const override = process.env.RTASOID_PYTHON || process.env.PYTHON;
   if (override && override.trim()) return override.trim();
+
+  const envPy = pixiEnvPython();
+  if (fsSync.existsSync(envPy)) return envPy;
+
   return process.platform === "win32" ? "python" : "python3";
 }
 

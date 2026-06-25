@@ -1,0 +1,53 @@
+# pixi project definition — the reproducible Python environment for the backend.
+#
+# This is the source of truth for the Python side (replacing manual conda envs +
+# RTASOID_PYTHON). It pulls CUDA-enabled PyTorch, ffmpeg, and the native
+# scientific stack from conda-forge into a project-local env at a deterministic
+# path (.pixi/envs/default), which the Electron app auto-discovers.
+#
+#   pixi install        # materialize/pin the env (writes pixi.lock) + downloads
+#   pixi run backend    # run the FastAPI backend standalone
+#   pixi run test       # run the pytest suite
+#
+# CPU-only machine? Swap `pytorch-gpu` for `pytorch-cpu` below.
+
+[project]
+name = "realtimeasoid"
+version = "0.1.0"
+description = "Real-time clip-based animal behavior classifier (Electron GUI + FastAPI/PyTorch backend)."
+channels = ["conda-forge"]
+platforms = ["win-64"]   # add "linux-64" / "osx-64" here, then re-run `pixi install`
+
+[tasks]
+backend = "uvicorn backend.server:app --port 8741 --host 127.0.0.1"
+test = "pytest"
+
+[dependencies]
+python = "3.12.*"
+# Deep learning (CUDA build pulled from conda-forge — bundles the CUDA runtime,
+# no separate CUDA toolkit install needed).
+pytorch-gpu = "*"
+torchvision = "*"
+lightning = "*"
+torchmetrics = "*"
+timm = "*"
+# Vision / video / numerics
+opencv = "*"
+albumentations = "*"
+ffmpeg = "*"
+numpy = "*"
+pandas = "*"
+scipy = "*"
+h5py = "*"
+matplotlib = "*"
+# Backend / config / tuning / logging
+fastapi = "*"
+uvicorn = "*"
+omegaconf = "*"
+pyyaml = "*"
+optuna = "*"
+wandb = "*"
+# Tests
+pytest = "*"
+pytest-asyncio = "*"
+httpx = "*"

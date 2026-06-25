@@ -28,29 +28,29 @@ Real-time clip-based animal behavior classifier. An Electron desktop app for lab
 ## Running the App
 
 ```bash
-# Install Python deps
-pip install -r backend/requirements.txt
+# Python env (pixi.toml + pixi.lock → .pixi/envs/default, with CUDA torch + ffmpeg)
+pixi install
 
-# Install Node deps + launch Electron (auto-starts backend)
+# Install Node deps + launch Electron (auto-starts backend in the pixi env)
 cd LabelingApp
 npm install
 npm start
 ```
 
-The Electron main process spawns `uvicorn backend.server:app --port 8741` automatically and tears it down on exit. It uses bare `python` (active conda env / first on `PATH`) unless **`RTASOID_PYTHON`** (or `PYTHON`) is set to a specific interpreter — use that to pin a CUDA-enabled env. `main.js::resolveBackendPython()` picks it; the chosen interpreter is logged as `[backend] launching with interpreter: ...`, and `GET /api/health` reports its torch/CUDA status (`device` block).
+The Electron main process spawns `uvicorn backend.server:app --port 8741` automatically and tears it down on exit. `main.js::resolveBackendPython()` resolves the interpreter in order: **`RTASOID_PYTHON`/`PYTHON` override → the project-local pixi env (`.pixi/envs/default/python.exe`) → bare `python`**. The pixi env is the supported path (no env var needed); the override is an advanced escape hatch. The chosen interpreter is logged as `[backend] launching with interpreter: ...`, and `GET /api/health` reports its torch/CUDA status (`device` block). `pixi.toml` is the source of truth for Python deps (`backend/requirements.txt` is a pip fallback). Standalone: `pixi run backend`, tests: `pixi run test`.
 
 ## Running the Backend Standalone
 
 ```bash
-python -m uvicorn backend.server:app --port 8741 --host 127.0.0.1
+pixi run backend     # uvicorn backend.server:app --port 8741 --host 127.0.0.1
 ```
 
 ## Running Tests
 
 ```bash
-pytest          # all 106 tests
-pytest -v       # verbose
-pytest tests/test_api_routers.py   # single module
+pixi run test                              # all tests
+pixi run pytest -v                         # verbose
+pixi run pytest tests/test_api_routers.py  # single module
 ```
 
 Tests use synthetic frames/videos — no GPU or real data required. `pytest.ini` sets `asyncio_mode = auto`.
@@ -198,8 +198,8 @@ npm run dist:linux  # Linux (AppImage + deb)
 
 ## Dependencies
 
-(See `backend/requirements.txt` for the authoritative list.)
+(`pixi.toml` is the authoritative list — conda-forge env with a `pixi.lock`; `backend/requirements.txt` is a pip fallback.)
 
-- **Python**: FastAPI, Uvicorn, PyTorch, torchvision, Lightning, torchmetrics, timm, OpenCV (headless), Albumentations, OmegaConf, numpy, pandas, h5py (`.rlt` files), wandb (optional training logging), matplotlib, pyyaml, scipy
+- **Python** (via pixi/conda-forge): FastAPI, Uvicorn, PyTorch (`pytorch-gpu` CUDA build, swap to `pytorch-cpu` on CPU machines), torchvision, Lightning, torchmetrics, timm, OpenCV, Albumentations, OmegaConf, numpy, pandas, h5py (`.rlt` files), wandb (optional training logging), matplotlib, pyyaml, scipy, optuna, **ffmpeg** (re-encode / labeled-video, now provided by the env)
 - **Node**: Electron 31, electron-builder, mp4box, xlsx
 - **Test**: pytest, pytest-asyncio, httpx

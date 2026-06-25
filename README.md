@@ -19,23 +19,29 @@ A complete pipeline in one app, organized as four tabs:
 
 ## Requirements
 
-- **Python** 3.10+ (with `pip`)
-- **Node.js** 18+ (with `npm`)
-- **ffmpeg** on your `PATH` *(optional)* — only needed to re-encode unsupported videos or to render labeled-video overlays
-- A **CUDA GPU** is recommended for training/inference but not required (CPU works, slower)
+- **[pixi](https://pixi.sh)** — manages the entire Python side (PyTorch+CUDA, ffmpeg, and the native stack) from a single lockfile. Install once:
+  - Windows (PowerShell): `iwr -useb https://pixi.sh/install.ps1 | iex`
+  - macOS/Linux: `curl -fsSL https://pixi.sh/install.sh | bash`
+- **Node.js** 18+ (with `npm`) — for the Electron GUI.
+- A **CUDA GPU** is recommended for training/inference but not required (see CPU note below).
+
+> You no longer install Python, PyTorch, CUDA, or ffmpeg yourself — `pixi` provisions a pinned, project-local environment from `pixi.toml`/`pixi.lock`, and the app discovers it automatically. (No more `conda create` / `RTASOID_PYTHON`.)
 
 ---
 
 ## Installation
 
 ```bash
-# 1. Python backend dependencies
-pip install -r backend/requirements.txt
+# 1. Python environment (creates .pixi/envs/default from pixi.toml + pixi.lock,
+#    pulling CUDA PyTorch + ffmpeg + deps from conda-forge). Run from repo root.
+pixi install
 
 # 2. Electron app dependencies
 cd LabelingApp
 npm install
 ```
+
+**CPU-only machine?** Edit `pixi.toml` and replace `pytorch-gpu` with `pytorch-cpu`, then re-run `pixi install`.
 
 ## Running
 
@@ -44,13 +50,15 @@ npm install
 npm start
 ```
 
-The Electron main process spawns the FastAPI backend (`uvicorn backend.server:app --port 8741`) automatically and shuts it down on exit. The header shows a **Backend** status pill (green = connected).
+The Electron main process spawns the FastAPI backend (`uvicorn backend.server:app --port 8741`) using the **pixi env it auto-discovers** at `.pixi/envs/default/` (no env var needed), and shuts it down on exit. The header shows a **Backend** status pill (green = connected); `GET /api/health` reports the interpreter + CUDA status.
 
-To run the backend on its own (e.g. for API testing):
+> **Interpreter resolution** (`main.js::resolveBackendPython`): `RTASOID_PYTHON`/`PYTHON` override → the project-local pixi env → bare `python` on PATH. The override is an advanced escape hatch; the normal path is the pixi env.
+
+To run the backend on its own (e.g. for API testing) or the tests:
 
 ```bash
-# From the project root
-python -m uvicorn backend.server:app --port 8741 --host 127.0.0.1
+pixi run backend     # uvicorn backend.server:app --port 8741 --host 127.0.0.1
+pixi run test        # pytest
 ```
 
 ## Building installers
@@ -61,6 +69,8 @@ npm run dist:win     # Windows (NSIS installer + portable)
 npm run dist:mac     # macOS (DMG)
 npm run dist:linux   # Linux (AppImage + deb)
 ```
+
+> **Distribution status:** the dev/lab workflow above (`pixi install` → `npm start`) is the supported install today and needs no manual Python/CUDA setup. A fully turnkey end-user installer — bundling the `pixi` binary + backend source and running `pixi install` once on first launch (thin installer, ~no manual steps) — is the remaining packaging work tracked in the plan; until then, distribute by sharing the repo and having the recipient run `pixi install`.
 
 ---
 
@@ -176,41 +186,37 @@ The resulting `.pt` is compatible with `Bonsai.ML.Torch`'s `LoadScriptModule` fo
 
 | Symptom | Fix |
 |--------|-----|
-| **Backend pill stays red** | Ensure Python deps are installed and `python` is on `PATH`; check the terminal for `[backend]` errors. |
-| **Video won't load / "unsupported format"** | Choose a different MP4 (H.264) or WebM file, or use the prompt's *Re-encode* option (needs ffmpeg). |
+| **Backend pill stays red** | Make sure you ran `pixi install` at the repo root; check the terminal for `[backend]` errors. The startup log prints the interpreter + torch/CUDA status. |
+| **Video won't load / "unsupported format"** | Choose a different MP4 (H.264) or WebM file, or use the prompt's *Re-encode* option (ffmpeg is provided by the pixi env). |
 | **WebCodecs unavailable** | The checkbox disables itself and falls back to HTML5 playback automatically. |
-| **Re-encode / labeled-video fails** | Install ffmpeg and make sure it's on your `PATH`. |
-| **Training is very slow** | Use a CUDA GPU; CPU training works but is much slower. |
-| **Training runs on CPU despite having a GPU** | The training log shows `Device: CPU — GPU unavailable (...)` with the reason. Usually the backend is running a Python whose torch is a CPU-only build (`torch.version.cuda=None`). Check `GET /api/health` → `device.python` to see *which* interpreter the backend uses. Fix by either (a) installing a CUDA torch wheel into that environment, or (b) pointing the app at a CUDA-enabled environment via the `RTASOID_PYTHON` env var (see below). |
+| **Training is very slow** | Use a CUDA GPU; CPU works but is much slower. |
+| **Training runs on CPU despite having a GPU** | The training log shows `Device: CPU — GPU unavailable (...)` with the reason. With the default `pixi.toml` (`pytorch-gpu`) the env is CUDA-enabled; check `GET /api/health` → `device` to confirm the app is using the pixi env. If you edited `pixi.toml` to `pytorch-cpu`, switch it back and re-run `pixi install`. |
 
-### Selecting the backend Python interpreter
+### Selecting the backend Python interpreter (advanced)
 
-The app launches the backend with bare `python` (the active conda env / first on `PATH`). To force a specific interpreter — e.g. a conda env with a CUDA-enabled torch — set **`RTASOID_PYTHON`** to its `python.exe` before launching:
+Normally the app auto-discovers the pixi env (`.pixi/envs/default/`). To force a different interpreter, set **`RTASOID_PYTHON`** (or `PYTHON`) before launching — it takes priority over the pixi env:
 
 ```powershell
 # Windows (PowerShell)
-$env:RTASOID_PYTHON = "C:\Users\you\anaconda3\envs\realtime_gpu\python.exe"
-cd LabelingApp; npm start
+$env:RTASOID_PYTHON = "C:\path\to\python.exe"; cd LabelingApp; npm start
 ```
-
 ```bash
 # macOS / Linux
-export RTASOID_PYTHON="$HOME/miniconda3/envs/realtime_gpu/bin/python"
-cd LabelingApp && npm start
+export RTASOID_PYTHON="/path/to/python"; cd LabelingApp && npm start
 ```
 
-The chosen interpreter is printed to the console as `[backend] launching with interpreter: ...`, and `/api/health` reports its torch/CUDA status.
+The chosen interpreter is printed as `[backend] launching with interpreter: ...`, and `/api/health` reports its torch/CUDA status.
 
 ---
 
 ## Testing
 
-The backend has a pytest suite (106 tests) using synthetic frames/videos — no GPU or real data needed:
+The backend has a pytest suite using synthetic frames/videos — no GPU or real data needed:
 
 ```bash
-pytest          # all tests
-pytest -v       # verbose
-pytest tests/test_rlt_service.py   # a single module
+pixi run test                          # all tests
+pixi run pytest -v                     # verbose
+pixi run pytest tests/test_rlt_service.py   # a single module
 ```
 
 The Electron renderer UI is not covered by automated tests.
