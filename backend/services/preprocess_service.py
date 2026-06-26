@@ -57,17 +57,24 @@ def preview_frame(
     bg_path: str,
     frame_index: int,
     crop_params: dict,
+    prev_center: list | None = None,
 ) -> dict:
     """
     Return base64-encoded preview images for a single frame.
 
-    Returns dict with keys: original_bbox, mask, cropped
+    Returns dict with keys: original_bbox, mask, cropped, frame size, and the
+    resulting smoothed `center` (small space) so the caller can chain it into the
+    next frame's preview to visualize temporal smoothing while stepping.
     """
     crop_params, resize_factor = pop_resize_factor(crop_params)
 
     bg = cv2.imread(bg_path, cv2.IMREAD_GRAYSCALE).astype(np.float32)
     bg = resize_frame(bg, resize_factor)
     cropper = FindRatBoundingBox(bg, **crop_params)
+    # Seed the smoothing state from the previous frame so stepping shows the
+    # stabilized track (a fresh cropper otherwise has no temporal history).
+    if prev_center and len(prev_center) == 2:
+        cropper.smoothed_center = (float(prev_center[0]), float(prev_center[1]))
 
     cap = cv2.VideoCapture(video_path)
     cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
@@ -101,6 +108,8 @@ def preview_frame(
         "resized_width": frame.shape[1],  # size actually processed/saved
         "resized_height": frame.shape[0],
         "resize_factor": resize_factor,
+        # Smoothed crop center (small space) — chain into the next preview frame.
+        "center": list(cropper.smoothed_center) if cropper.smoothed_center else None,
     }
 
 

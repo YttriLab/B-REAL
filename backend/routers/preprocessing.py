@@ -36,6 +36,10 @@ class CropParams(BaseModel):
     open2_kernel: int = 10
     # Full-frame pre-resize applied before cropping (1.0 = original size).
     resize_factor: float = 1.0
+    # Temporal stabilization of the crop center (see FindRatBoundingBox).
+    smoothing: float = 0.0          # EMA weight on previous center, 0..1
+    deadband: float = 0.0           # px (small space) before the box moves
+    min_contour_area: float = 0.0   # ignore blobs smaller than this
 
 
 class PreviewRequest(BaseModel):
@@ -43,6 +47,9 @@ class PreviewRequest(BaseModel):
     bg_path: str
     frame_index: int
     crop_params: CropParams = CropParams()
+    # Smoothed center [cx, cy] (small space) carried from the previous previewed
+    # frame, so stepping frame-by-frame shows the temporal smoothing in action.
+    prev_center: Optional[list[float]] = None
 
 
 class RunRequest(BaseModel):
@@ -77,6 +84,7 @@ async def api_preview_frame(req: PreviewRequest):
             bg_path=req.bg_path,
             frame_index=req.frame_index,
             crop_params=req.crop_params.model_dump(),
+            prev_center=req.prev_center,
         )
         return result
     except Exception as e:

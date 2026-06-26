@@ -29,7 +29,8 @@ def resize_frame(img, factor):
 class FindRatBoundingBox():
     def __init__(self, bg, difference_threshold=5, box_size=100,
                  downsample_factor=1, open1_kernel=4, close_kernel=15, open2_kernel=10,
-                 difference_mode="directional"):
+                 difference_mode="directional", smoothing=0.0, deadband=0.0,
+                 min_contour_area=0.0):
         self.difference_threshold = difference_threshold
         # "directional" = subject is darker than background (small - bg < -t);
         # "absolute" = any change from background (|small - bg| > t).
@@ -39,21 +40,67 @@ class FindRatBoundingBox():
         self.open1_kernel = open1_kernel
         self.close_kernel = close_kernel
         self.open2_kernel = open2_kernel
+        # Temporal stabilization (all in downsampled "small" space):
+        #   smoothing  — EMA weight on the previous center, 0..1 (0 = off).
+        #   deadband   — don't move the box until the detected center drifts this
+        #                many px from the smoothed center (kills micro-jitter).
+        #   min_contour_area — ignore blobs smaller than this (drops specks).
+        self.smoothing = max(0.0, min(1.0, smoothing))
+        self.deadband = deadband
+        self.min_contour_area = min_contour_area
+        self.smoothed_center = None  # (cx, cy) in small space; persists across frames
         self.h, self.w = bg.shape[:2]
         self.resizer = partial(cv2.resize, dsize=(self.w // downsample_factor, self.h // downsample_factor), interpolation=cv2.INTER_NEAREST)
         self.bg = self.resizer(bg)
         self.prev_bounding = (0, 0, self.w, self.h)
-    
+
     def resize(self, frame):
         return self.resizer(frame)
-    
+
+    @staticmethod
+    def _contour_centroid(cnt):
+        M = cv2.moments(cnt)
+        if M["m00"] != 0:
+            return (M["m10"] / M["m00"], M["m01"] / M["m00"])
+        x, y, w, h = cv2.boundingRect(cnt)
+        return (x + w / 2.0, y + h / 2.0)
+
+    def _select_contour(self, contours):
+        """Pick the blob to track: drop specks below min_contour_area; when
+        smoothing is on and we have a previous center, prefer the nearest of the
+        comparably-large blobs (avoids flipping to a spurious/secondary blob);
+        otherwise take the largest."""
+        cands = [c for c in contours if cv2.contourArea(c) >= self.min_contour_area]
+        if not cands:
+            cands = list(contours)
+        if self.smoothing > 0 and self.smoothed_center is not None and len(cands) > 1:
+            max_area = max(cv2.contourArea(c) for c in cands)
+            big = [c for c in cands if cv2.contourArea(c) >= 0.5 * max_area]
+            sx, sy = self.smoothed_center
+            return min(big, key=lambda c: (lambda cx, cy: (cx - sx) ** 2 + (cy - sy) ** 2)(*self._contour_centroid(c)))
+        return max(cands, key=cv2.contourArea)
+
+    def _apply_smoothing(self, raw_cx, raw_cy):
+        """EMA + dead-band on the crop center (small space). Returns (cx, cy)."""
+        if self.smoothing <= 0 or self.smoothed_center is None:
+            self.smoothed_center = (raw_cx, raw_cy)
+            return raw_cx, raw_cy
+        px, py = self.smoothed_center
+        if self.deadband > 0 and ((raw_cx - px) ** 2 + (raw_cy - py) ** 2) ** 0.5 <= self.deadband:
+            return px, py  # within dead-band: hold the box still
+        a = self.smoothing
+        nx = (1 - a) * raw_cx + a * px
+        ny = (1 - a) * raw_cy + a * py
+        self.smoothed_center = (nx, ny)
+        return nx, ny
+
     def crop(self, frame):
         # Convert RGB to grayscale for processing if needed
         if len(frame.shape) == 3:
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         else:
             gray = frame
-        
+
         small = self.resizer(gray)
         diff = small - self.bg
         if self.difference_mode == "absolute":
@@ -61,29 +108,23 @@ class FindRatBoundingBox():
         else:  # "directional": subject darker than background
             mask = diff < -self.difference_threshold
         thresholded = (mask * 255).astype(np.uint8)
-        opened = cv2.morphologyEx(thresholded, cv2.MORPH_OPEN, 
+        opened = cv2.morphologyEx(thresholded, cv2.MORPH_OPEN,
                                   np.ones((self.open1_kernel, self.open1_kernel), np.uint8))
-        closed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, 
+        closed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE,
                                   np.ones((self.close_kernel, self.close_kernel), np.uint8))
-        opened_again = cv2.morphologyEx(closed, cv2.MORPH_OPEN, 
+        opened_again = cv2.morphologyEx(closed, cv2.MORPH_OPEN,
                                         np.ones((self.open2_kernel, self.open2_kernel), np.uint8))
         contours, _ = cv2.findContours(opened_again, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if len(contours) > 0:
-            cnt = max(contours, key=cv2.contourArea)
-            # Calculate center of mass using moments
-            M = cv2.moments(cnt)
-            if M["m00"] != 0:
-                center_x = int(M["m10"] / M["m00"])
-                center_y = int(M["m01"] / M["m00"])
-            else:
-                # Fallback to bounding box center if moments fail
-                (x, y, w, h) = cv2.boundingRect(cnt)
-                center_x = x + w // 2
-                center_y = y + h // 2
-            
-            # Create fixed-size box centered on center of mass
-            new_x = max(0, center_x - self.box_size // 2)
-            new_y = max(0, center_y - self.box_size // 2)
+            cnt = self._select_contour(contours)
+            raw_cx, raw_cy = self._contour_centroid(cnt)
+            # Temporal smoothing of the center keeps the crop steady so TSM sees
+            # the animal's own motion, not box jitter.
+            center_x, center_y = self._apply_smoothing(raw_cx, raw_cy)
+
+            # Create fixed-size box centered on the (smoothed) center
+            new_x = max(0, int(round(center_x)) - self.box_size // 2)
+            new_y = max(0, int(round(center_y)) - self.box_size // 2)
             bb = (new_x, new_y, self.box_size, self.box_size)
             self.prev_bounding = bb
             

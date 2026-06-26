@@ -3085,6 +3085,8 @@ const ppState = {
   bgByVideo: {}, // videoName -> background image path (auto-loaded on switch)
   frameW: null,  // original source frame size (from last preview)
   frameH: null,
+  previewFrame: null,   // frame index currently shown in the preview
+  previewCenter: null,  // smoothed crop center [cx,cy] (small space), chained on step
 };
 
 // Remember a background for a video (persisted in settings; also recorded on the
@@ -3121,7 +3123,7 @@ async function applyVideoBackground(videoName) {
 }
 
 // Slider value displays
-["ppBoxSize", "ppDiffThresh", "ppDownsample", "ppOpen1", "ppClose", "ppOpen2"].forEach((id) => {
+["ppBoxSize", "ppDiffThresh", "ppDownsample", "ppOpen1", "ppClose", "ppOpen2", "ppSmoothing", "ppDeadband", "ppMinArea"].forEach((id) => {
   const slider = document.getElementById(id);
   const output = document.getElementById(id + "Val");
   if (slider && output) {
@@ -3150,6 +3152,9 @@ function getCropParams() {
     close_kernel: parseInt(document.getElementById("ppClose").value),
     open2_kernel: parseInt(document.getElementById("ppOpen2").value),
     resize_factor: (parseInt(document.getElementById("ppResize").value) || 100) / 100,
+    smoothing: parseFloat(document.getElementById("ppSmoothing").value),
+    deadband: parseFloat(document.getElementById("ppDeadband").value),
+    min_contour_area: parseFloat(document.getElementById("ppMinArea").value),
   };
 }
 
@@ -3208,11 +3213,14 @@ document.getElementById("ppSelectBg").addEventListener("click", async () => {
   }
 });
 
-// Preview
-document.getElementById("ppPreview").addEventListener("click", async () => {
+// Preview a specific frame. When `chain` is true, the smoothed center from the
+// last previewed frame is carried in so stepping forward shows the temporal
+// smoothing settle (a single preview otherwise has no history).
+async function runPreview(frameIndex, { chain = false } = {}) {
   const videoPath = getVideoPath();
   if (!videoPath) { alert("Load a video first."); return; }
   if (!ppState.bgPath) { alert("Compute or select a background first."); return; }
+  frameIndex = Math.max(0, Math.round(frameIndex));
 
   try {
     const res = await backendFetch("/api/preprocess/preview", {
@@ -3220,10 +3228,18 @@ document.getElementById("ppPreview").addEventListener("click", async () => {
       body: JSON.stringify({
         video_path: videoPath,
         bg_path: ppState.bgPath,
-        frame_index: currentFrameIndex,
+        frame_index: frameIndex,
         crop_params: getCropParams(),
+        prev_center: chain ? ppState.previewCenter : null,
       }),
     });
+
+    ppState.previewFrame = frameIndex;
+    ppState.previewCenter = res.center || null;
+    const frameOut = document.getElementById("ppPreviewFrame");
+    if (frameOut) frameOut.textContent = frameIndex;
+    // Keep the main player in sync so you see the frame in context.
+    try { if (typeof seekToFrame === "function") seekToFrame(frameIndex); } catch { /* ignore */ }
 
     // Update the frame-size readouts from the original (source) dims.
     if (res.frame_width && res.frame_height) {
@@ -3259,6 +3275,23 @@ document.getElementById("ppPreview").addEventListener("click", async () => {
   } catch (e) {
     alert(`Preview failed: ${e.message}`);
   }
+}
+
+// "Preview Current Frame" — resets the smoothing chain at the player's frame.
+document.getElementById("ppPreview").addEventListener("click", () => {
+  ppState.previewCenter = null;
+  runPreview(currentFrameIndex, { chain: false });
+});
+
+// Step forward (chains the smoothed center so you watch the box settle) / back.
+document.getElementById("ppNextFrame").addEventListener("click", () => {
+  const base = ppState.previewFrame != null ? ppState.previewFrame : currentFrameIndex;
+  runPreview(base + 1, { chain: true });
+});
+document.getElementById("ppPrevFrame").addEventListener("click", () => {
+  const base = ppState.previewFrame != null ? ppState.previewFrame : currentFrameIndex;
+  ppState.previewCenter = null; // stepping back breaks the forward chain
+  runPreview(base - 1, { chain: false });
 });
 
 // Run preprocessing — frames always go into the active project's frames/<id>/.
@@ -4211,6 +4244,9 @@ function loadSettings() {
       setSlider("ppOpen1", "ppOpen1Val", s.cropParams.open1_kernel);
       setSlider("ppClose", "ppCloseVal", s.cropParams.close_kernel);
       setSlider("ppOpen2", "ppOpen2Val", s.cropParams.open2_kernel);
+      if (s.cropParams.smoothing !== undefined) setSlider("ppSmoothing", "ppSmoothingVal", s.cropParams.smoothing);
+      if (s.cropParams.deadband !== undefined) setSlider("ppDeadband", "ppDeadbandVal", s.cropParams.deadband);
+      if (s.cropParams.min_contour_area !== undefined) setSlider("ppMinArea", "ppMinAreaVal", s.cropParams.min_contour_area);
       if (s.cropParams.resize_factor) {
         const pct = Math.round(s.cropParams.resize_factor * 100);
         setSlider("ppResize", "ppResizeVal", pct);

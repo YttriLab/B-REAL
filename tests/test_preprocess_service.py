@@ -334,3 +334,35 @@ class TestStartPreprocessing:
             time.sleep(0.1)
         assert task["status"] == "error"
         assert task["error"] is not None
+
+
+# ── Crop-center stabilization (jitter fix) ──────────────────────────────────
+
+class TestCropperStabilization:
+    def _bg(self):
+        return np.zeros((64, 64), dtype=np.float32)
+
+    def test_smoothing_off_passes_through(self):
+        from tune_cropping import FindRatBoundingBox
+        c = FindRatBoundingBox(self._bg())  # smoothing defaults to 0
+        assert c._apply_smoothing(10, 10) == (10, 10)
+        assert c._apply_smoothing(40, 40) == (40, 40)
+
+    def test_smoothing_ema_and_deadband(self):
+        from tune_cropping import FindRatBoundingBox
+        c = FindRatBoundingBox(self._bg(), smoothing=0.5, deadband=3.0)
+        assert c._apply_smoothing(10, 10) == (10, 10)  # first call seeds center
+        assert c._apply_smoothing(12, 10) == (10, 10)  # within dead-band -> hold
+        nx, ny = c._apply_smoothing(20, 10)            # beyond dead-band -> EMA
+        assert nx == 0.5 * 20 + 0.5 * 10 and ny == 10
+
+    def test_min_contour_area_filters_specks(self):
+        import cv2
+        from tune_cropping import FindRatBoundingBox
+        c = FindRatBoundingBox(self._bg(), min_contour_area=50)
+        mask = np.zeros((64, 64), np.uint8)
+        cv2.rectangle(mask, (5, 5), (25, 25), 255, -1)    # large blob
+        cv2.rectangle(mask, (60, 60), (62, 62), 255, -1)  # speck
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cx, cy = c._contour_centroid(c._select_contour(contours))
+        assert 5 <= cx <= 25 and 5 <= cy <= 25  # tracked the large blob, not the speck
