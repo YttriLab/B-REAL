@@ -92,9 +92,12 @@ def preview_frame(
     (x, y, w, h), _small, mask, cropped = cropper(frame)
 
     # Draw bounding box on the (resized) frame that was actually processed.
+    # Scale line thickness to the frame size — the preview is displayed small
+    # (~200px), so a fixed 2px line would shrink to near-invisible on big frames.
     s = crop_params.get("downsample_factor", 1)
     frame_bbox = frame.copy()
-    cv2.rectangle(frame_bbox, (x * s, y * s), ((x + w) * s, (y + h) * s), (0, 255, 0), 2)
+    thickness = max(2, round(max(frame.shape[0], frame.shape[1]) / 100))
+    cv2.rectangle(frame_bbox, (x * s, y * s), ((x + w) * s, (y + h) * s), (0, 255, 0), thickness)
 
     # Convert mask to 3-channel for consistent encoding
     mask_bgr = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
