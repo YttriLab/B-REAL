@@ -1055,6 +1055,7 @@ const getFrameTimeMs = (frameIndex) => {
 
 const updateTimeDisplay = () => {
   currentTimeEl.textContent = formatTime(getFrameTimeMs(currentFrameIndex));
+  updateAlFrameInfo();
 };
 
 const seekHtml5ToMs = (milliseconds) => {
@@ -1104,6 +1105,8 @@ const renderBehaviors = () => {
     behaviorList.appendChild(empty);
     updateMergeButton();
     renderBinarizeChecklist();
+    renderAlBehaviorButtons();
+    updateAlFrameInfo();
     return;
   }
 
@@ -1202,6 +1205,8 @@ const renderBehaviors = () => {
   });
   updateMergeButton();
   renderBinarizeChecklist();
+  renderAlBehaviorButtons();
+  updateAlFrameInfo();
 };
 
 // Render the Train-tab "Positive class (binarize)" checklist from the current
@@ -3778,7 +3783,93 @@ const alState = {
   results: null, // { frames: [...], class_names: [...] }
   uncertaintyArray: null, // Float32Array of normalized entropy per frame index
   misclassifiedArray: null, // Int8Array: 1 = misclassified, 0 = correct or no label
+  frameByIndex: null, // Map<frameIndex, frameResult> for O(1) per-frame lookups
 };
+
+// ── Relabel strip (AL pane) ───────────────────────────────────────────────
+// Surfaces the behavior→key legend as clickable buttons plus this frame's
+// predicted class vs. current label, so the correct-in-place loop stays in the
+// Active Learning tab. Labeling reuses handleKeyAction (the same path as the
+// number keys), so bouts edited here are identical to Label-tab bouts.
+function renderAlBehaviorButtons() {
+  const container = document.getElementById("alBehaviorButtons");
+  if (!container) return;
+  container.innerHTML = "";
+
+  if (behaviors.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "No behaviors yet — add some in the Label tab.";
+    container.appendChild(empty);
+    return;
+  }
+
+  behaviors.forEach((behavior) => {
+    const btn = document.createElement("button");
+    btn.className = "al-behavior-btn";
+    const recording = activeStarts.has(behavior.id);
+    if (recording) btn.classList.add("recording");
+
+    const badge = document.createElement("span");
+    badge.className = "key-badge";
+    badge.textContent = behavior.key;
+
+    const name = document.createElement("span");
+    name.textContent = behavior.name;
+
+    btn.appendChild(badge);
+    btn.appendChild(name);
+    btn.title = recording
+      ? `Recording ${behavior.name} — click to end the bout on this frame`
+      : `Start a ${behavior.name} bout on this frame`;
+    btn.addEventListener("click", () => handleKeyAction(behavior.key));
+    container.appendChild(btn);
+  });
+}
+
+function updateAlFrameInfo() {
+  const frameEl = document.getElementById("alCurFrame");
+  const predEl = document.getElementById("alCurPredicted");
+  const labelEl = document.getElementById("alCurLabel");
+  if (!frameEl || !predEl || !labelEl) return;
+
+  frameEl.textContent = currentFrameIndex;
+
+  // Predicted class for this frame (if inference has been run).
+  let predName = null;
+  let predText = "—";
+  try {
+    if (alState && alState.results && alState.frameByIndex) {
+      const f = alState.frameByIndex.get(currentFrameIndex);
+      if (f) {
+        const classNames = alState.results.class_names || [];
+        predName = classNames[f.predicted_class] ?? `class ${f.predicted_class}`;
+        predText = typeof f.uncertainty === "number"
+          ? `${predName} (unc ${f.uncertainty.toFixed(2)})`
+          : predName;
+      } else {
+        predText = "(no prediction)";
+      }
+    }
+  } catch { /* alState not initialized yet */ }
+  predEl.textContent = predText;
+
+  // Current label = the bout covering this frame, if any.
+  const bout = bouts.find(
+    (b) => currentFrameIndex >= b.startFrame && currentFrameIndex <= b.endFrame
+  );
+  labelEl.textContent = bout ? bout.behaviorName : "(none)";
+
+  // Flag a prediction/label disagreement so the user knows to correct it.
+  const mismatch = !!(bout && predName && predName !== bout.behaviorName);
+  predEl.classList.toggle("al-pred-mismatch", mismatch);
+}
+
+function buildFrameIndex() {
+  alState.frameByIndex = (alState.results && alState.results.frames)
+    ? new Map(alState.results.frames.map((f) => [f.index, f]))
+    : null;
+}
 
 // Threshold slider
 const alThresholdSlider = document.getElementById("alThreshold");
@@ -3899,8 +3990,10 @@ document.getElementById("alRunInference").addEventListener("click", async () => 
             alState.results = results;
             buildUncertaintyArray();
             buildMisclassifiedArray();
+            buildFrameIndex();
             renderUncertaintyOverlay();
             updateAlStats();
+            updateAlFrameInfo();
             document.getElementById("alStatus").textContent = `Done: ${results.frames.length} frames`;
           } catch (e) {
             document.getElementById("alStatus").textContent = `Error fetching results: ${e.message}`;

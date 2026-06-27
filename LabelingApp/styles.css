@@ -1158,6 +1158,58 @@ button.danger:disabled {
   word-break: break-word;
 }
 
+/* ═══ Active Learning relabel strip ═══ */
+
+.al-frame-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-size: 13px;
+  color: #3b3b44;
+  margin: 8px 0;
+  padding: 10px;
+  background: #f6f7fb;
+  border-radius: 8px;
+}
+
+.al-frame-info strong {
+  font-weight: 600;
+}
+
+.al-frame-info .al-pred-mismatch {
+  color: #b91c1c;
+}
+
+.al-behavior-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.al-behavior-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 6px;
+  border: 1px solid #d0d0d8;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.al-behavior-btn:hover {
+  border-color: #38bdf8;
+  background: #f0f9ff;
+}
+
+.al-behavior-btn.recording {
+  border-color: #38bdf8;
+  background: #e0f2fe;
+  box-shadow: 0 0 0 1px #38bdf8 inset;
+}
+
 /* ═══ Preview area ═══ */
 
 .preview-area {
