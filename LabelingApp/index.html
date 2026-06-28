@@ -416,6 +416,26 @@
                 </label>
               </div>
               <div class="form-row">
+                <label><span>Scope:</span>
+                  <select id="alScope">
+                    <option value="all" selected>Entire video</option>
+                    <option value="range">Frame range</option>
+                    <option value="labeled">Labeled frames only</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-row" id="alRangeRow" style="display:none;">
+                <label><span>Start frame:</span>
+                  <input id="alRangeStart" type="number" min="0" step="1" value="0" />
+                </label>
+                <button id="alRangeStartCur" class="ghost" title="Set to current frame">Use current</button>
+                <label><span>End frame:</span>
+                  <input id="alRangeEnd" type="number" min="0" step="1" value="0" />
+                </label>
+                <button id="alRangeEndCur" class="ghost" title="Set to current frame">Use current</button>
+              </div>
+              <p class="hint" id="alLabeledHint" style="display:none;">Runs only on frames inside existing bouts for this video.</p>
+              <div class="form-row">
                 <button id="alRunInference" class="primary">Run Inference</button>
                 <button id="alStopInference" class="danger" disabled>Stop</button>
               </div>

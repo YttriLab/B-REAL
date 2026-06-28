@@ -3944,11 +3944,65 @@ document.getElementById("alSelectCheckpoint").addEventListener("click", async ()
   }
 });
 
+// ── Inference scope (entire video / frame range / labeled frames) ──────────
+const alScopeSelect = document.getElementById("alScope");
+const alRangeRow = document.getElementById("alRangeRow");
+const alLabeledHint = document.getElementById("alLabeledHint");
+
+function updateAlScopeVisibility() {
+  const scope = alScopeSelect.value;
+  alRangeRow.style.display = scope === "range" ? "" : "none";
+  alLabeledHint.style.display = scope === "labeled" ? "" : "none";
+}
+alScopeSelect.addEventListener("change", updateAlScopeVisibility);
+updateAlScopeVisibility();
+
+document.getElementById("alRangeStartCur").addEventListener("click", () => {
+  document.getElementById("alRangeStart").value = currentFrameIndex;
+});
+document.getElementById("alRangeEndCur").addEventListener("click", () => {
+  document.getElementById("alRangeEnd").value = currentFrameIndex;
+});
+
+// Resolve the scope selection into frame_ranges for the backend.
+// Returns { ranges } where ranges is null (entire video) or a list of
+// inclusive [start, end] pairs, or { error } if the selection is invalid.
+function resolveAlFrameRanges() {
+  const scope = alScopeSelect.value;
+  if (scope === "all") return { ranges: null };
+
+  if (scope === "range") {
+    const start = parseInt(document.getElementById("alRangeStart").value, 10);
+    const end = parseInt(document.getElementById("alRangeEnd").value, 10);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+      return { error: "Enter a valid start and end frame." };
+    }
+    const lo = Math.max(0, Math.min(start, end));
+    const hi = Math.max(start, end);
+    if (hi < lo) return { error: "End frame must be ≥ start frame." };
+    return { ranges: [[lo, hi]] };
+  }
+
+  if (scope === "labeled") {
+    if (!bouts.length) {
+      return { error: "No labeled frames on this video. Add bouts first, or pick another scope." };
+    }
+    const ranges = bouts.map((b) => [b.startFrame, b.endFrame]);
+    return { ranges };
+  }
+
+  return { ranges: null };
+}
+
 // Run inference — decodes + crops the current video on the fly (no frame dir).
 document.getElementById("alRunInference").addEventListener("click", async () => {
   if (!alState.checkpointPath) { alert("Select a checkpoint first."); return; }
   const videoPath = getVideoPath();
   if (!videoPath) { alert("Load a video first."); return; }
+
+  const scopeResult = resolveAlFrameRanges();
+  if (scopeResult.error) { alert(scopeResult.error); return; }
+  const frameRanges = scopeResult.ranges;
 
   const pm = window.projectManager;
   const bgPath = pm && pm.isActive() ? pm.getVideoBackgroundAbs(currentVideoName) : ppState.bgPath;
@@ -3968,6 +4022,7 @@ document.getElementById("alRunInference").addEventListener("click", async () => 
         bg_path: bgPath || null,
         crop_params: getCropParams(),
         frames_per_group: framesPerGroup,
+        frame_ranges: frameRanges,
       }),
     });
     alState.taskId = res.task_id;

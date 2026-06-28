@@ -28,6 +28,9 @@ class InferenceRequest(BaseModel):
     frames_per_group: int = 3
     image_size: int = 224
     extra_model_config: Optional[dict] = None
+    # Optional scoping (video path only): inclusive [start, end] native-index
+    # pairs. Omit/None to run on the entire video.
+    frame_ranges: Optional[list] = None
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────
@@ -47,6 +50,7 @@ async def api_run_inference(req: InferenceRequest):
             video_path=req.video_path,
             bg_path=req.bg_path,
             crop_params=req.crop_params,
+            frame_ranges=req.frame_ranges,
         )
         return {"task_id": task_id}
     except Exception as e:

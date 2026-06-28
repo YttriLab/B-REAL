@@ -224,6 +224,58 @@ class TestRunInferenceVideo:
             assert 0.0 <= f["uncertainty"] <= 1.0
             assert abs(sum(f["predictions"]) - 1.0) < 1e-4
 
+    def test_frame_ranges_scopes_to_segment(self, synthetic_video, synthetic_background, mock_model):
+        from backend.services.inference_service import run_inference_video
+
+        video_path, num_frames = synthetic_video
+        # A mid-video segment well inside the clip-able range.
+        seg_start, seg_end = 5, 9
+        results = run_inference_video(
+            checkpoint_path="fake.ckpt",
+            video_path=video_path,
+            bg_path=synthetic_background,
+            crop_params={"box_size": 32, "difference_threshold": 5},
+            frames_per_group=3,
+            image_size=64,
+            frame_ranges=[[seg_start, seg_end]],
+        )
+        indices = [f["index"] for f in results["frames"]]
+        # Predictions only for the requested segment — and native indices preserved.
+        assert indices == list(range(seg_start, seg_end + 1))
+
+    def test_frame_ranges_multiple_disjoint(self, synthetic_video, synthetic_background, mock_model):
+        from backend.services.inference_service import run_inference_video
+
+        video_path, num_frames = synthetic_video
+        results = run_inference_video(
+            checkpoint_path="fake.ckpt",
+            video_path=video_path,
+            bg_path=synthetic_background,
+            crop_params={"box_size": 32, "difference_threshold": 5},
+            frames_per_group=3,
+            image_size=64,
+            frame_ranges=[[3, 4], [8, 10]],
+        )
+        indices = [f["index"] for f in results["frames"]]
+        assert indices == [3, 4, 8, 9, 10]
+
+    def test_frame_ranges_drops_uncliplable_early_frames(self, synthetic_video, synthetic_background, mock_model):
+        from backend.services.inference_service import run_inference_video
+
+        video_path, num_frames = synthetic_video
+        # Frames 0,1 can't form a T=3 clip; only frame 2 is emittable.
+        results = run_inference_video(
+            checkpoint_path="fake.ckpt",
+            video_path=video_path,
+            bg_path=synthetic_background,
+            crop_params={"box_size": 32, "difference_threshold": 5},
+            frames_per_group=3,
+            image_size=64,
+            frame_ranges=[[0, 2]],
+        )
+        indices = [f["index"] for f in results["frames"]]
+        assert indices == [2]
+
 
 # ── start_inference (async task) ─────────────────────────────────────────
 
