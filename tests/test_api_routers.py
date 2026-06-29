@@ -177,6 +177,31 @@ class TestTrainingRouter:
         assert len(data["checkpoints"]) == 1
 
     @pytest.mark.asyncio
+    async def test_check_coverage(self, ac, tmp_path):
+        import csv
+        labels = tmp_path / "vid.csv"
+        with open(labels, "w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(["time", "a", "b"])
+            for fn in (2, 3, 4):
+                w.writerow([fn, 1, 0])
+        frames = tmp_path / "vid"
+        frames.mkdir()
+        for i in (2, 3, 4):  # missing context 0,1
+            (frames / f"{i}.png").write_bytes(b"")
+
+        resp = await ac.post("/api/training/check-coverage", json={
+            "frame_dirs": [str(frames)],
+            "label_paths": [str(labels)],
+            "frames_per_group": 3,
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_labeled"] == 3
+        assert data["total_ready"] == 1  # only frame 4 has its full triplet
+        assert data["datasets"][0]["not_extracted"] == 2
+
+    @pytest.mark.asyncio
     async def test_config_defaults(self, ac, tmp_path):
         """All optional fields should have defaults."""
         resp = await ac.post("/api/training/start", json={

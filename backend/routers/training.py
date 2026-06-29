@@ -71,6 +71,12 @@ class CheckpointSearchRequest(BaseModel):
     search_dirs: Optional[list[str]] = None
 
 
+class CoverageRequest(BaseModel):
+    label_paths: list[str]
+    frame_dirs: list[str]
+    frames_per_group: int = 3
+
+
 class ExportTorchscriptRequest(BaseModel):
     checkpoint_path: str
     output_name: str = "tsm_model"
@@ -168,6 +174,20 @@ async def api_stop_training(task_id: str):
     if not success:
         raise HTTPException(status_code=404, detail="Task not found or already stopped")
     return {"status": "cancelled"}
+
+
+@router.post("/check-coverage")
+async def api_check_coverage(req: CoverageRequest):
+    """Report how many labeled frames have preprocessed PNGs ready for training.
+
+    A lightweight (stdlib-only) pre-flight check so the GUI can warn before a run
+    that some labels would be silently dropped for lack of extracted frames.
+    """
+    from data_coverage import compute_coverage
+    try:
+        return compute_coverage(req.frame_dirs, req.label_paths, req.frames_per_group)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/checkpoints")

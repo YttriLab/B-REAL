@@ -129,6 +129,28 @@ def main():
         info("Device: CPU — GPU unavailable (" + "; ".join(reasons) + ")")
     info(f"Loading data from {len(dl['frame_dirs'])} source(s)...")
 
+    # Coverage pre-check: load_data silently drops labeled frames whose PNGs (or
+    # clip context) aren't on disk, so report the shortfall in the log. The GUI
+    # also blocks on this before starting, but log it here as a safety net.
+    try:
+        from data_coverage import compute_coverage
+        cov = compute_coverage(dl["frame_dirs"], dl["label_paths"], dl.get("frames_per_group", 3))
+        info(f"Frame coverage: {cov['total_ready']}/{cov['total_labeled']} "
+             f"labeled frames preprocessed and ready for training.")
+        if cov["total_missing"] > 0:
+            for d in cov["datasets"]:
+                if d["error"]:
+                    name = os.path.basename(str(d["frame_dir"]).rstrip("/\\")) or d["frame_dir"]
+                    info(f"  WARNING [{name}]: {d['error']}")
+                elif d["missing"] > 0:
+                    name = os.path.basename(str(d["frame_dir"]).rstrip("/\\")) or d["frame_dir"]
+                    info(f"  WARNING [{name}]: {d['missing']} of {d['labeled']} labeled frames "
+                         f"will be skipped ({d['not_extracted']} not preprocessed, "
+                         f"{d['too_early']} below the clip horizon).")
+            info("  Re-run Preprocess on those videos to include the missing labels.")
+    except Exception as e:
+        info(f"Coverage check skipped: {type(e).__name__}: {e}")
+
     # Load data
     all_file_paths, all_labels, all_class_names_union, all_boundary_dists = load_data(**dl)
 

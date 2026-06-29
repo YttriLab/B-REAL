@@ -3532,13 +3532,55 @@ document.getElementById("trainStart").addEventListener("click", async () => {
         try { await pm.saveVideoLabels(name, generateTrainingLabelCsv(videoBouts)); }
         catch { /* fall back to whatever is on disk */ }
       }
-      projectSources.push({ frameDir, labelPath });
+      projectSources.push({ name, frameDir, labelPath });
     }
   }
   const sources = [...projectSources, ...trainState.dataSources];
   if (sources.length === 0) {
     alert("Select at least one project video, or add an external data source.");
     return;
+  }
+
+  // Pre-flight: confirm the labeled frames are actually preprocessed. load_data
+  // silently drops labeled frames whose PNGs (or clip context) are missing, so
+  // warn before launching a run that would quietly ignore part of the labels.
+  const framesPerGroup = parseInt(document.getElementById("trainFramesPerGroup").value) || 3;
+  try {
+    const cov = await backendFetch("/api/training/check-coverage", {
+      method: "POST",
+      body: JSON.stringify({
+        frame_dirs: sources.map((s) => s.frameDir),
+        label_paths: sources.map((s) => s.labelPath),
+        frames_per_group: framesPerGroup,
+      }),
+    });
+    const problems = [];
+    (cov.datasets || []).forEach((d, i) => {
+      const name = (sources[i] && sources[i].name)
+        || String(d.frame_dir).split(/[\\/]/).filter(Boolean).pop()
+        || `source ${i + 1}`;
+      if (d.error) problems.push(`• ${name}: ${d.error}`);
+      else if (d.not_extracted > 0) {
+        problems.push(`• ${name}: ${d.not_extracted} of ${d.labeled} labeled frames not preprocessed`);
+      }
+    });
+    if (problems.length) {
+      const proceed = confirm(
+        "Some labeled frames aren't preprocessed and will be IGNORED during training:\n\n" +
+        problems.join("\n") +
+        `\n\nTraining would use ${cov.total_ready} of ${cov.total_labeled} labeled frames.\n` +
+        "Run Preprocess on those videos to include them.\n\n" +
+        "Proceed with training anyway?"
+      );
+      if (!proceed) {
+        document.getElementById("trainStatus").textContent =
+          "Cancelled — run Preprocess on the labeled frames first.";
+        return;
+      }
+    }
+  } catch (e) {
+    // Never hard-block training because the check itself failed; just log it.
+    console.warn("[train] coverage check failed", e);
   }
 
   const tsmStagesStr = document.getElementById("trainTsmStages").value;
@@ -3563,13 +3605,13 @@ document.getElementById("trainStart").addEventListener("click", async () => {
   const config = {
     label_paths: sources.map((s) => s.labelPath),
     frame_dirs: sources.map((s) => s.frameDir),
-    frames_per_group: parseInt(document.getElementById("trainFramesPerGroup").value),
+    frames_per_group: framesPerGroup,
     binarize: binarize,
     label_union: labelUnion,
     train_percent: parseFloat(document.getElementById("trainSplitTrain").value),
     val_percent: parseFloat(document.getElementById("trainSplitVal").value),
     test_percent: parseFloat(document.getElementById("trainSplitTest").value),
-    num_frames: parseInt(document.getElementById("trainFramesPerGroup").value),
+    num_frames: framesPerGroup,
     variant: document.getElementById("trainVariant").value,
     shift_fraction: 0.125,
     pretrained: true,
