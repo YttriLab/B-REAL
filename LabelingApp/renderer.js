@@ -3831,6 +3831,7 @@ const alState = {
   uncertaintyArray: null, // Float32Array of normalized entropy per frame index
   misclassifiedArray: null, // Int8Array: 1 = misclassified, 0 = correct or no label
   frameByIndex: null, // Map<frameIndex, frameResult> for O(1) per-frame lookups
+  lowConfCursor: -1, // walk position for "Jump to Lowest Confidence" (worst-first)
 };
 
 // ── Relabel strip (AL pane) ───────────────────────────────────────────────
@@ -3921,6 +3922,7 @@ function buildFrameIndex() {
 // Apply a results object to alState and rebuild all derived views/overlays.
 function applyAlResults(results) {
   alState.results = results;
+  alState.lowConfCursor = -1; // new predictions → restart the worst-first walk
   buildUncertaintyArray();
   buildMisclassifiedArray();
   buildFrameIndex();
@@ -3940,6 +3942,7 @@ function clearAlPredictions() {
   alState.uncertaintyArray = null;
   alState.misclassifiedArray = null;
   alState.frameByIndex = null;
+  alState.lowConfCursor = -1;
   renderUncertaintyOverlay();
   updateAlStats();
   updateAlFrameInfo();
@@ -3982,12 +3985,14 @@ const alThresholdOutput = document.getElementById("alThresholdVal");
 const alMinSegmentInput = document.getElementById("alMinSegment");
 alThresholdSlider.addEventListener("input", () => {
   alThresholdOutput.textContent = parseFloat(alThresholdSlider.value).toFixed(2);
+  alState.lowConfCursor = -1; // ranking changed → restart the walk
   renderUncertaintyOverlay();
   updateAlStats();
 });
 
 // Minimum consecutive-segment length filter
 alMinSegmentInput.addEventListener("input", () => {
+  alState.lowConfCursor = -1; // ranking changed → restart the walk
   renderUncertaintyOverlay();
   updateAlStats();
 });
@@ -4367,6 +4372,58 @@ document.getElementById("alJumpNext").addEventListener("click", () => {
   const next = segments.find((s) => s.start > currentFrameIndex) || segments[0];
   seekToFrame(next.start);
   setStatus(`Uncertain segment: frames ${next.start}–${next.end} (${next.length} frames).`);
+});
+
+// Rank qualifying uncertain segments worst-first (by their single lowest-
+// confidence frame). Each entry: { start, end, length, peakIndex, peakUnc }.
+// With min-segment-length = 1 each entry is a single frame, so this covers both
+// "lowest-confidence frame" and "lowest-confidence frame set".
+function rankLowConfidenceSegments() {
+  const arr = alState.uncertaintyArray;
+  if (!arr) return [];
+  const threshold = parseFloat(alThresholdSlider.value);
+  const minLen = getMinSegmentLength();
+  const ranked = getUncertainSegments(arr, threshold, minLen).map((s) => {
+    let peakIndex = s.start;
+    let peakUnc = arr[s.start];
+    for (let i = s.start + 1; i <= s.end; i++) {
+      if (arr[i] > peakUnc) { peakUnc = arr[i]; peakIndex = i; }
+    }
+    return { ...s, peakIndex, peakUnc };
+  });
+  // Worst (highest uncertainty / lowest confidence) first.
+  ranked.sort((a, b) => b.peakUnc - a.peakUnc);
+  return ranked;
+}
+
+// Jump to the next-lowest-confidence frame set, walking the ranking worst-first.
+document.getElementById("alJumpLowestConf").addEventListener("click", () => {
+  if (!alState.uncertaintyArray) { alert("Run inference first."); return; }
+  const ranked = rankLowConfidenceSegments();
+  if (ranked.length === 0) {
+    const minLen = getMinSegmentLength();
+    alert(`No uncertain segments of ${minLen}+ consecutive frames above threshold.`);
+    return;
+  }
+
+  // Advance the worst-first cursor (wraps at the end).
+  alState.lowConfCursor = (alState.lowConfCursor + 1) % ranked.length;
+  const item = ranked[alState.lowConfCursor];
+  seekToFrame(item.peakIndex);
+
+  // Prefer the model's actual max-probability as "confidence"; fall back to
+  // 1 - normalized-entropy if the per-frame prediction vector isn't available.
+  const f = alState.frameByIndex ? alState.frameByIndex.get(item.peakIndex) : null;
+  const conf = f && Array.isArray(f.predictions) && f.predictions.length
+    ? Math.max(...f.predictions)
+    : 1 - item.peakUnc;
+  const where = item.length > 1
+    ? `frames ${item.start}–${item.end}, worst frame ${item.peakIndex}`
+    : `frame ${item.peakIndex}`;
+  setStatus(
+    `Lowest confidence #${alState.lowConfCursor + 1}/${ranked.length}: ${where} ` +
+    `(confidence ${conf.toFixed(2)}).`
+  );
 });
 
 // Jump to next misclassified frame

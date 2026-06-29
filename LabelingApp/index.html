@@ -462,9 +462,11 @@
                   <span>Show on Timeline</span>
                 </label>
                 <button id="alJumpNext" class="ghost">Jump to Next Uncertain Frame</button>
+                <button id="alJumpLowestConf" class="ghost">Jump to Lowest Confidence</button>
                 <button id="alJumpNextMisclassified" class="ghost">Jump to Next Misclassified</button>
                 <button id="alExportPredictions" class="ghost">Export Predictions CSV</button>
               </div>
+              <p class="hint"><strong>Next Uncertain</strong> walks segments in time order; <strong>Lowest Confidence</strong> walks them worst-first (most-uncertain region first, then the next). Both respect the threshold and min-segment length, so set min length to 1 to step single frames or higher to step frame sets.</p>
               <p class="hint">Predictions export as a frame-indexed one-hot matrix (same format as labels) — re-importable via Import Video+Labels.</p>
 
               <h3>Relabel</h3>
