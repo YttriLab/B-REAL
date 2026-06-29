@@ -218,6 +218,56 @@ class TestPackageExport:
         assert info["checkpoints"] == 1
 
 
+# ── Predictions packaging (package only) ───────────────────────────────────
+
+class TestPredictionsPackaging:
+    def _write_predictions(self, project_dir):
+        from pathlib import Path
+        pred_dir = Path(project_dir) / "predictions"
+        pred_dir.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "frames": [
+                {"index": 2, "predictions": [0.1, 0.9], "uncertainty": 0.3, "predicted_class": 1},
+            ],
+            "class_names": ["other", "grooming"],
+            "total_frames": 3,
+            "frames_per_group": 3,
+        }
+        (pred_dir / "vid_a.json").write_text(json.dumps(payload), encoding="utf-8")
+        return payload
+
+    def test_excluded_from_lightweight(self, sample_project, tmp_path):
+        project_dir, _ = sample_project
+        self._write_predictions(project_dir)
+        out = str(tmp_path / "out.rlt")
+        export_rlt(project_dir, out)  # lightweight
+        with h5py.File(out, "r") as hf:
+            assert "predictions" not in hf
+
+    def test_packaged_and_round_trip(self, sample_project, tmp_path):
+        project_dir, _ = sample_project
+        payload = self._write_predictions(project_dir)
+        rlt = str(tmp_path / "pkg.rlt")
+        summary = export_rlt(project_dir, rlt, package=True)
+        assert summary["predictions"] == 1
+        with h5py.File(rlt, "r") as hf:
+            assert "predictions" in hf and "vid_a" in hf["predictions"]
+
+        dest = tmp_path / "imported"
+        import_rlt(rlt, str(dest))
+        restored = dest / "predictions" / "vid_a.json"
+        assert restored.exists()
+        assert json.loads(restored.read_text(encoding="utf-8")) == payload
+
+    def test_inspect_counts_predictions(self, sample_project, tmp_path):
+        project_dir, _ = sample_project
+        self._write_predictions(project_dir)
+        rlt = str(tmp_path / "pkg.rlt")
+        export_rlt(project_dir, rlt, package=True)
+        info = inspect_rlt(rlt)
+        assert info["predictions"] == 1
+
+
 # ── inspect_rlt ────────────────────────────────────────────────────────────
 
 class TestInspectRlt:

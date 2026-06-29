@@ -6,8 +6,9 @@ Two flavors, both HDF5:
     references, and the hand-annotated label bouts only. Small and shareable —
     modeled on SLEAP's base `.slp`. Frames/backgrounds/models are regenerated.
   - **Package** (`package=True`): everything above PLUS the regenerable data —
-    preprocessed frames (gzip), background images, and model checkpoints/exports.
-    A self-contained, train-anywhere bundle — modeled on SLEAP's `.pkg.slp`.
+    preprocessed frames (gzip), background images, model checkpoints/exports, and
+    active-learning predictions. A self-contained, train-anywhere bundle —
+    modeled on SLEAP's `.pkg.slp`.
 
 Import auto-detects which groups are present and restores accordingly.
 
@@ -17,6 +18,7 @@ HDF5 layout:
     /labels/{video_id}              (dataset: UTF-8 CSV string of bouts)
     /frames/{video_id}/{idx}        (dataset: uint8 PNG bytes, gzip)   [package]
     /backgrounds/{video_id}         (dataset: uint8 PNG bytes, gzip)   [package]
+    /predictions/{video_id}         (dataset: UTF-8 JSON string)       [package]
     /models/checkpoints/{name}      (dataset: uint8 binary blob)       [package]
     /models/exports/{name}          (dataset: uint8 binary blob)       [package]
 """
@@ -30,7 +32,7 @@ import h5py
 import numpy as np
 
 
-RLT_VERSION = 3
+RLT_VERSION = 4
 
 
 # ── Export (folder → .rlt) ────────────────────────────────────────────────
@@ -70,6 +72,7 @@ def export_rlt(
         "labels": 0,
         "frames": 0,
         "backgrounds": 0,
+        "predictions": 0,
         "checkpoints": 0,
         "exports": 0,
         "packaged": package,
@@ -124,6 +127,16 @@ def export_rlt(
                 summary["backgrounds"] += 1
                 _report("backgrounds", (i + 1) / max(len(bgs), 1) * 100)
 
+        # ── Predictions (package only) ────────────────────────────────
+        pred_grp = hf.create_group("predictions")
+        pred_dir = project_dir / "predictions"
+        if pred_dir.is_dir():
+            preds = sorted(pred_dir.glob("*.json"))
+            for i, pred in enumerate(preds):
+                pred_grp.create_dataset(pred.stem, data=pred.read_text(encoding="utf-8"))
+                summary["predictions"] += 1
+                _report("predictions", (i + 1) / max(len(preds), 1) * 100)
+
         # ── Models (package only) ─────────────────────────────────────
         models_grp = hf.create_group("models")
         for sub, key in (("checkpoints", "checkpoints"), ("exports", "exports")):
@@ -176,7 +189,7 @@ def import_rlt(
     with h5py.File(rlt_path, "r") as hf:
         manifest = json.loads(hf.attrs["manifest"])
 
-        for sub in ("labels", "frames", "backgrounds",
+        for sub in ("labels", "frames", "backgrounds", "predictions",
                     os.path.join("models", "checkpoints"),
                     os.path.join("models", "exports")):
             (output_dir / sub).mkdir(parents=True, exist_ok=True)
@@ -201,6 +214,15 @@ def import_rlt(
         # Backgrounds (package)
         if "backgrounds" in hf:
             _write_blobs(hf["backgrounds"], output_dir / "backgrounds", lambda k: f"bg_{k}.png")
+
+        # Predictions (package)
+        if "predictions" in hf:
+            pred_dir = output_dir / "predictions"
+            for vid_id in hf["predictions"].keys():
+                content = hf["predictions"][vid_id][()]
+                if isinstance(content, bytes):
+                    content = content.decode("utf-8")
+                (pred_dir / f"{vid_id}.json").write_text(content, encoding="utf-8")
 
         # Models (package)
         if "models" in hf:
@@ -236,6 +258,7 @@ def inspect_rlt(rlt_path: str) -> dict:
             "labels": len(hf["labels"]) if "labels" in hf else 0,
             "frames": frame_count,
             "backgrounds": len(hf["backgrounds"]) if "backgrounds" in hf else 0,
+            "predictions": len(hf["predictions"]) if "predictions" in hf else 0,
             "checkpoints": len(hf["models"]["checkpoints"]) if "models" in hf and "checkpoints" in hf["models"] else 0,
             "exports": len(hf["models"]["exports"]) if "models" in hf and "exports" in hf["models"] else 0,
         }

@@ -1834,6 +1834,9 @@ const resetSession = () => {
   activeStarts = new Map();
   renderBehaviors();
   renderBouts();
+  // Drop the previous video's predictions/overlays (alState may not be
+  // initialized yet during early startup — guard against the TDZ).
+  try { clearAlPredictions(); } catch { /* alState not ready */ }
 };
 
 const loadHtml5File = (file) => {
@@ -1855,6 +1858,7 @@ const loadHtml5File = (file) => {
   video.load();
   resetSession();
   restoreProgress(file.name);
+  restorePredictions(file.name);
   setStatus(`Loaded ${file.name}`);
 };
 
@@ -1887,6 +1891,7 @@ const loadWebcodecsFile = async (file) => {
   setWebcodecsMode(true);
   webcodecsOperationInProgress = false;
   restoreProgress(file.name);
+  restorePredictions(file.name);
   video.removeAttribute("src");
   video.load();
 };
@@ -3871,6 +3876,64 @@ function buildFrameIndex() {
     : null;
 }
 
+// Apply a results object to alState and rebuild all derived views/overlays.
+function applyAlResults(results) {
+  alState.results = results;
+  buildUncertaintyArray();
+  buildMisclassifiedArray();
+  buildFrameIndex();
+  renderUncertaintyOverlay();
+  updateAlStats();
+  updateAlFrameInfo();
+}
+
+// Drop in-memory predictions + derived overlays. Called on video switch so one
+// video's predictions never leak onto another (they're indexed by native frame,
+// so a stale array would be silently misaligned).
+function clearAlPredictions() {
+  if (alState.sseSource) { try { alState.sseSource.close(); } catch { /* already closed */ } }
+  alState.taskId = null;
+  alState.sseSource = null;
+  alState.results = null;
+  alState.uncertaintyArray = null;
+  alState.misclassifiedArray = null;
+  alState.frameByIndex = null;
+  renderUncertaintyOverlay();
+  updateAlStats();
+  updateAlFrameInfo();
+  const statusEl = document.getElementById("alStatus");
+  if (statusEl) statusEl.textContent = "Idle";
+}
+
+// Persist the current video's predictions to the project (no-op without one).
+function persistPredictions() {
+  try {
+    const pm = window.projectManager;
+    if (pm && pm.isActive() && currentVideoName && alState.results) {
+      pm.savePredictions(currentVideoName, JSON.stringify(alState.results)).catch(() => {});
+    }
+  } catch { /* project manager not ready */ }
+}
+
+// Load a video's saved predictions (if any) and rebuild overlays. Guarded so a
+// late async result can't apply to a video the user has since switched away from.
+async function restorePredictions(videoName) {
+  try {
+    const pm = window.projectManager;
+    if (!pm || !pm.isActive()) return;
+    const content = await pm.loadPredictions(videoName);
+    if (!content) return;
+    if (currentVideoName !== videoName) return; // user switched videos meanwhile
+    const results = JSON.parse(content);
+    if (!results || !Array.isArray(results.frames)) return;
+    applyAlResults(results);
+    const statusEl = document.getElementById("alStatus");
+    if (statusEl) statusEl.textContent = `Loaded saved predictions: ${results.frames.length} frames`;
+  } catch (e) {
+    console.warn("[al] Failed to restore predictions", e);
+  }
+}
+
 // Threshold slider
 const alThresholdSlider = document.getElementById("alThreshold");
 const alThresholdOutput = document.getElementById("alThresholdVal");
@@ -4042,13 +4105,8 @@ document.getElementById("alRunInference").addEventListener("click", async () => 
           // Fetch results
           try {
             const results = await backendFetch(`/api/inference/results/${alState.taskId}`);
-            alState.results = results;
-            buildUncertaintyArray();
-            buildMisclassifiedArray();
-            buildFrameIndex();
-            renderUncertaintyOverlay();
-            updateAlStats();
-            updateAlFrameInfo();
+            applyAlResults(results);
+            persistPredictions();
             document.getElementById("alStatus").textContent = `Done: ${results.frames.length} frames`;
           } catch (e) {
             document.getElementById("alStatus").textContent = `Error fetching results: ${e.message}`;

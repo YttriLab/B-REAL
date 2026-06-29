@@ -176,6 +176,32 @@
     return result.content || null;
   }
 
+  // ── Active-learning predictions I/O ──────────────────────────────────────
+  // Persist a video's inference results as predictions/<id>.json so the
+  // uncertainty/misclassified overlays and relabel data survive video switches
+  // and restarts without re-running inference. Reuses the generic project file
+  // IPC (same as labels), just with a different relative path.
+
+  async function savePredictions(videoName, jsonContent) {
+    if (!activeProject) return;
+    const id = sanitizeId(videoName);
+    await window.api.projectSaveLabels({
+      rootDir: activeProject.rootDir,
+      relativePath: "predictions/" + id + ".json",
+      content: jsonContent,
+    });
+  }
+
+  async function loadPredictions(videoName) {
+    if (!activeProject) return null;
+    const id = sanitizeId(videoName);
+    const result = await window.api.projectReadLabels({
+      rootDir: activeProject.rootDir,
+      relativePath: "predictions/" + id + ".json",
+    });
+    return (result && result.content) || null;
+  }
+
   // ── Behaviors ─────────────────────────────────────────────────────────────
 
   function updateBehaviors(behaviors) {
@@ -403,6 +429,10 @@
     // Labels
     saveVideoLabels,
     loadVideoLabels,
+
+    // Active-learning predictions
+    savePredictions,
+    loadPredictions,
 
     // Config
     updateBehaviors,
