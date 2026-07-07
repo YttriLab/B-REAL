@@ -11,12 +11,16 @@
 #
 # CPU-only machine? Swap `pytorch-gpu` for `pytorch-cpu` below.
 
-[project]
+[workspace]
 name = "realtimeasoid"
 version = "0.1.0"
 description = "Real-time clip-based animal behavior classifier (Electron GUI + FastAPI/PyTorch backend)."
 channels = ["conda-forge"]
-platforms = ["win-64"]   # add "linux-64" / "osx-64" here, then re-run `pixi install`
+# The `cuda` virtual package tells the solver a CUDA-capable GPU/driver is present
+# so it can pick a pytorch-gpu build (pixi won't assume this on its own, for
+# lockfile portability). Add another entry (e.g. "linux-64") to support that
+# platform too, then re-run `pixi install`.
+platforms = [{ platform = "win-64", cuda = "12" }]
 
 [tasks]
 backend = "uvicorn backend.server:app --port 8741 --host 127.0.0.1"
@@ -51,3 +55,13 @@ wandb = "*"
 pytest = "*"
 pytest-asyncio = "*"
 httpx = "*"
+# Benchmarking (benchmarking/code/)
+psutil = "*"
+py-cpuinfo = "*"
+tqdm = "*"
+
+# albucore (an albumentations dependency) hard-imports simsimd, but conda-forge's
+# win-64 `simsimd` build is an empty rename-shim (it points at a `numkong` package
+# instead of shipping the `simsimd` module) — pull the real thing from PyPI.
+[pypi-dependencies]
+simsimd = "*"
