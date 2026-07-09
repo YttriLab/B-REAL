@@ -14,9 +14,13 @@ fit), so it's reported as a majority-class baseline: predict the single most
 common behavior across all available labels (train+val+test) and score that
 fixed prediction against the test set.
 
-The x-axis is "# distinct labeled training frames used". Each training
-sample corresponds to exactly one distinct native video frame, so this is
-the amount of labeled footage the model actually trained on.
+Each training sample corresponds to exactly one distinct native video frame;
+results.json always stores that raw count (n_frames_train). The x-axis
+itself is converted to seconds using --fps (default 60) at plot time --
+pass --fps to match your actual recording, or --fps -1 to skip the
+conversion and plot raw frame count instead. Either way results.json is
+unaffected, so the same run can be replotted in either unit without
+retraining anything.
 
 Progress (args + results-so-far) is saved to <output-dir>/run_state.json after
 every run, so a killed/crashed invocation can be continued with --resume
@@ -556,7 +560,17 @@ def run_experiment(args, completed: list[dict]) -> list[dict]:
 # Plotting
 # ---------------------------------------------------------------------------
 
-def plot_learning_curve(results: list[dict], metric_key: str, ylabel: str, title: str, out_path: Path):
+def plot_learning_curve(results: list[dict], metric_key: str, ylabel: str, title: str, out_path: Path,
+                         fps: float = 60.0):
+    """fps > 0 converts each run's raw n_frames_train into seconds for the
+    x-axis (x = n_frames_train / fps); fps <= 0 (e.g. -1) leaves the x-axis
+    as raw frame count instead. n_frames_train itself is always what's
+    stored in results.json -- this conversion happens at plot time, so the
+    same results.json can be replotted in either unit without re-running
+    anything."""
+    use_seconds = fps is not None and fps > 0
+    xlabel = "Training data (seconds)" if use_seconds else "Training data (# frames)"
+
     fractions = sorted({r["fraction"] for r in results})
     xs_mean, ys_mean, ys_std = [], [], []
 
@@ -566,7 +580,7 @@ def plot_learning_curve(results: list[dict], metric_key: str, ylabel: str, title
 
     for frac in fractions:
         rows = [r for r in results if r["fraction"] == frac]
-        xs = [r["n_frames_train"] for r in rows]
+        xs = [r["n_frames_train"] / fps if use_seconds else r["n_frames_train"] for r in rows]
         ys = [r[metric_key] for r in rows]
 
         ax.scatter(xs, ys, color=PALETTE[0], alpha=0.45, s=28, zorder=2,
@@ -584,7 +598,7 @@ def plot_learning_curve(results: list[dict], metric_key: str, ylabel: str, title
     ax.errorbar(xs_mean, ys_mean, yerr=ys_std, color=PALETTE[1], marker="o",
                 markersize=6, linewidth=1.8, capsize=4, zorder=3, label="Mean ± std")
 
-    ax.set_xlabel("Training data (# frames)", color=INK_SECONDARY)
+    ax.set_xlabel(xlabel, color=INK_SECONDARY)
     ax.set_ylabel(ylabel, color=INK_PRIMARY)
     ax.set_title(title, color=INK_PRIMARY, fontsize=13, pad=14)
     ax.tick_params(colors=INK_SECONDARY, labelsize=9)
@@ -626,6 +640,10 @@ def main():
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--accelerator", type=str, default="auto")
+    parser.add_argument("--fps", type=float, default=60.0,
+                         help="Frame rate assumed for the source video(s), used to convert each "
+                              "run's # training frames into seconds for the plot x-axis (default: "
+                              "60). Pass -1 to skip the conversion and plot raw frame count instead.")
     parser.add_argument("--no-progress-bar", dest="progress_bar", action="store_false")
     parser.add_argument("--output-dir", type=str, default=str(FIGURES_DIR))
     parser.add_argument("--resume", action="store_true",
@@ -660,13 +678,17 @@ def main():
         json.dump(results, f, indent=2)
     print(f"\nSaved raw results to {results_path}")
 
-    accuracy_path = output_dir / "accuracy_vs_frames.svg"
-    f1_path = output_dir / "f1_vs_frames.svg"
-    plot_learning_curve(results, "accuracy", "Accuracy", "Accuracy vs. training data size", accuracy_path)
-    plot_learning_curve(results, "macro_f1", "Macro F1", "Macro F1 vs. training data size", f1_path)
+    x_unit = "seconds" if args.fps > 0 else "frames"
+    accuracy_path = output_dir / f"accuracy_vs_{x_unit}.svg"
+    f1_path = output_dir / f"f1_vs_{x_unit}.svg"
+    mcc_path = output_dir / f"mcc_vs_{x_unit}.svg"
+    plot_learning_curve(results, "accuracy", "Accuracy", "Accuracy vs. training data size", accuracy_path, fps=args.fps)
+    plot_learning_curve(results, "macro_f1", "Macro F1", "Macro F1 vs. training data size", f1_path, fps=args.fps)
+    plot_learning_curve(results, "mcc", "MCC", "MCC vs. training data size", mcc_path, fps=args.fps)
 
     print(f"Saved {accuracy_path}")
     print(f"Saved {f1_path}")
+    print(f"Saved {mcc_path}")
 
 
 if __name__ == "__main__":
