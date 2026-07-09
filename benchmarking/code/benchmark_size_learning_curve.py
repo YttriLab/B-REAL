@@ -24,20 +24,43 @@ instead of starting over. --resume ignores all other CLI args and reuses
 whatever the original run was called with; if every planned run is already
 done, it just reports that and exits.
 
+Each training fraction's subset is drawn *stratified* by (source video,
+behavior class): sampling happens independently within every (dataset_id,
+label) cell of the training pool, so a fraction's subset always keeps both
+the same video mix and the same per-video class balance as the full
+training pool -- not just an overall random draw that could, by chance,
+lean heavily toward one video or drop a rare behavior entirely.
+
+Every run also writes, under --output-dir:
+  - epoch_metrics/frac{f}_rep{r}.jsonl -- one JSON line per training epoch
+    (train/val loss, balanced acc, MCC, LR), so a run's trajectory can be
+    inspected later without re-running it.
+  - checkpoints/frac100_rep0_best.ckpt -- the best-val-loss checkpoint from
+    the 100%-data run only (kept as the "reference" model; every other
+    run's checkpoint is discarded after evaluation to bound disk usage).
+  - run_meta.json -- one-time reproducibility snapshot: git commit, torch/
+    lightning versions, the resolved config, class names, and per-dataset
+    label-row counts.
+and each entry in results.json additionally records epochs_trained,
+epoch_of_best, best_val_loss, per-class precision/recall/F1/support, a
+confusion matrix, MCC, and the class weights used for that run.
+
 Usage:
     python benchmarking/code/benchmark_size_learning_curve.py
     python benchmarking/code/benchmark_size_learning_curve.py --config config_tsm.yaml --repeats 5
     python benchmarking/code/benchmark_size_learning_curve.py --max-epochs 22 --patience 22
+    python benchmarking/code/benchmark_size_learning_curve.py --max-epochs 5 --repeats 3
     python benchmarking/code/benchmark_size_learning_curve.py --resume
-    
 """
 
 import argparse
 import json
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -48,8 +71,9 @@ sys.path.insert(0, str(REPO_ROOT))
 
 import torch
 import lightning as L
-from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
+from lightning.pytorch.callbacks import Callback, EarlyStopping, ModelCheckpoint
 from omegaconf import OmegaConf
+from torchmetrics import ConfusionMatrix, MatthewsCorrCoef
 import matplotlib.pyplot as plt
 
 from model import load_data, MultiImageDataModule, train_test_split
@@ -67,26 +91,49 @@ SURFACE = "#fcfcfb"
 
 
 # ---------------------------------------------------------------------------
-# Metrics (numpy-only, no sklearn dependency in this repo's env)
+# Metrics
 # ---------------------------------------------------------------------------
 
-def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray, num_classes: int) -> tuple[float, float]:
-    """Returns (accuracy, macro_f1). Classes with no support get F1=0, matching
-    sklearn's f1_score(..., average='macro', zero_division=0)."""
+def compute_full_metrics(y_true: np.ndarray, y_pred: np.ndarray, num_classes: int,
+                          class_names: list) -> dict:
+    """Accuracy, macro F1, MCC, a confusion matrix, and per-class precision/
+    recall/F1/support -- enough to diagnose *which* behaviors benefited from
+    more data, not just a single aggregate number per run.
+
+    Accuracy/F1/precision/recall are hand-rolled with numpy (no sklearn
+    dependency in this repo's env); MCC and the confusion matrix reuse
+    torchmetrics, which is already a hard dependency via model_tsm.py, rather
+    than hand-rolling the multiclass MCC generalization.
+    """
     accuracy = float(np.mean(y_true == y_pred))
 
+    per_class = {}
     f1s = []
-    for c in range(num_classes):
-        tp = np.sum((y_pred == c) & (y_true == c))
-        fp = np.sum((y_pred == c) & (y_true != c))
-        fn = np.sum((y_true == c) & (y_pred != c))
+    for c, name in enumerate(class_names):
+        tp = int(np.sum((y_pred == c) & (y_true == c)))
+        fp = int(np.sum((y_pred == c) & (y_true != c)))
+        fn = int(np.sum((y_true == c) & (y_pred != c)))
+        support = int(np.sum(y_true == c))
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
         recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
         f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
         f1s.append(f1)
+        per_class[name] = {"precision": precision, "recall": recall, "f1": f1, "support": support}
     macro_f1 = float(np.mean(f1s))
 
-    return accuracy, macro_f1
+    task = "binary" if num_classes <= 2 else "multiclass"
+    t_true = torch.as_tensor(y_true, dtype=torch.long)
+    t_pred = torch.as_tensor(y_pred, dtype=torch.long)
+    mcc = MatthewsCorrCoef(task=task, num_classes=num_classes)(t_pred, t_true).item()
+    confusion_matrix = ConfusionMatrix(task=task, num_classes=num_classes)(t_pred, t_true).tolist()
+
+    return {
+        "accuracy": accuracy,
+        "macro_f1": macro_f1,
+        "mcc": mcc,
+        "per_class": per_class,
+        "confusion_matrix": confusion_matrix,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -101,21 +148,73 @@ def load_experiment_data(config):
         all_file_paths, all_labels, all_boundary_dists,
         **OmegaConf.to_container(config.data, resolve=True)
     )
-    return train_data, valid_data, test_data, all_class_names_union
+    # all_labels (nested, pre-split, per source dataset) is returned too --
+    # dataset_ids_for_train() needs it to recover which dataset each
+    # flattened train_data sample came from.
+    return train_data, valid_data, test_data, all_class_names_union, all_labels
 
 
-def subsample_train(train_data, n: int, seed: int):
+def dataset_ids_for_train(all_labels: list, train_percent: float) -> np.ndarray:
+    """Recovers which of the original (frame_dir, label_path) dataset entries
+    each sample in the flattened train_data list came from.
+
+    train_test_split (model.py) splits each dataset independently -- taking
+    the first `train_end = int(total * train_percent)` samples of each as
+    train (model.py:407) -- then appends them to train_data in dataset order
+    (model.py:421). That means the dataset-of-origin for the concatenated
+    train list is fully determined by those per-dataset counts, without
+    train_test_split itself needing to expose it: this just replays the same
+    arithmetic against the pre-split `all_labels` to tag each position.
+    """
+    ids = []
+    for dataset_idx, dataset_labels in enumerate(all_labels):
+        train_end = int(len(dataset_labels) * train_percent)
+        ids.extend([dataset_idx] * train_end)
+    return np.array(ids)
+
+
+def stratified_subsample_train(train_data, dataset_ids: np.ndarray, n: int, seed: int):
+    """Draw ~n samples from the training pool, stratified by (dataset, label).
+
+    Sampling happens independently within every (video, behavior class) cell
+    of the training pool, so the resulting subset keeps both the same video
+    mix and each video's class balance as the full pool -- not just an
+    overall random draw that could, by chance, lean toward one video or drop
+    a rare behavior at low fractions.
+
+    Returns (subset, subset_dataset_ids): subset is the usual (paths, labels,
+    boundary_dists) 3-tuple; subset_dataset_ids is a parallel array (same
+    order) recording which dataset each chosen sample came from, for
+    composition reporting.
+    """
     paths, labels, boundary_dists = train_data
     total = len(labels)
     if n >= total:
-        idx = np.arange(total)
-    else:
-        rng = np.random.RandomState(seed)
-        idx = rng.choice(total, size=n, replace=False)
+        return train_data, np.array(dataset_ids)
+
+    labels_arr = np.asarray(labels)
+    rng = np.random.RandomState(seed)
+    frac = n / total
+
+    cells = defaultdict(list)
+    for i in range(total):
+        cells[(int(dataset_ids[i]), int(labels_arr[i]))].append(i)
+
+    chosen = []
+    for cell_idx in cells.values():
+        k = len(cell_idx)
+        # Floor at 1 so a fraction never silently zeroes out a (video, class)
+        # combination that actually has samples -- the achieved n can
+        # therefore slightly exceed the nominal target at low fractions when
+        # there are many small cells; the caller records the real n used.
+        take = min(k, max(1, round(frac * k)))
+        chosen.extend(rng.choice(cell_idx, size=take, replace=False).tolist())
+
+    idx = np.array(sorted(chosen))
     sub_paths = [paths[i] for i in idx]
     sub_labels = [labels[i] for i in idx]
     sub_bd = [boundary_dists[i] for i in idx]
-    return sub_paths, sub_labels, sub_bd
+    return (sub_paths, sub_labels, sub_bd), np.asarray(dataset_ids)[idx]
 
 
 def class_weights_for(labels: list, num_classes: int) -> torch.Tensor:
@@ -134,10 +233,46 @@ def majority_class_baseline(train_data, valid_data, test_data, num_classes: int)
 
 
 # ---------------------------------------------------------------------------
+# Per-epoch trajectory logging
+# ---------------------------------------------------------------------------
+
+class EpochMetricsWriter(Callback):
+    """Appends one JSON line per training epoch (train/val loss, balanced
+    acc, MCC, LR) to `path`, so a run's trajectory can be inspected or
+    replotted later without re-running it."""
+
+    def __init__(self, path: Path):
+        super().__init__()
+        self.path = path
+
+    def on_train_epoch_end(self, trainer, pl_module):
+        def _get(key):
+            val = trainer.callback_metrics.get(key)
+            return float(val) if val is not None else None
+
+        record = {
+            "epoch": trainer.current_epoch,
+            "train_loss": _get("train_loss"),
+            "train_balanced_acc": _get("train_balanced_acc"),
+            "train_mcc": _get("train_mcc"),
+            "val_loss": _get("val_loss"),
+            "val_balanced_acc": _get("val_balanced_acc"),
+            "val_mcc": _get("val_mcc"),
+            "lr": float(trainer.optimizers[0].param_groups[0]["lr"]),
+        }
+        with open(self.path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
+
+
+# ---------------------------------------------------------------------------
 # Train + evaluate one (fraction, repeat) run
 # ---------------------------------------------------------------------------
 
-def train_and_evaluate(subset, valid_data, test_data, config, class_names, args, seed: int) -> tuple[float, float]:
+def train_and_evaluate(subset, valid_data, test_data, config, class_names, args, seed: int,
+                        epoch_log_path: Path, keep_checkpoint_to: Path | None = None) -> dict:
+    """Trains one run and returns a dict with the test-set metrics plus
+    enough bookkeeping (epochs actually trained, which epoch was best, the
+    class weights used) to reconstruct what happened without re-running it."""
     L.seed_everything(seed, workers=True)
 
     num_classes = len(class_names)
@@ -167,20 +302,37 @@ def train_and_evaluate(subset, valid_data, test_data, config, class_names, args,
     try:
         checkpoint_cb = ModelCheckpoint(dirpath=tmp_dir, monitor="val_loss", mode="min", save_top_k=1)
         early_stop_cb = EarlyStopping(monitor="val_loss", patience=patience, mode="min")
+        epoch_log_path.parent.mkdir(parents=True, exist_ok=True)
+        metrics_writer_cb = EpochMetricsWriter(epoch_log_path)
 
         trainer = L.Trainer(
             logger=False,
             enable_checkpointing=True,
-            callbacks=[checkpoint_cb, early_stop_cb],
+            callbacks=[checkpoint_cb, early_stop_cb, metrics_writer_cb],
             max_epochs=max_epochs,
             accelerator=args.accelerator,
             enable_progress_bar=args.progress_bar,
         )
         trainer.fit(model, data_module)
 
+        epochs_trained = trainer.current_epoch
+        best_val_loss = (
+            float(checkpoint_cb.best_model_score) if checkpoint_cb.best_model_score is not None else None
+        )
+
         best_path = checkpoint_cb.best_model_path
+        epoch_of_best = None
         if best_path:
+            # Lightning checkpoints store the epoch they were saved at --
+            # read that off before reloading the module from it.
+            ckpt_meta = torch.load(best_path, map_location="cpu", weights_only=False)
+            epoch_of_best = int(ckpt_meta.get("epoch")) if "epoch" in ckpt_meta else None
+            del ckpt_meta
             model = TSMClassifier.load_from_checkpoint(best_path, strict=False)
+
+        if keep_checkpoint_to is not None and best_path:
+            keep_checkpoint_to.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(best_path, keep_checkpoint_to)
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model.eval().to(device)
@@ -201,7 +353,14 @@ def train_and_evaluate(subset, valid_data, test_data, config, class_names, args,
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        return compute_metrics(y_true, y_pred, num_classes)
+        metrics = compute_full_metrics(y_true, y_pred, num_classes, class_names)
+        return {
+            **metrics,
+            "epochs_trained": epochs_trained,
+            "epoch_of_best": epoch_of_best,
+            "best_val_loss": best_val_loss,
+            "class_weights": weights.tolist(),
+        }
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -239,6 +398,48 @@ def load_resume_state(state_path: Path, output_dir: Path):
 
 
 # ---------------------------------------------------------------------------
+# Reproducibility metadata (written once per experiment, not per run)
+# ---------------------------------------------------------------------------
+
+def get_git_commit(repo_root: Path) -> str | None:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=repo_root, text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except Exception:
+        return None
+
+
+def save_run_meta(output_dir: Path, args, config, class_names: list, all_labels: list) -> None:
+    """One-time snapshot of everything needed to say what a run *was*, as
+    opposed to results.json's per-run numbers: git commit, package versions,
+    the fully-resolved config, class order, and how many labeled rows each
+    source dataset contributed."""
+    dl = OmegaConf.to_container(config.data_loading, resolve=True)
+    frame_dirs = dl.get("frame_dirs", [])
+    label_paths = dl.get("label_paths", [])
+
+    meta = {
+        "git_commit": get_git_commit(REPO_ROOT),
+        "torch_version": torch.__version__,
+        "lightning_version": L.__version__,
+        "config_path": str(args.config),
+        "config": OmegaConf.to_container(config, resolve=True),
+        "class_names": class_names,
+        "dataset_entries": [
+            {"dataset_id": i, "frame_dir": fd, "label_path": lp, "n_labeled_rows": len(all_labels[i])}
+            for i, (fd, lp) in enumerate(zip(frame_dirs, label_paths))
+        ],
+        "batch_size": args.batch_size,
+        "num_workers": args.num_workers,
+        "accelerator": args.accelerator,
+        "base_seed": args.seed,
+    }
+    with open(output_dir / "run_meta.json", "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2, default=str)
+
+
+# ---------------------------------------------------------------------------
 # Experiment driver
 # ---------------------------------------------------------------------------
 
@@ -247,12 +448,17 @@ def run_experiment(args, completed: list[dict]) -> list[dict]:
     state_path = state_file_for(output_dir)
 
     config = OmegaConf.load(args.config)
-    train_data, valid_data, test_data, class_names = load_experiment_data(config)
+    train_data, valid_data, test_data, class_names, all_labels = load_experiment_data(config)
     num_classes = len(class_names)
     total_train = len(train_data[1])
+    dataset_ids = dataset_ids_for_train(all_labels, config.data.train_percent)
+
+    save_run_meta(output_dir, args, config, class_names, all_labels)
 
     print(f"Train/val/test samples: {total_train}/{len(valid_data[1])}/{len(test_data[1])}")
     print(f"Classes ({num_classes}): {class_names}")
+    print(f"Training pool spans {len(all_labels)} source dataset(s): "
+          f"{[len(d) for d in all_labels]} labeled rows each")
 
     fractions = [int(f.strip()) for f in args.fractions.split(",")]
 
@@ -286,17 +492,50 @@ def run_experiment(args, completed: list[dict]) -> list[dict]:
             majority = majority_class_baseline(train_data, valid_data, test_data, num_classes)
             y_true = np.array(test_data[1])
             y_pred = np.full_like(y_true, majority)
-            accuracy, f1 = compute_metrics(y_true, y_pred, num_classes)
+            metrics = compute_full_metrics(y_true, y_pred, num_classes, class_names)
             n_used = 0
+            run_extra = {
+                "epochs_trained": None, "epoch_of_best": None, "best_val_loss": None,
+                "class_weights": None, "samples_per_dataset": None,
+                "epoch_metrics_path": None, "checkpoint_path": None,
+            }
         else:
-            subset = subsample_train(train_data, n, seed)
+            subset, subset_dataset_ids = stratified_subsample_train(train_data, dataset_ids, n, seed)
             n_used = len(subset[1])
-            accuracy, f1 = train_and_evaluate(subset, valid_data, test_data, config, class_names, args, seed)
+            samples_per_dataset = {
+                str(d): int(c) for d, c in zip(*np.unique(subset_dataset_ids, return_counts=True))
+            }
+
+            epoch_log_path = output_dir / "epoch_metrics" / f"frac{frac}_rep{rep}.jsonl"
+            if epoch_log_path.exists():
+                epoch_log_path.unlink()  # fresh log in case a prior crashed attempt left one
+
+            # Keep the 100%-data run's checkpoint as the "reference" model;
+            # every other run's checkpoint is discarded to bound disk usage.
+            keep_checkpoint_to = (
+                output_dir / "checkpoints" / f"frac{frac}_rep{rep}_best.ckpt" if frac == 100 else None
+            )
+
+            metrics = train_and_evaluate(
+                subset, valid_data, test_data, config, class_names, args, seed,
+                epoch_log_path=epoch_log_path, keep_checkpoint_to=keep_checkpoint_to,
+            )
+            run_extra = {
+                "epochs_trained": metrics.pop("epochs_trained"),
+                "epoch_of_best": metrics.pop("epoch_of_best"),
+                "best_val_loss": metrics.pop("best_val_loss"),
+                "class_weights": metrics.pop("class_weights"),
+                "samples_per_dataset": samples_per_dataset,
+                "epoch_metrics_path": str(epoch_log_path),
+                "checkpoint_path": str(keep_checkpoint_to) if keep_checkpoint_to else None,
+            }
 
         elapsed = time.time() - start
+        accuracy, f1 = metrics["accuracy"], metrics["macro_f1"]
 
         tqdm.write(f"  n_used={n_used}  "
-                   f"accuracy={accuracy:.4f}  macro_f1={f1:.4f}  ({elapsed:.1f}s wall)")
+                   f"accuracy={accuracy:.4f}  macro_f1={f1:.4f}  mcc={metrics['mcc']:.4f}  "
+                   f"({elapsed:.1f}s wall)")
         pbar.set_postfix(acc=f"{accuracy:.3f}", f1=f"{f1:.3f}")
 
         results.append({
@@ -304,8 +543,8 @@ def run_experiment(args, completed: list[dict]) -> list[dict]:
             "repeat": rep,
             "seed": seed,
             "n_frames_train": n_used,
-            "accuracy": accuracy,
-            "macro_f1": f1,
+            **metrics,
+            **run_extra,
             "wall_seconds": elapsed,
         })
         save_state(state_path, args, results)
