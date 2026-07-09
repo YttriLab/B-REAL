@@ -14,16 +14,22 @@ fit), so it's reported as a majority-class baseline: predict the single most
 common behavior across all available labels (train+val+test) and score that
 fixed prediction against the test set.
 
-The x-axis is "seconds of training data" = (# distinct labeled training
-frames used) / fps. Each training sample corresponds to exactly one distinct
-native video frame, so this is the amount of labeled footage the model
-actually trained on. fps is not auto-detected -- pass it explicitly with
---fps since it depends on the source video(s).
+The x-axis is "# distinct labeled training frames used". Each training
+sample corresponds to exactly one distinct native video frame, so this is
+the amount of labeled footage the model actually trained on.
+
+Progress (args + results-so-far) is saved to <output-dir>/run_state.json after
+every run, so a killed/crashed invocation can be continued with --resume
+instead of starting over. --resume ignores all other CLI args and reuses
+whatever the original run was called with; if every planned run is already
+done, it just reports that and exits.
 
 Usage:
-    python benchmarking/code/benchmark_size_learning_curve.py --fps 30
-    python benchmarking/code/benchmark_size_learning_curve.py --config config_tsm.yaml --fps 30 --repeats 5
-    python benchmarking/code/benchmark_size_learning_curve.py --fps 30 --max-epochs 30 --patience 8
+    python benchmarking/code/benchmark_size_learning_curve.py
+    python benchmarking/code/benchmark_size_learning_curve.py --config config_tsm.yaml --repeats 5
+    python benchmarking/code/benchmark_size_learning_curve.py --max-epochs 22 --patience 22
+    python benchmarking/code/benchmark_size_learning_curve.py --resume
+    
 """
 
 import argparse
@@ -179,6 +185,7 @@ def train_and_evaluate(subset, valid_data, test_data, config, class_names, args,
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model.eval().to(device)
 
+        data_module.setup(stage="test")
         y_true_list, y_pred_list = [], []
         with torch.no_grad():
             for images, labels, _boundary_dists in data_module.test_dataloader():
@@ -200,10 +207,45 @@ def train_and_evaluate(subset, valid_data, test_data, config, class_names, args,
 
 
 # ---------------------------------------------------------------------------
+# Resume support
+# ---------------------------------------------------------------------------
+
+def state_file_for(output_dir: Path) -> Path:
+    return output_dir / "run_state.json"
+
+
+def save_state(state_path: Path, args, results: list[dict]) -> None:
+    """Atomically persist args + results-so-far so a killed/crashed run can
+    be continued with --resume."""
+    state = {"args": vars(args), "results": results}
+    tmp_path = state_path.with_suffix(".json.tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(state, f, indent=2)
+    tmp_path.replace(state_path)
+
+
+def load_resume_state(state_path: Path, output_dir: Path):
+    """Reconstruct the args Namespace + completed results from a prior run.
+    All args other than --output-dir come from the saved state -- resuming
+    re-runs the exact same experiment, just skipping finished (fraction,
+    repeat) pairs."""
+    with open(state_path, "r", encoding="utf-8") as f:
+        state = json.load(f)
+    saved_args = dict(state["args"])
+    saved_args["output_dir"] = str(output_dir)
+    saved_args["resume"] = True
+    args = argparse.Namespace(**saved_args)
+    return args, state["results"]
+
+
+# ---------------------------------------------------------------------------
 # Experiment driver
 # ---------------------------------------------------------------------------
 
-def run_experiment(args) -> list[dict]:
+def run_experiment(args, completed: list[dict]) -> list[dict]:
+    output_dir = Path(args.output_dir)
+    state_path = state_file_for(output_dir)
+
     config = OmegaConf.load(args.config)
     train_data, valid_data, test_data, class_names = load_experiment_data(config)
     num_classes = len(class_names)
@@ -222,8 +264,17 @@ def run_experiment(args) -> list[dict]:
         for rep in range(repeats):
             tasks.append((frac, rep, repeats))
 
-    results = []
-    pbar = tqdm(tasks, desc="Learning curve", unit="run")
+    completed_keys = {(r["fraction"], r["repeat"]) for r in completed}
+    pending_tasks = [t for t in tasks if (t[0], t[1]) not in completed_keys]
+    n_skipped = len(tasks) - len(pending_tasks)
+    if n_skipped:
+        print(f"Resuming: {n_skipped}/{len(tasks)} run(s) already completed in {state_path}, skipping.")
+    if not pending_tasks:
+        print("All planned runs already completed -- nothing to do.")
+        return completed
+
+    results = list(completed)
+    pbar = tqdm(pending_tasks, desc="Learning curve", unit="run")
     for frac, rep, repeats in pbar:
         n = round(frac / 100 * total_train)
         seed = args.seed + frac * 1000 + rep
@@ -243,9 +294,8 @@ def run_experiment(args) -> list[dict]:
             accuracy, f1 = train_and_evaluate(subset, valid_data, test_data, config, class_names, args, seed)
 
         elapsed = time.time() - start
-        seconds_train = n_used / args.fps
 
-        tqdm.write(f"  n_used={n_used}  seconds_train={seconds_train:.1f}  "
+        tqdm.write(f"  n_used={n_used}  "
                    f"accuracy={accuracy:.4f}  macro_f1={f1:.4f}  ({elapsed:.1f}s wall)")
         pbar.set_postfix(acc=f"{accuracy:.3f}", f1=f"{f1:.3f}")
 
@@ -254,11 +304,11 @@ def run_experiment(args) -> list[dict]:
             "repeat": rep,
             "seed": seed,
             "n_frames_train": n_used,
-            "seconds_train": seconds_train,
             "accuracy": accuracy,
             "macro_f1": f1,
             "wall_seconds": elapsed,
         })
+        save_state(state_path, args, results)
 
     return results
 
@@ -277,7 +327,7 @@ def plot_learning_curve(results: list[dict], metric_key: str, ylabel: str, title
 
     for frac in fractions:
         rows = [r for r in results if r["fraction"] == frac]
-        xs = [r["seconds_train"] for r in rows]
+        xs = [r["n_frames_train"] for r in rows]
         ys = [r[metric_key] for r in rows]
 
         ax.scatter(xs, ys, color=PALETTE[0], alpha=0.45, s=28, zorder=2,
@@ -295,7 +345,7 @@ def plot_learning_curve(results: list[dict], metric_key: str, ylabel: str, title
     ax.errorbar(xs_mean, ys_mean, yerr=ys_std, color=PALETTE[1], marker="o",
                 markersize=6, linewidth=1.8, capsize=4, zorder=3, label="Mean ± std")
 
-    ax.set_xlabel("Training data (seconds)", color=INK_SECONDARY)
+    ax.set_xlabel("Training data (# frames)", color=INK_SECONDARY)
     ax.set_ylabel(ylabel, color=INK_PRIMARY)
     ax.set_title(title, color=INK_PRIMARY, fontsize=13, pad=14)
     ax.tick_params(colors=INK_SECONDARY, labelsize=9)
@@ -324,9 +374,6 @@ def main():
     parser.add_argument("--config", type=str, default=str(REPO_ROOT / "config_tsm.yaml"),
                          help="Training config YAML (same shape as config_tsm.yaml) providing "
                               "data_loading, data (split percentages), model, and boundary_smoothing")
-    parser.add_argument("--fps", type=float, required=True,
-                         help="Frame rate of the source video(s), used to convert "
-                              "# training frames into seconds for the x-axis")
     parser.add_argument("--fractions", type=str, default="0,20,40,60,80,100",
                          help="Comma-separated train-data percentages to evaluate")
     parser.add_argument("--repeats", type=int, default=5,
@@ -342,22 +389,40 @@ def main():
     parser.add_argument("--accelerator", type=str, default="auto")
     parser.add_argument("--no-progress-bar", dest="progress_bar", action="store_false")
     parser.add_argument("--output-dir", type=str, default=str(FIGURES_DIR))
+    parser.add_argument("--resume", action="store_true",
+                         help="Continue an incomplete run found in --output-dir, skipping "
+                              "(fraction, repeat) runs already saved there. All other args "
+                              "are loaded from that saved run, not from the command line.")
     args = parser.parse_args()
 
     torch.set_float32_matmul_precision("medium")
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    state_path = state_file_for(output_dir)
 
-    results = run_experiment(args)
+    if args.resume:
+        if not state_path.exists():
+            print(f"No previous run found at {state_path} -- nothing to resume. "
+                  f"Run without --resume to start a new one.")
+            sys.exit(1)
+        args, completed = load_resume_state(state_path, output_dir)
+        print(f"Resuming from {state_path} ({len(completed)} run(s) already completed)")
+    else:
+        if state_path.exists():
+            print(f"Note: {state_path} exists and will be overwritten "
+                  f"(pass --resume to continue it instead)")
+        completed = []
+
+    results = run_experiment(args, completed)
 
     results_path = output_dir / "results.json"
     with open(results_path, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
     print(f"\nSaved raw results to {results_path}")
 
-    accuracy_path = output_dir / "accuracy_vs_seconds.svg"
-    f1_path = output_dir / "f1_vs_seconds.svg"
+    accuracy_path = output_dir / "accuracy_vs_frames.svg"
+    f1_path = output_dir / "f1_vs_frames.svg"
     plot_learning_curve(results, "accuracy", "Accuracy", "Accuracy vs. training data size", accuracy_path)
     plot_learning_curve(results, "macro_f1", "Macro F1", "Macro F1 vs. training data size", f1_path)
 
