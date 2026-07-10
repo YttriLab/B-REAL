@@ -1872,9 +1872,22 @@ const loadWebcodecsFile = async (file) => {
   webcodecsLoading = true;
   setStatus(`Loading ${file.name} with WebCodecs...`);
   setWebcodecsStatus("Loading...");
-  const success = await initWebcodecsFromFile(file);
+  let success = false;
+  try {
+    success = await initWebcodecsFromFile(file);
+  } catch (err) {
+    // A thrown/rejected load must NEVER wedge the loader. Without this catch the
+    // rejection would skip the `webcodecsLoading = false` reset below, leaving the
+    // flag stuck true — and the file-input change handler's `if (webcodecsLoading)
+    // return;` guard would then silently ignore every subsequent video pick, so the
+    // UI just sits on "Loading..." forever.
+    console.error("[renderer] WebCodecs load threw:", err);
+    setWebcodecsStatus("WebCodecs error: " + (err && err.message ? err.message : err));
+    success = false;
+  } finally {
+    webcodecsLoading = false;
+  }
   console.log("[renderer] initWebcodecsFromFile returned:", success, "samples:", webcodecsSamples.length);
-  webcodecsLoading = false;
   if (!success) {
     webcodecsOperationInProgress = false;
     setStatus("Falling back to HTML5 mode.");
@@ -2715,13 +2728,17 @@ videoFileInput.addEventListener("change", (event) => {
   if (!file) {
     return;
   }
-  
+  // Clear the input's value so picking the SAME file again still fires `change`
+  // (needed to retry after a failed/wedged load, or to reload the same video).
+  // `file` is already captured above, so this is safe.
+  event.target.value = "";
+
   // Don't interrupt WebCodecs loading
   if (webcodecsLoading) {
     console.log("[renderer] Ignoring file change during WebCodecs loading");
     return;
   }
-  
+
   currentFile = file;
   addVideoToList(file);
   console.log("[renderer] File selected:", file.name, "WebCodecs checked:", useWebCodecsInput.checked);
@@ -2734,7 +2751,12 @@ videoFileInput.addEventListener("change", (event) => {
       return;
     }
     console.log("[renderer] Loading with WebCodecs");
-    loadWebcodecsFile(file);
+    loadWebcodecsFile(file).catch((err) => {
+      console.error("[renderer] loadWebcodecsFile rejected:", err);
+      webcodecsLoading = false;
+      webcodecsOperationInProgress = false;
+      setWebcodecsStatus("WebCodecs error: " + (err && err.message ? err.message : err));
+    });
     return;
   }
   console.log("[renderer] Loading with HTML5");
@@ -2787,6 +2809,12 @@ document.getElementById("importProject").addEventListener("click", async () => {
     const origRestore = restoreProgress;
     loadWebcodecsFile(fileObj).then(() => {
       // restoreProgress already ran inside loadWebcodecsFile — now layer labels on top
+      importLabelsOnce();
+    }).catch((err) => {
+      console.error("[renderer] importProject WebCodecs load rejected:", err);
+      webcodecsLoading = false;
+      webcodecsOperationInProgress = false;
+      setWebcodecsStatus("WebCodecs error: " + (err && err.message ? err.message : err));
       importLabelsOnce();
     });
   } else {
