@@ -59,12 +59,15 @@ Usage:
 
 import argparse
 import json
+import os
 import shutil
+import smtplib
 import subprocess
 import sys
 import tempfile
 import time
 from collections import defaultdict
+from email.message import EmailMessage
 from pathlib import Path
 
 import numpy as np
@@ -617,6 +620,57 @@ def plot_learning_curve(results: list[dict], metric_key: str, ylabel: str, title
 
 
 # ---------------------------------------------------------------------------
+# Completion email
+# ---------------------------------------------------------------------------
+
+def send_completion_email(to_addr: str, output_dir: Path, plot_paths: list, results: list) -> None:
+    """Sends a "run finished" notification via Gmail SMTP once the SVGs are
+    saved. Credentials come from GMAIL_ADDRESS / GMAIL_APP_PASSWORD env vars
+    (never hardcoded or passed on the CLI) -- generate an App Password at
+    https://myaccount.google.com/apppasswords (requires 2FA enabled on that
+    Gmail account) and set both before running, e.g. (PowerShell):
+        $env:GMAIL_ADDRESS = "you@gmail.com"
+        $env:GMAIL_APP_PASSWORD = "xxxx xxxx xxxx xxxx"
+    A missing/failed send is logged but never raises -- losing the
+    notification shouldn't discard a multi-hour run's completed results.
+    """
+    sender = os.environ.get("GMAIL_ADDRESS")
+    app_password = os.environ.get("GMAIL_APP_PASSWORD")
+    if not sender or not app_password:
+        print("Skipping completion email: set GMAIL_ADDRESS and GMAIL_APP_PASSWORD "
+              "env vars to enable it (see send_completion_email's docstring).")
+        return
+
+    best_100 = [r for r in results if r["fraction"] == 100]
+    summary_line = ""
+    if best_100:
+        r = best_100[0]
+        summary_line = (f"\n100% run: accuracy={r['accuracy']:.4f}  "
+                         f"macro_f1={r['macro_f1']:.4f}  mcc={r['mcc']:.4f}\n")
+
+    msg = EmailMessage()
+    msg["Subject"] = "Size learning curve benchmark finished"
+    msg["From"] = sender
+    msg["To"] = to_addr
+    msg.set_content(
+        f"benchmark_size_learning_curve.py finished and saved its plots.\n\n"
+        f"Output directory: {output_dir.resolve()}\n"
+        f"{summary_line}\n"
+        f"Plots:\n" + "\n".join(f"  - {p}" for p in plot_paths) + "\n\n"
+        f"Raw results: {output_dir.resolve() / 'results.json'}\n"
+    )
+
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(sender, app_password)
+            server.send_message(msg)
+        print(f"Sent completion email to {to_addr}")
+    except Exception as e:
+        print(f"Failed to send completion email: {type(e).__name__}: {e}")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -650,6 +704,13 @@ def main():
                          help="Continue an incomplete run found in --output-dir, skipping "
                               "(fraction, repeat) runs already saved there. All other args "
                               "are loaded from that saved run, not from the command line.")
+    parser.add_argument("--notify-email", type=str, default="braydenk@andrew.cmu.edu",
+                         help="Email address to notify when the run finishes and plots are "
+                              "saved. Requires GMAIL_ADDRESS/GMAIL_APP_PASSWORD env vars to "
+                              "be set (see send_completion_email's docstring); silently "
+                              "skipped otherwise.")
+    parser.add_argument("--no-notify", dest="notify", action="store_false",
+                         help="Disable the completion email entirely.")
     args = parser.parse_args()
 
     torch.set_float32_matmul_precision("medium")
@@ -689,6 +750,10 @@ def main():
     print(f"Saved {accuracy_path}")
     print(f"Saved {f1_path}")
     print(f"Saved {mcc_path}")
+
+    if args.notify:
+        send_completion_email(args.notify_email, output_dir,
+                               [accuracy_path, f1_path, mcc_path], results)
 
 
 if __name__ == "__main__":
