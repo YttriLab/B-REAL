@@ -51,7 +51,9 @@ confusion matrix, MCC, and the class weights used for that run.
 
 Usage:
     python benchmarking/code/benchmark_size_learning_curve.py
-    python benchmarking/code/benchmark_size_learning_curve.py --config config_tsm.yaml --repeats 5
+    python benchmarking/code/benchmark_size_learning_curve.py --max-epochs 5 --repeats 3 --notify-email braydenk@andrew.cmu.edu
+    python benchmarking/code/benchmark_size_learning_curve.py --fractions 100 --max-epochs 5 --notify-email braydenk@andrew.cmu.edu --output-dir benchmarking/figures/size_learning_curve_test
+
     python benchmarking/code/benchmark_size_learning_curve.py --max-epochs 22 --patience 22
     python benchmarking/code/benchmark_size_learning_curve.py --max-epochs 5 --repeats 3
     python benchmarking/code/benchmark_size_learning_curve.py --resume
@@ -85,8 +87,10 @@ import matplotlib.pyplot as plt
 
 from model import load_data, MultiImageDataModule, train_test_split
 from model_tsm import TSMClassifier
+from convert_torchscript_tsm import export_model
 
 FIGURES_DIR = REPO_ROOT / "benchmarking" / "figures" / "size_learning_curve"
+MODELS_DIR = REPO_ROOT / "benchmarking" / "models"
 
 # Same palette used by benchmark_inference_speed.py (dataviz skill default).
 PALETTE = ["#2a78d6", "#1baf7a", "#eda100", "#008300",
@@ -151,33 +155,14 @@ def load_experiment_data(config):
     dl = OmegaConf.to_container(config.data_loading, resolve=True)
     all_file_paths, all_labels, all_class_names_union, all_boundary_dists = load_data(**dl)
 
-    train_data, valid_data, test_data, _test_clip_sizes = train_test_split(
+    train_data, valid_data, test_data, _test_clip_sizes, train_dataset_ids = train_test_split(
         all_file_paths, all_labels, all_boundary_dists,
-        **OmegaConf.to_container(config.data, resolve=True)
+        **OmegaConf.to_container(config.data, resolve=True),
+        return_dataset_ids=True,
     )
     # all_labels (nested, pre-split, per source dataset) is returned too --
-    # dataset_ids_for_train() needs it to recover which dataset each
-    # flattened train_data sample came from.
-    return train_data, valid_data, test_data, all_class_names_union, all_labels
-
-
-def dataset_ids_for_train(all_labels: list, train_percent: float) -> np.ndarray:
-    """Recovers which of the original (frame_dir, label_path) dataset entries
-    each sample in the flattened train_data list came from.
-
-    train_test_split (model.py) splits each dataset independently -- taking
-    the first `train_end = int(total * train_percent)` samples of each as
-    train (model.py:407) -- then appends them to train_data in dataset order
-    (model.py:421). That means the dataset-of-origin for the concatenated
-    train list is fully determined by those per-dataset counts, without
-    train_test_split itself needing to expose it: this just replays the same
-    arithmetic against the pre-split `all_labels` to tag each position.
-    """
-    ids = []
-    for dataset_idx, dataset_labels in enumerate(all_labels):
-        train_end = int(len(dataset_labels) * train_percent)
-        ids.extend([dataset_idx] * train_end)
-    return np.array(ids)
+    # save_run_meta uses it to report total labeled rows per dataset.
+    return train_data, valid_data, test_data, all_class_names_union, all_labels, train_dataset_ids
 
 
 def stratified_subsample_train(train_data, dataset_ids: np.ndarray, n: int, seed: int):
@@ -405,6 +390,35 @@ def load_resume_state(state_path: Path, output_dir: Path):
 
 
 # ---------------------------------------------------------------------------
+# TorchScript export (the reference / best model only)
+# ---------------------------------------------------------------------------
+
+def export_best_model_to_torchscript(checkpoint_path: Path, config, frac: int, rep: int) -> Path:
+    """Exports the frac100 run's kept checkpoint straight to TorchScript
+    alongside its .ckpt, so the benchmark's reference model is immediately
+    usable by anything that loads a .pt (the LabelingApp, Bonsai,
+    eval_torchscript_model.py) without a separate manual conversion step.
+
+    Runs on CPU. The export includes a self-verification forward pass
+    (compares traced vs. reloaded output) through the
+    torch.jit.optimize_for_inference'd graph, which on CUDA can try to
+    JIT-compile fused kernels via nvrtc -- and this box's torch build needs
+    an nvrtc-builtins DLL that isn't installed anywhere on it (same issue
+    documented in eval_torchscript_model.py). CPU sidesteps that entirely;
+    the resulting .pt still loads and runs fine on CUDA later (a
+    TorchScript export isn't device-locked -- see eval_torchscript_model.py
+    for how to run one on this box's GPU despite the missing DLL).
+    """
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    tsm_stages = OmegaConf.to_container(config.model, resolve=True).get("tsm_stages")
+    output_path = export_model(
+        str(checkpoint_path), f"frac{frac}_rep{rep}_best", str(MODELS_DIR),
+        device="cpu", tsm_stages=tsm_stages,
+    )
+    return Path(output_path)
+
+
+# ---------------------------------------------------------------------------
 # Reproducibility metadata (written once per experiment, not per run)
 # ---------------------------------------------------------------------------
 
@@ -455,10 +469,9 @@ def run_experiment(args, completed: list[dict]) -> list[dict]:
     state_path = state_file_for(output_dir)
 
     config = OmegaConf.load(args.config)
-    train_data, valid_data, test_data, class_names, all_labels = load_experiment_data(config)
+    train_data, valid_data, test_data, class_names, all_labels, dataset_ids = load_experiment_data(config)
     num_classes = len(class_names)
     total_train = len(train_data[1])
-    dataset_ids = dataset_ids_for_train(all_labels, config.data.train_percent)
 
     save_run_meta(output_dir, args, config, class_names, all_labels)
 
@@ -504,7 +517,7 @@ def run_experiment(args, completed: list[dict]) -> list[dict]:
             run_extra = {
                 "epochs_trained": None, "epoch_of_best": None, "best_val_loss": None,
                 "class_weights": None, "samples_per_dataset": None,
-                "epoch_metrics_path": None, "checkpoint_path": None,
+                "epoch_metrics_path": None, "checkpoint_path": None, "torchscript_path": None,
             }
         else:
             subset, subset_dataset_ids = stratified_subsample_train(train_data, dataset_ids, n, seed)
@@ -527,6 +540,13 @@ def run_experiment(args, completed: list[dict]) -> list[dict]:
                 subset, valid_data, test_data, config, class_names, args, seed,
                 epoch_log_path=epoch_log_path, keep_checkpoint_to=keep_checkpoint_to,
             )
+
+            torchscript_path = None
+            if keep_checkpoint_to is not None and keep_checkpoint_to.exists():
+                tqdm.write("  Exporting best model to TorchScript...")
+                torchscript_path = export_best_model_to_torchscript(keep_checkpoint_to, config, frac, rep)
+                tqdm.write(f"  Saved {torchscript_path}")
+
             run_extra = {
                 "epochs_trained": metrics.pop("epochs_trained"),
                 "epoch_of_best": metrics.pop("epoch_of_best"),
@@ -535,6 +555,7 @@ def run_experiment(args, completed: list[dict]) -> list[dict]:
                 "samples_per_dataset": samples_per_dataset,
                 "epoch_metrics_path": str(epoch_log_path),
                 "checkpoint_path": str(keep_checkpoint_to) if keep_checkpoint_to else None,
+                "torchscript_path": str(torchscript_path) if torchscript_path else None,
             }
 
         elapsed = time.time() - start
@@ -625,10 +646,13 @@ def plot_learning_curve(results: list[dict], metric_key: str, ylabel: str, title
 
 def send_completion_email(to_addr: str, output_dir: Path, plot_paths: list, results: list) -> None:
     """Sends a "run finished" notification via Gmail SMTP once the SVGs are
-    saved. Credentials come from GMAIL_ADDRESS / GMAIL_APP_PASSWORD env vars
-    (never hardcoded or passed on the CLI) -- generate an App Password at
-    https://myaccount.google.com/apppasswords (requires 2FA enabled on that
-    Gmail account) and set both before running, e.g. (PowerShell):
+    saved, with the plots and raw results.json attached directly (not just
+    referenced by path -- the recipient is often not at the machine that ran
+    the benchmark). Credentials come from GMAIL_ADDRESS / GMAIL_APP_PASSWORD
+    env vars (never hardcoded or passed on the CLI) -- generate an App
+    Password at https://myaccount.google.com/apppasswords (requires 2FA
+    enabled on that Gmail account) and set both before running, e.g.
+    (PowerShell):
         $env:GMAIL_ADDRESS = "you@gmail.com"
         $env:GMAIL_APP_PASSWORD = "xxxx xxxx xxxx xxxx"
     A missing/failed send is logged but never raises -- losing the
@@ -653,19 +677,34 @@ def send_completion_email(to_addr: str, output_dir: Path, plot_paths: list, resu
     msg["From"] = sender
     msg["To"] = to_addr
     msg.set_content(
-        f"benchmark_size_learning_curve.py finished and saved its plots.\n\n"
+        f"benchmark_size_learning_curve.py finished. Plots and raw results are attached.\n\n"
         f"Output directory: {output_dir.resolve()}\n"
         f"{summary_line}\n"
         f"Plots:\n" + "\n".join(f"  - {p}" for p in plot_paths) + "\n\n"
         f"Raw results: {output_dir.resolve() / 'results.json'}\n"
     )
 
+    results_path = output_dir / "results.json"
+    attachments = list(plot_paths) + [results_path]
+    for path in attachments:
+        path = Path(path)
+        if not path.exists():
+            print(f"Skipping attachment (not found): {path}")
+            continue
+        if path.suffix == ".svg":
+            maintype, subtype = "image", "svg+xml"
+        elif path.suffix == ".json":
+            maintype, subtype = "application", "json"
+        else:
+            maintype, subtype = "application", "octet-stream"
+        msg.add_attachment(path.read_bytes(), maintype=maintype, subtype=subtype, filename=path.name)
+
     try:
         with smtplib.SMTP("smtp.gmail.com", 587) as server:
             server.starttls()
             server.login(sender, app_password)
             server.send_message(msg)
-        print(f"Sent completion email to {to_addr}")
+        print(f"Sent completion email to {to_addr} with {len(attachments)} attachment(s)")
     except Exception as e:
         print(f"Failed to send completion email: {type(e).__name__}: {e}")
 
