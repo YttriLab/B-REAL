@@ -284,6 +284,24 @@
     return entry && entry.background ? toAbsolute(entry.background) : null;
   }
 
+  // Store the crop/preprocessing params on a video entry so each video keeps the
+  // exact settings that generated its frames/<id>/ dir. This travels with the
+  // project (and the .rlt), so switching videos or reopening restores them and
+  // re-preprocessing stays consistent (no mixed-size frame directories).
+  function setVideoPreprocessing(videoName, params) {
+    if (!activeProject || !params) return;
+    const entry = getVideoEntry(videoName);
+    if (!entry) return;
+    entry.preprocessing = { ...params };
+    saveManifest();
+  }
+
+  function getVideoPreprocessing(videoName) {
+    if (!activeProject) return null;
+    const entry = getVideoEntry(videoName);
+    return entry && entry.preprocessing ? entry.preprocessing : null;
+  }
+
   function getVideoLabelsAbs(videoName) {
     if (!activeProject) return null;
     const entry = getVideoEntry(videoName);
@@ -450,6 +468,8 @@
     getExportsDir,
     setVideoBackground,
     getVideoBackgroundAbs,
+    setVideoPreprocessing,
+    getVideoPreprocessing,
     getVideoLabelsAbs,
 
     // .rlt file format

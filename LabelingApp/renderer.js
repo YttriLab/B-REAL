@@ -1788,8 +1788,9 @@ const switchToVideo = (videoName) => {
 
   localStorage.setItem("lastActiveVideo", videoName);
   renderVideoSidebar();
-  // Load this video's saved background into the preprocess panel, if any.
+  // Load this video's saved background + crop params into the preprocess panel.
   applyVideoBackground(videoName);
+  applyVideoCropParams(videoName);
 };
 
 const nextBehaviorKey = () => {
@@ -3121,6 +3122,7 @@ const ppState = {
   taskId: null,
   sseSource: null,
   bgByVideo: {}, // videoName -> background image path (auto-loaded on switch)
+  cropByVideo: {}, // videoName -> crop/preprocess params (auto-loaded on switch)
   frameW: null,  // original source frame size (from last preview)
   frameH: null,
   previewFrame: null,   // frame index currently shown in the preview
@@ -3145,6 +3147,33 @@ function resolveVideoBackground(videoName) {
     if (p) return p;
   }
   return ppState.bgByVideo[videoName] || null;
+}
+
+// Remember the crop/preprocess params that generated a video's frames. Saved in
+// settings (survives restarts) and on the project manifest (travels with the
+// project/.rlt), mirroring rememberVideoBackground.
+function rememberVideoCropParams(videoName, params) {
+  if (!videoName || !params) return;
+  ppState.cropByVideo[videoName] = params;
+  try { saveSettings(); } catch { /* settings not ready */ }
+  if (window.projectManager && window.projectManager.isActive()) {
+    try { window.projectManager.setVideoPreprocessing(videoName, params); } catch { /* ignore */ }
+  }
+}
+
+function resolveVideoCropParams(videoName) {
+  if (!videoName) return null;
+  if (window.projectManager && window.projectManager.isActive()) {
+    const p = window.projectManager.getVideoPreprocessing(videoName);
+    if (p) return p;
+  }
+  return ppState.cropByVideo[videoName] || null;
+}
+
+// Load a video's saved crop params into the preprocess panel (if any exist).
+function applyVideoCropParams(videoName) {
+  const p = resolveVideoCropParams(videoName);
+  if (p) applyCropParams(p);
 }
 
 // Load the background that belongs to a video (if any) into the preprocess panel.
@@ -3194,6 +3223,36 @@ function getCropParams() {
     deadband: parseFloat(document.getElementById("ppDeadband").value),
     min_contour_area: parseFloat(document.getElementById("ppMinArea").value),
   };
+}
+
+// Inverse of getCropParams: push a saved params object into the panel controls
+// (and refresh their value labels). Missing fields are left at their current
+// values so older/partial records don't wipe the panel.
+function applyCropParams(p) {
+  if (!p) return;
+  const setSlider = (id, valId, val) => {
+    const el = document.getElementById(id);
+    const out = document.getElementById(valId);
+    if (el && val !== undefined && val !== null) { el.value = val; if (out) out.textContent = val; }
+  };
+  setSlider("ppBoxSize", "ppBoxSizeVal", p.box_size);
+  setSlider("ppDiffThresh", "ppDiffThreshVal", p.difference_threshold);
+  if (p.difference_mode) document.getElementById("ppDiffMode").value = p.difference_mode;
+  setSlider("ppDownsample", "ppDownsampleVal", p.downsample_factor);
+  setSlider("ppOpen1", "ppOpen1Val", p.open1_kernel);
+  setSlider("ppClose", "ppCloseVal", p.close_kernel);
+  setSlider("ppOpen2", "ppOpen2Val", p.open2_kernel);
+  if (p.smoothing !== undefined) setSlider("ppSmoothing", "ppSmoothingVal", p.smoothing);
+  if (p.deadband !== undefined) setSlider("ppDeadband", "ppDeadbandVal", p.deadband);
+  if (p.min_contour_area !== undefined) setSlider("ppMinArea", "ppMinAreaVal", p.min_contour_area);
+  if (p.resize_factor) {
+    const pct = Math.round(p.resize_factor * 100);
+    const el = document.getElementById("ppResize");
+    const out = document.getElementById("ppResizeVal");
+    if (el) el.value = pct;
+    if (out) out.textContent = `${pct}%`;
+  }
+  updateResizedSizeDisplay();
 }
 
 // Update the "Processed" size readout from the stored original frame size and
@@ -3375,13 +3434,18 @@ document.getElementById("ppRun").addEventListener("click", async () => {
   document.getElementById("ppStop").disabled = false;
   document.getElementById("ppStatus").textContent = "Starting...";
 
+  // These are the params that produce this video's frames — record them against
+  // the video so switching back restores them and re-runs stay consistent.
+  const cropParams = getCropParams();
+  rememberVideoCropParams(currentVideoName, cropParams);
+
   try {
     const res = await backendFetch("/api/preprocess/run", {
       method: "POST",
       body: JSON.stringify({
         video_path: videoPath,
         output_dir: outputDir,
-        crop_params: getCropParams(),
+        crop_params: cropParams,
         frame_ranges: frameRanges,
         bg_path: ppState.bgPath,
         output_name: outputName,
@@ -4548,6 +4612,7 @@ function saveSettings() {
     // Paths (last used)
     lastBgPath: ppState.bgPath,
     bgByVideo: ppState.bgByVideo,
+    cropByVideo: ppState.cropByVideo,
     lastCheckpointPath: alState.checkpointPath,
     // Data sources
     trainDataSources: trainState.dataSources,
@@ -4563,30 +4628,9 @@ function loadSettings() {
     if (!raw) return;
     const s = JSON.parse(raw);
 
-    // Crop params
-    if (s.cropParams) {
-      const setSlider = (id, valId, val) => {
-        const el = document.getElementById(id);
-        const out = document.getElementById(valId);
-        if (el && val !== undefined) { el.value = val; if (out) out.textContent = val; }
-      };
-      setSlider("ppBoxSize", "ppBoxSizeVal", s.cropParams.box_size);
-      setSlider("ppDiffThresh", "ppDiffThreshVal", s.cropParams.difference_threshold);
-      if (s.cropParams.difference_mode) document.getElementById("ppDiffMode").value = s.cropParams.difference_mode;
-      setSlider("ppDownsample", "ppDownsampleVal", s.cropParams.downsample_factor);
-      setSlider("ppOpen1", "ppOpen1Val", s.cropParams.open1_kernel);
-      setSlider("ppClose", "ppCloseVal", s.cropParams.close_kernel);
-      setSlider("ppOpen2", "ppOpen2Val", s.cropParams.open2_kernel);
-      if (s.cropParams.smoothing !== undefined) setSlider("ppSmoothing", "ppSmoothingVal", s.cropParams.smoothing);
-      if (s.cropParams.deadband !== undefined) setSlider("ppDeadband", "ppDeadbandVal", s.cropParams.deadband);
-      if (s.cropParams.min_contour_area !== undefined) setSlider("ppMinArea", "ppMinAreaVal", s.cropParams.min_contour_area);
-      if (s.cropParams.resize_factor) {
-        const pct = Math.round(s.cropParams.resize_factor * 100);
-        setSlider("ppResize", "ppResizeVal", pct);
-        const out = document.getElementById("ppResizeVal");
-        if (out) out.textContent = `${pct}%`;
-      }
-    }
+    // Crop params (global last-used defaults; per-video overrides apply on switch)
+    if (s.cropParams) applyCropParams(s.cropParams);
+    if (s.cropByVideo && typeof s.cropByVideo === "object") ppState.cropByVideo = s.cropByVideo;
     if (s.bgNumFrames) document.getElementById("ppBgNumFrames").value = s.bgNumFrames;
 
     // Training config
