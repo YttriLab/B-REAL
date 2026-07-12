@@ -312,8 +312,14 @@ class MultiImageDataModule(L.LightningDataModule):
                 max_pixel_value=255.0
             ),
             A.pytorch.ToTensorV2(),
-        ], additional_targets={'image1': 'image', 'image2': 'image'})
-        
+        ], additional_targets={'image1': 'image', 'image2': 'image'},
+           # A clip's 3 consecutive crops can differ in pixel size (e.g. frames
+           # near a frame edge, or a mix of preprocessing runs). Resize is the
+           # first op and, via additional_targets, normalizes all three to the
+           # same square with identical params — so the pre-transform equal-size
+           # guard is spurious here and would otherwise abort the whole run.
+           is_check_shapes=False)
+
         # Validation/test transforms without augmentation
         self.val_transform = A.Compose([
             A.Resize(image_size, image_size),
@@ -323,8 +329,9 @@ class MultiImageDataModule(L.LightningDataModule):
                 max_pixel_value=255.0
             ),
             A.pytorch.ToTensorV2(),
-        ], additional_targets={'image1': 'image', 'image2': 'image'})
-    
+        ], additional_targets={'image1': 'image', 'image2': 'image'},
+           is_check_shapes=False)  # see train_transform: Resize normalizes sizes
+
     def setup(self, stage=None):
         if stage == 'fit' or stage is None:
             self.train_dataset = MultiImageDataset(self.train_data, self.train_transform)
