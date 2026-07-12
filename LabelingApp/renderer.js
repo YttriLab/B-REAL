@@ -464,8 +464,27 @@ const handleDecodedFrame = (frame) => {
     });
 };
 
+// Close and drop the active decoder, tolerating an already-closed one. A
+// VideoDecoder auto-transitions to "closed" on error, and calling close() on a
+// closed codec throws InvalidStateError ("Cannot call 'close' on a closed
+// codec") — so always check state and swallow. Nulling the reference also lets
+// setWebcodecsMode(false) proceed (it bails while a decoder object exists).
+const closeWebcodecsDecoder = () => {
+  if (webcodecsDecoder) {
+    try {
+      if (webcodecsDecoder.state !== "closed") webcodecsDecoder.close();
+    } catch (e) {
+      console.warn("[renderer] decoder close ignored:", e && e.message ? e.message : e);
+    }
+    webcodecsDecoder = null;
+  }
+};
+
 const handleDecoderError = (error) => {
   console.error("[renderer] WebCodecs decoder error:", error);
+  // The errored decoder is already closed; drop the stale reference first so the
+  // HTML5 fallback's setWebcodecsMode(false) isn't blocked by "decoder exists".
+  closeWebcodecsDecoder();
   setStatus("WebCodecs decoding failed; switching to HTML5 mode.");
   setWebcodecsStatus(`Decode error: ${error.message || error}`);
   stopWebcodecsPlayback();
@@ -480,9 +499,7 @@ const recreateWebcodecsDecoder = () => {
   if (!webcodecsConfig) {
     return false;
   }
-  if (webcodecsDecoder) {
-    webcodecsDecoder.close();
-  }
+  closeWebcodecsDecoder();
   webcodecsDecoder = new VideoDecoder({
     output: handleDecodedFrame,
     error: handleDecoderError
@@ -510,10 +527,7 @@ const resetWebcodecsState = () => {
   });
   webcodecsFrameCache.clear();
   webcodecsFrameOrder = [];
-  if (webcodecsDecoder) {
-    webcodecsDecoder.close();
-    webcodecsDecoder = null;
-  }
+  closeWebcodecsDecoder();
   if (mp4boxWorker) {
     mp4boxWorker.terminate();
     mp4boxWorker = null;
