@@ -79,6 +79,10 @@ let mp4boxWorker = null;
 let mp4boxChunkId = 0;
 let mp4boxChunkResolvers = new Map();
 let webcodecsOperationInProgress = false;
+// A WebCodecs load mutates shared decoder/sample globals, so only one can run at
+// a time. If the user clicks another video mid-load, we stash the latest request
+// here and open it once the in-flight load settles (latest pick wins).
+let pendingVideoSwitch = null;
 
 const setStatus = (message) => {
   statusEl.textContent = message;
@@ -1757,7 +1761,23 @@ const removeVideoFromList = (videoName) => {
 };
 
 const switchToVideo = (videoName) => {
-  if (videoName === currentVideoName) return;
+  if (videoName === currentVideoName) {
+    // Re-selecting the video that's currently loading means they changed their
+    // mind back to it — drop any queued switch so we don't jump away when it's done.
+    pendingVideoSwitch = null;
+    return;
+  }
+
+  // Never start a second WebCodecs load while one is in flight — they share the
+  // decoder/sample state and would corrupt each other (frames from different
+  // videos mixed together, or a decoder error). Remember the latest requested
+  // video and open it when the current load finishes. The user can keep clicking;
+  // whichever they land on last is the one that opens.
+  if (webcodecsLoading) {
+    pendingVideoSwitch = videoName;
+    setStatus(`Still loading ${currentVideoName || "a video"} — will open ${videoName} next.`);
+    return;
+  }
 
   // Save current progress before switching
   saveProgress();
@@ -1898,16 +1918,25 @@ const loadWebcodecsFile = async (file) => {
     useWebCodecsInput.checked = false;
     setWebcodecsMode(false);
     loadHtml5File(file);
-    return;
+  } else {
+    console.log("[renderer] WebCodecs success, enabling mode. Samples:", webcodecsSamples.length);
+    setWebcodecsStatus("");
+    setWebcodecsMode(true);
+    webcodecsOperationInProgress = false;
+    restoreProgress(file.name);
+    restorePredictions(file.name);
+    video.removeAttribute("src");
+    video.load();
   }
-  console.log("[renderer] WebCodecs success, enabling mode. Samples:", webcodecsSamples.length);
-  setWebcodecsStatus("");
-  setWebcodecsMode(true);
-  webcodecsOperationInProgress = false;
-  restoreProgress(file.name);
-  restorePredictions(file.name);
-  video.removeAttribute("src");
-  video.load();
+
+  // Honor any video the user queued while this load was running (latest wins).
+  // webcodecsLoading is already false, so this re-entrant switch starts a fresh,
+  // non-overlapping load rather than racing the one that just finished.
+  if (pendingVideoSwitch) {
+    const next = pendingVideoSwitch;
+    pendingVideoSwitch = null;
+    if (next !== currentVideoName) switchToVideo(next);
+  }
 };
 
 const handleVideoLoaded = () => {
@@ -2736,6 +2765,7 @@ videoFileInput.addEventListener("change", (event) => {
 
   // Don't interrupt WebCodecs loading
   if (webcodecsLoading) {
+    setStatus(`Still loading ${currentVideoName || "a video"} — wait for it to finish, then add this one.`);
     console.log("[renderer] Ignoring file change during WebCodecs loading");
     return;
   }
