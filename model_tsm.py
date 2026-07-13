@@ -617,9 +617,11 @@ def main():
     config = OmegaConf.load("config_tsm.yaml")
     wandb_logger = WandbLogger(project=config.project_name, name=config.run_name)
 
-    checkpoint_callback = ModelCheckpoint(monitor="val_loss", mode="min", save_top_k=1)
+    # Select/early-stop on val_mcc (maximized) — imbalance-robust, tracks decision
+    # quality better than the class-weighted val_loss. Keep both callbacks aligned.
+    checkpoint_callback = ModelCheckpoint(monitor="val_mcc", mode="max", save_top_k=1)
     early_stopping_callback = EarlyStopping(
-        monitor="val_loss", patience=config.callbacks.early_stopping_patience, mode="min"
+        monitor="val_mcc", patience=config.callbacks.early_stopping_patience, mode="max"
     )
 
     trainer = L.Trainer(

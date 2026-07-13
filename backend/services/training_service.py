@@ -69,18 +69,24 @@ class MetricsWriter(Callback):
         self.metrics_path = metrics_path
         self.max_epochs = max_epochs
         self.patience = patience
-        self.best_val_loss = float("inf")
-        self.stagnation = 0  # epochs since val_loss last improved (early-stopping counter)
+        self.best_val_mcc = float("-inf")  # monitored metric (higher is better)
+        self.best_val_loss = float("inf")  # kept for display only
+        self.stagnation = 0  # epochs since val_mcc last improved (early-stopping counter)
 
     def on_train_epoch_end(self, trainer, pl_module):
         val_loss = float(trainer.callback_metrics.get("val_loss", 0))
-        # Track best val_loss and how many epochs we've gone without improving it
-        # (mirrors EarlyStopping's wait_count so the UI can show progress to stop).
-        if val_loss < self.best_val_loss:
-            self.best_val_loss = val_loss
+        val_mcc = float(trainer.callback_metrics.get("val_mcc", 0))
+        # Stagnation tracks the monitored metric (val_mcc, maximized) with a strict
+        # ">" so it mirrors EarlyStopping's wait_count (min_delta=0, mode="max") and
+        # the UI's "stagnation X/patience" matches the actual stop trigger.
+        if val_mcc > self.best_val_mcc:
+            self.best_val_mcc = val_mcc
             self.stagnation = 0
         else:
             self.stagnation += 1
+        # Best val_loss is still reported for context (not what selection/stopping use).
+        if val_loss < self.best_val_loss:
+            self.best_val_loss = val_loss
 
         metrics = {
             "epoch": trainer.current_epoch,
@@ -89,8 +95,9 @@ class MetricsWriter(Callback):
             "train_acc": float(trainer.callback_metrics.get("train_balanced_acc", 0)),
             "val_loss": val_loss,
             "val_acc": float(trainer.callback_metrics.get("val_balanced_acc", 0)),
-            "val_mcc": float(trainer.callback_metrics.get("val_mcc", 0)),
+            "val_mcc": val_mcc,
             "lr": float(trainer.optimizers[0].param_groups[0]["lr"]),
+            "best_val_mcc": self.best_val_mcc,
             "best_val_loss": self.best_val_loss,
             "stagnation_epochs": self.stagnation,
             "patience": self.patience,
@@ -198,15 +205,21 @@ def main():
 
     # Callbacks
     checkpoint_dir = config.get("checkpoint_dir", "checkpoints")
+    # Select and early-stop on val_mcc (maximized): Matthews correlation is a
+    # single imbalance-robust summary of the confusion matrix, so it tracks
+    # decision quality better than the (class-weighted) val_loss, whose minimum
+    # tends to fall a few epochs before the best-MCC model as probabilities
+    # miscalibrate. Both callbacks monitor the same metric so the saved best
+    # checkpoint is the best-MCC one, not the best-loss one.
     checkpoint_cb = ModelCheckpoint(
         dirpath=checkpoint_dir,
-        monitor="val_loss", mode="min", save_top_k=1
+        monitor="val_mcc", mode="max", save_top_k=1
     )
     patience = config.callbacks.early_stopping_patience
     early_stop_cb = EarlyStopping(
-        monitor="val_loss",
+        monitor="val_mcc",
         patience=patience,
-        mode="min",
+        mode="max",
     )
     metrics_cb = MetricsWriter(metrics_path, config.max_epochs, patience)
 
@@ -243,10 +256,14 @@ def main():
         info(f"Test pass skipped: {type(e).__name__}: {e}")
 
     # Write completion
+    # checkpoint_cb monitors val_mcc now, so best_model_score is the best MCC.
+    best_mcc = checkpoint_cb.best_model_score
+    best_loss = metrics_cb.best_val_loss
     completion = {
         "status": "completed",
         "best_checkpoint": checkpoint_cb.best_model_path,
-        "best_val_loss": float(checkpoint_cb.best_model_score or 0),
+        "best_val_mcc": float(best_mcc) if best_mcc is not None else None,
+        "best_val_loss": float(best_loss) if best_loss != float("inf") else None,
         "epoch": trainer.current_epoch,
         "total_epochs": config.max_epochs,
     }

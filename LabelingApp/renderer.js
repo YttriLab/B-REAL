@@ -3815,6 +3815,9 @@ document.getElementById("trainStart").addEventListener("click", async () => {
               `train_loss ${data.train_loss.toFixed(4)}`,
               `val_loss ${data.val_loss.toFixed(4)}`,
             ];
+            if (data.val_mcc !== undefined)
+              parts.push(`val_mcc ${data.val_mcc.toFixed(4)}`);
+            // stagnation now tracks val_mcc (the early-stopping metric)
             if (data.stagnation_epochs !== undefined)
               parts.push(`stagnation ${data.stagnation_epochs}/${data.patience}`);
             appendTrainLog(parts.join("  "));
@@ -3822,8 +3825,11 @@ document.getElementById("trainStart").addEventListener("click", async () => {
         }
         if (data.train_loss !== undefined) document.getElementById("trainLossVal").textContent = data.train_loss.toFixed(4);
         if (data.val_loss !== undefined) document.getElementById("trainValLoss").textContent = data.val_loss.toFixed(4);
-        if (data.best_val_loss !== undefined && isFinite(data.best_val_loss))
+        if (typeof data.best_val_loss === "number" && isFinite(data.best_val_loss))
           document.getElementById("trainBestValLoss").textContent = data.best_val_loss.toFixed(4);
+        if (data.val_mcc !== undefined) document.getElementById("trainValMcc").textContent = data.val_mcc.toFixed(4);
+        if (typeof data.best_val_mcc === "number" && isFinite(data.best_val_mcc))
+          document.getElementById("trainBestValMcc").textContent = data.best_val_mcc.toFixed(4);
         if (data.stagnation_epochs !== undefined) {
           const patience = data.patience !== undefined ? data.patience : "-";
           document.getElementById("trainStagnation").textContent = `${data.stagnation_epochs} / ${patience}`;
@@ -3860,6 +3866,7 @@ document.getElementById("trainStart").addEventListener("click", async () => {
                 name: data.best_checkpoint.split(/[\\/]/).pop(),
                 path: data.best_checkpoint,
                 created: new Date().toISOString().slice(0, 10),
+                val_mcc: typeof data.best_val_mcc === "number" ? data.best_val_mcc : null,
                 val_loss: typeof data.best_val_loss === "number" ? data.best_val_loss : null,
                 config: {
                   variant: config.variant,
