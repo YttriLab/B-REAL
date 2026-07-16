@@ -3871,6 +3871,10 @@ document.getElementById("trainStart").addEventListener("click", async () => {
                 config: {
                   variant: config.variant,
                   binarize: config.binarize,
+                  // Needed to map original behavior names into this model's
+                  // collapsed label space when scoring Active Learning
+                  // predictions (see mapLabelToModelClass).
+                  label_union: config.label_union,
                   num_frames: config.num_frames,
                   tsm_stages: config.tsm_stages,
                 },
@@ -4029,11 +4033,14 @@ function updateAlFrameInfo() {
   // Predicted class for this frame (if inference has been run).
   let predName = null;
   let predText = "—";
+  let classNames = [];
+  let cfg = null;
   try {
     if (alState && alState.results && alState.frameByIndex) {
+      classNames = alState.results.class_names || [];
+      cfg = getAlModelConfig();
       const f = alState.frameByIndex.get(currentFrameIndex);
       if (f) {
-        const classNames = alState.results.class_names || [];
         predName = classNames[f.predicted_class] ?? `class ${f.predicted_class}`;
         predText = typeof f.uncertainty === "number"
           ? `${predName} (unc ${f.uncertainty.toFixed(2)})`
@@ -4045,14 +4052,22 @@ function updateAlFrameInfo() {
   } catch { /* alState not initialized yet */ }
   predEl.textContent = predText;
 
-  // Current label = the bout covering this frame, if any.
+  // Current label = the bout covering this frame, if any, translated into the
+  // model's label space (a binarized model can't predict the raw behavior name).
   const bout = bouts.find(
     (b) => currentFrameIndex >= b.startFrame && currentFrameIndex <= b.endFrame
   );
-  labelEl.textContent = bout ? bout.behaviorName : "(none)";
+  const truth = bout ? mapLabelToModelClass(bout.behaviorName, classNames, cfg) : null;
+  // Show "walking -> other" when binarization collapses the label, so it's clear
+  // why a differently-named bout is not a disagreement.
+  labelEl.textContent = !bout
+    ? "(none)"
+    : (truth && truth !== bout.behaviorName
+        ? `${bout.behaviorName} → ${truth}`
+        : bout.behaviorName);
 
-  // Flag a prediction/label disagreement so the user knows to correct it.
-  const mismatch = !!(bout && predName && predName !== bout.behaviorName);
+  // Flag a real disagreement (same label space only; null truth = not comparable).
+  const mismatch = !!(bout && predName && truth !== null && truth !== predName);
   predEl.classList.toggle("al-pred-mismatch", mismatch);
 }
 
@@ -4346,6 +4361,52 @@ function buildUncertaintyArray() {
   alState.uncertaintyArray = arr;
 }
 
+// ── Model label space (binarized vs multi-class) ──────────────────────────────
+// A model trained with a positive class predicts in a COLLAPSED label space:
+// load_data sets class_names = ['other', <positive>]. Bouts keep their original
+// fine-grained names, so comparing the two raw strings falsely reports correct
+// predictions as errors (a 'walking' bout the model rightly calls 'other', or a
+// union member 'groom' it rightly calls 'positive'). Map the label first.
+
+// Training config recorded on the manifest entry for the active checkpoint
+// (carries `binarize` / `label_union`). Null when the checkpoint isn't tracked.
+function getAlModelConfig() {
+  try {
+    const pm = window.projectManager;
+    if (!pm || !pm.isActive() || !pm.getModels || !alState.checkpointPath) return null;
+    const entry = pm.getModels().find((m) => m.path === alState.checkpointPath);
+    return (entry && entry.config) || null;
+  } catch {
+    return null;
+  }
+}
+
+// Translate a bout's behavior name into the class this model would predict for
+// it. Returns null when the mapping can't be determined — callers must NOT flag
+// those frames, since a label-space gap is indistinguishable from a real error.
+function mapLabelToModelClass(behaviorName, classNames, cfg) {
+  if (!behaviorName || !classNames || !classNames.length) return null;
+  if (classNames.includes(behaviorName)) return behaviorName; // multi-class: direct
+
+  // Binarized models look like ['other', <positive>].
+  const positiveName =
+    classNames.length === 2 && classNames[0] === "other" ? classNames[1] : null;
+  if (!positiveName) return null;
+
+  // Which original behaviors make up the positive class?
+  let members = null;
+  if (cfg && cfg.label_union && Array.isArray(cfg.label_union[positiveName])) {
+    members = cfg.label_union[positiveName];   // >=2 behaviors unioned under a synthetic name
+  } else if (cfg && cfg.binarize === positiveName) {
+    members = [positiveName];                  // single behavior binarized
+  } else if (behaviors.some((b) => b.name === positiveName)) {
+    members = [positiveName];                  // no recorded config, but a real behavior
+  }
+  // Synthetic union name with no recorded membership → unknowable.
+  if (!members) return null;
+  return members.includes(behaviorName) ? positiveName : "other";
+}
+
 // Build dense misclassification array by comparing predictions to labeled bouts
 function buildMisclassifiedArray() {
   if (!alState.results || !alState.results.frames.length) {
@@ -4354,6 +4415,7 @@ function buildMisclassifiedArray() {
   }
   const frames = alState.results.frames;
   const classNames = alState.results.class_names || [];
+  const cfg = getAlModelConfig();
   const maxIndex = frames[frames.length - 1].index;
   const arr = new Int8Array(maxIndex + 1); // 0 = correct / no label, 1 = misclassified
 
@@ -4363,7 +4425,10 @@ function buildMisclassifiedArray() {
     const bout = bouts.find(
       (b) => f.index >= b.startFrame && f.index <= b.endFrame
     );
-    if (bout && predictedName && bout.behaviorName !== predictedName) {
+    if (!bout || !predictedName) continue;
+    // Compare in the model's label space, not the raw behavior name.
+    const truth = mapLabelToModelClass(bout.behaviorName, classNames, cfg);
+    if (truth !== null && truth !== predictedName) {
       arr[f.index] = 1;
     }
   }
