@@ -41,6 +41,7 @@ TRAIN_SCRIPT = r'''
 """Training subprocess: loads config, trains model, writes JSON-lines metrics."""
 import sys
 import os
+import re
 import json
 import numpy as np
 import torch
@@ -211,8 +212,27 @@ def main():
     # tends to fall a few epochs before the best-MCC model as probabilities
     # miscalibrate. Both callbacks monitor the same metric so the saved best
     # checkpoint is the best-MCC one, not the best-loss one.
+    # Self-describing checkpoint names: <target>-epoch=NN-val_mcc=0.NNN.ckpt, so a
+    # file on disk says what it predicts and how well, instead of Lightning's
+    # default epoch=N-step=M. The target is the binarized positive class — union
+    # members joined, since the positive class is otherwise a synthetic name like
+    # "positive" — or "multiclass".
+    binarize_name = dl.get("binarize")
+    label_union = dl.get("label_union") or {}
+    if binarize_name:
+        members = label_union.get(binarize_name)
+        target = "+".join(members) if members else binarize_name
+    else:
+        target = "multiclass"
+    # Behavior names are free text (config_tsm.yaml ships "face/head/paw groom"),
+    # so strip anything unsafe before it reaches a path, and cap the length.
+    target = re.sub(r"[^A-Za-z0-9._+-]+", "-", str(target)).strip("-._") or "model"
+    target = target[:40].rstrip("-._+") or "model"
+    info(f"Checkpoints: {checkpoint_dir}/{target}-epoch=NN-val_mcc=N.NNN.ckpt")
+
     checkpoint_cb = ModelCheckpoint(
         dirpath=checkpoint_dir,
+        filename=target + "-{epoch:02d}-{val_mcc:.3f}",
         monitor="val_mcc", mode="max", save_top_k=1
     )
     patience = config.callbacks.early_stopping_patience
