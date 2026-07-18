@@ -795,7 +795,10 @@ class MultiImageTransformerClassifier(L.LightningModule):
 
         self.log('train_loss', loss, prog_bar=True)
         self.log('train_balanced_acc', self.train_acc(preds, labels), on_step=False, on_epoch=True, prog_bar=True)
-        self.log('train_mcc', self.train_mcc(preds, labels).float(), on_step=False, on_epoch=True)
+        # Log the Metric object so Lightning computes one MCC from the full
+        # epoch, rather than averaging nonlinear per-batch MCC values.
+        self.train_mcc.update(preds, labels)
+        self.log('train_mcc', self.train_mcc, on_step=False, on_epoch=True)
 
         return loss
 
@@ -808,7 +811,8 @@ class MultiImageTransformerClassifier(L.LightningModule):
 
         self.log('val_loss', loss, prog_bar=True)
         self.log('val_balanced_acc', self.val_acc(preds, labels), on_step=False, on_epoch=True, prog_bar=True)
-        self.log('val_mcc', self.val_mcc(preds, labels).float(), on_step=False, on_epoch=True)
+        self.val_mcc.update(preds, labels)
+        self.log('val_mcc', self.val_mcc, on_step=False, on_epoch=True)
 
         return loss
 
@@ -821,7 +825,8 @@ class MultiImageTransformerClassifier(L.LightningModule):
 
         self.log('test_loss', loss)
         self.log('test_balanced_acc', self.test_acc(preds, labels), on_step=False, on_epoch=True)
-        self.log('test_mcc', self.test_mcc(preds, labels).float(), on_step=False, on_epoch=True)
+        self.test_mcc.update(preds, labels)
+        self.log('test_mcc', self.test_mcc, on_step=False, on_epoch=True)
 
         self.test_confusion.update(preds, labels)
         self.test_preds.append(preds.cpu())
@@ -1120,8 +1125,8 @@ def main():
     config = OmegaConf.load('config.yaml')
     wandb_logger = WandbLogger(project=config.project_name, name=config.run_name)
 
-    checkpoint_callback = ModelCheckpoint(monitor='val_loss', mode='min', save_top_k=1)
-    early_stopping_callback = EarlyStopping(monitor='val_loss', patience=config.callbacks.early_stopping_patience, mode='min')
+    checkpoint_callback = ModelCheckpoint(monitor='val_mcc', mode='max', save_top_k=1)
+    early_stopping_callback = EarlyStopping(monitor='val_mcc', patience=config.callbacks.early_stopping_patience, mode='max')
 
     trainer = L.Trainer(
         logger=wandb_logger,

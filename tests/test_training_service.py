@@ -119,7 +119,7 @@ class TestReadAllMetrics:
         events = [
             {"status": "starting", "message": "Loading data..."},
             {"status": "starting", "message": "Loaded 100 samples."},
-            {"status": "training", "epoch": 0, "best_val_loss": 0.5, "stagnation_epochs": 0},
+            {"status": "training", "epoch": 0, "best_val_mcc": 0.5, "stagnation_epochs": 0},
         ]
         metrics_file.write_text("\n".join(json.dumps(e) for e in events) + "\n")
         _tasks["all-metrics-test"] = {"status": "training", "metrics_path": str(metrics_file)}

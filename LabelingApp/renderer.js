@@ -3678,6 +3678,7 @@ document.getElementById("trainStart").addEventListener("click", async () => {
               `epoch ${data.epoch + 1}/${data.total_epochs || "?"}`,
               `train_loss ${data.train_loss.toFixed(4)}`,
               `val_loss ${data.val_loss.toFixed(4)}`,
+              `val_mcc ${data.val_mcc.toFixed(4)}`,
             ];
             if (data.stagnation_epochs !== undefined)
               parts.push(`stagnation ${data.stagnation_epochs}/${data.patience}`);
@@ -3686,8 +3687,9 @@ document.getElementById("trainStart").addEventListener("click", async () => {
         }
         if (data.train_loss !== undefined) document.getElementById("trainLossVal").textContent = data.train_loss.toFixed(4);
         if (data.val_loss !== undefined) document.getElementById("trainValLoss").textContent = data.val_loss.toFixed(4);
-        if (data.best_val_loss !== undefined && isFinite(data.best_val_loss))
-          document.getElementById("trainBestValLoss").textContent = data.best_val_loss.toFixed(4);
+        if (data.val_mcc !== undefined) document.getElementById("trainValMcc").textContent = data.val_mcc.toFixed(4);
+        if (data.best_val_mcc !== undefined && isFinite(data.best_val_mcc))
+          document.getElementById("trainBestValMcc").textContent = data.best_val_mcc.toFixed(4);
         if (data.stagnation_epochs !== undefined) {
           const patience = data.patience !== undefined ? data.patience : "-";
           document.getElementById("trainStagnation").textContent = `${data.stagnation_epochs} / ${patience}`;
@@ -3724,7 +3726,7 @@ document.getElementById("trainStart").addEventListener("click", async () => {
                 name: data.best_checkpoint.split(/[\\/]/).pop(),
                 path: data.best_checkpoint,
                 created: new Date().toISOString().slice(0, 10),
-                val_loss: typeof data.best_val_loss === "number" ? data.best_val_loss : null,
+                val_mcc: typeof data.best_val_mcc === "number" ? data.best_val_mcc : null,
                 config: {
                   variant: config.variant,
                   binarize: config.binarize,
