@@ -39,15 +39,35 @@ Every run also writes, under --output-dir:
   - epoch_metrics/frac{f}_rep{r}.jsonl -- one JSON line per training epoch
     (train/val loss, balanced acc, MCC, LR), so a run's trajectory can be
     inspected later without re-running it.
-  - checkpoints/frac100_rep0_best.ckpt -- the best-val-loss checkpoint from
+  - checkpoints/frac100_rep0_best.ckpt -- the best-val-mcc checkpoint from
     the 100%-data run only (kept as the "reference" model; every other
     run's checkpoint is discarded after evaluation to bound disk usage).
+    Checkpoint selection (and early stopping) monitor val_mcc, not val_loss
+    -- the two can diverge on this model, and val_mcc is the metric this
+    whole benchmark exists to report.
+  - benchmarking/models/frac100_rep0_best.pt -- that same checkpoint
+    exported to TorchScript.
   - run_meta.json -- one-time reproducibility snapshot: git commit, torch/
     lightning versions, the resolved config, class names, and per-dataset
     label-row counts.
 and each entry in results.json additionally records epochs_trained,
-epoch_of_best, best_val_loss, per-class precision/recall/F1/support, a
+epoch_of_best, best_val_mcc, per-class precision/recall/F1/support, a
 confusion matrix, MCC, and the class weights used for that run.
+
+Email notifications (GMAIL_ADDRESS/GMAIL_APP_PASSWORD env vars required,
+see send_completion_email's docstring; --no-notify disables all of this):
+  - A short progress email after every single (fraction, repeat) run
+    finishes, with that run's accuracy/macro_f1/mcc.
+  - A full report -- results.json, the accuracy/f1/mcc-vs-training-size
+    plots, and a val_mcc + val_loss vs. epoch plot for the 100% run --
+    the moment the 100%-data run finishes. This happens *before* the
+    (separately) risky TorchScript export step is attempted, so an export
+    failure can never take the report down with it; export failures and
+    email failures are both caught and logged rather than raised, so
+    neither can crash the run.
+  - If 100% wasn't part of this run's --fractions (or was already reported
+    in a prior --resume invocation), main() sends an equivalent fallback
+    report (without the epoch plot) at the very end instead.
 
 Usage:
     python benchmarking/code/benchmark_size_learning_curve.py
@@ -292,8 +312,16 @@ def train_and_evaluate(subset, valid_data, test_data, config, class_names, args,
 
     tmp_dir = tempfile.mkdtemp(prefix="size_curve_")
     try:
-        checkpoint_cb = ModelCheckpoint(dirpath=tmp_dir, monitor="val_loss", mode="min", save_top_k=1)
-        early_stop_cb = EarlyStopping(monitor="val_loss", patience=patience, mode="min")
+        # Monitor val_mcc (not val_loss): on this model, val_loss and val_mcc
+        # can diverge after the first couple of epochs (loss creeps up from
+        # increasingly confident wrong predictions while MCC keeps
+        # improving), so a val_loss-best checkpoint can be measurably worse
+        # on the metric this whole benchmark exists to report. See
+        # benchmarking/figures/size_learning_curve_test's frac100 run for a
+        # concrete example: val_loss was lowest at epoch 0, but val_mcc kept
+        # climbing through epoch 4 and was never captured by that checkpoint.
+        checkpoint_cb = ModelCheckpoint(dirpath=tmp_dir, monitor="val_mcc", mode="max", save_top_k=1)
+        early_stop_cb = EarlyStopping(monitor="val_mcc", patience=patience, mode="max")
         epoch_log_path.parent.mkdir(parents=True, exist_ok=True)
         metrics_writer_cb = EpochMetricsWriter(epoch_log_path)
 
@@ -308,7 +336,7 @@ def train_and_evaluate(subset, valid_data, test_data, config, class_names, args,
         trainer.fit(model, data_module)
 
         epochs_trained = trainer.current_epoch
-        best_val_loss = (
+        best_val_mcc = (
             float(checkpoint_cb.best_model_score) if checkpoint_cb.best_model_score is not None else None
         )
 
@@ -350,7 +378,7 @@ def train_and_evaluate(subset, valid_data, test_data, config, class_names, args,
             **metrics,
             "epochs_trained": epochs_trained,
             "epoch_of_best": epoch_of_best,
-            "best_val_loss": best_val_loss,
+            "best_val_mcc": best_val_mcc,
             "class_weights": weights.tolist(),
         }
     finally:
@@ -464,7 +492,13 @@ def save_run_meta(output_dir: Path, args, config, class_names: list, all_labels:
 # Experiment driver
 # ---------------------------------------------------------------------------
 
-def run_experiment(args, completed: list[dict]) -> list[dict]:
+def run_experiment(args, completed: list[dict]) -> tuple[list[dict], bool]:
+    """Returns (results, final_report_sent) -- final_report_sent is True iff
+    the frac=100 report (results.json + plots + email) was already sent
+    from inside this call, so main() knows whether it still needs to do its
+    own fallback report at the end (e.g. when 100% wasn't part of this run's
+    fractions, or was already completed and reported in a prior --resume
+    invocation)."""
     output_dir = Path(args.output_dir)
     state_path = state_file_for(output_dir)
 
@@ -497,9 +531,10 @@ def run_experiment(args, completed: list[dict]) -> list[dict]:
         print(f"Resuming: {n_skipped}/{len(tasks)} run(s) already completed in {state_path}, skipping.")
     if not pending_tasks:
         print("All planned runs already completed -- nothing to do.")
-        return completed
+        return completed, False
 
     results = list(completed)
+    final_report_sent = False
     pbar = tqdm(pending_tasks, desc="Learning curve", unit="run")
     for frac, rep, repeats in pbar:
         n = round(frac / 100 * total_train)
@@ -514,8 +549,10 @@ def run_experiment(args, completed: list[dict]) -> list[dict]:
             y_pred = np.full_like(y_true, majority)
             metrics = compute_full_metrics(y_true, y_pred, num_classes, class_names)
             n_used = 0
+            epoch_log_path = None
+            keep_checkpoint_to = None
             run_extra = {
-                "epochs_trained": None, "epoch_of_best": None, "best_val_loss": None,
+                "epochs_trained": None, "epoch_of_best": None, "best_val_mcc": None,
                 "class_weights": None, "samples_per_dataset": None,
                 "epoch_metrics_path": None, "checkpoint_path": None, "torchscript_path": None,
             }
@@ -541,21 +578,17 @@ def run_experiment(args, completed: list[dict]) -> list[dict]:
                 epoch_log_path=epoch_log_path, keep_checkpoint_to=keep_checkpoint_to,
             )
 
-            torchscript_path = None
-            if keep_checkpoint_to is not None and keep_checkpoint_to.exists():
-                tqdm.write("  Exporting best model to TorchScript...")
-                torchscript_path = export_best_model_to_torchscript(keep_checkpoint_to, config, frac, rep)
-                tqdm.write(f"  Saved {torchscript_path}")
-
             run_extra = {
                 "epochs_trained": metrics.pop("epochs_trained"),
                 "epoch_of_best": metrics.pop("epoch_of_best"),
-                "best_val_loss": metrics.pop("best_val_loss"),
+                "best_val_mcc": metrics.pop("best_val_mcc"),
                 "class_weights": metrics.pop("class_weights"),
                 "samples_per_dataset": samples_per_dataset,
                 "epoch_metrics_path": str(epoch_log_path),
                 "checkpoint_path": str(keep_checkpoint_to) if keep_checkpoint_to else None,
-                "torchscript_path": str(torchscript_path) if torchscript_path else None,
+                # Filled in below, after the report is safely out, if frac==100
+                # and the (separately risky) TorchScript export succeeds.
+                "torchscript_path": None,
             }
 
         elapsed = time.time() - start
@@ -577,7 +610,59 @@ def run_experiment(args, completed: list[dict]) -> list[dict]:
         })
         save_state(state_path, args, results)
 
-    return results
+        if args.notify:
+            send_progress_email(args.notify_email, frac, rep, repeats, metrics, n_used, elapsed)
+
+        if frac == 100:
+            # Get the report (results.json + every plot, emailed) out the
+            # door *before* touching TorchScript export -- that step has
+            # already crashed once on this codebase (a torch.jit bug, not
+            # anything about this training run), and a fully-trained run's
+            # results are worth far more than the .pt file. Export is
+            # attempted afterward, still safely wrapped, so a second failure
+            # there still can't take the report down with it.
+            results_path = output_dir / "results.json"
+            with open(results_path, "w", encoding="utf-8") as f:
+                json.dump(results, f, indent=2)
+
+            x_unit = "seconds" if args.fps > 0 else "frames"
+            accuracy_path = output_dir / f"accuracy_vs_{x_unit}.svg"
+            f1_path = output_dir / f"f1_vs_{x_unit}.svg"
+            mcc_path = output_dir / f"mcc_vs_{x_unit}.svg"
+            plot_learning_curve(results, "accuracy", "Accuracy", "Accuracy vs. training data size",
+                                 accuracy_path, fps=args.fps)
+            plot_learning_curve(results, "macro_f1", "Macro F1", "Macro F1 vs. training data size",
+                                 f1_path, fps=args.fps)
+            plot_learning_curve(results, "mcc", "MCC", "MCC vs. training data size", mcc_path, fps=args.fps)
+            report_plot_paths = [accuracy_path, f1_path, mcc_path]
+
+            if epoch_log_path is not None and epoch_log_path.exists():
+                val_metrics_path = output_dir / "val_mcc_and_loss_vs_epoch_frac100.svg"
+                plot_val_metrics_vs_epoch(epoch_log_path, val_metrics_path,
+                                           epoch_of_best=run_extra["epoch_of_best"])
+                report_plot_paths.append(val_metrics_path)
+
+            final_report_sent = True
+            if args.notify:
+                send_completion_email(args.notify_email, output_dir, report_plot_paths, results)
+
+            if keep_checkpoint_to is not None and keep_checkpoint_to.exists():
+                tqdm.write("  Exporting best model to TorchScript...")
+                try:
+                    torchscript_path = export_best_model_to_torchscript(keep_checkpoint_to, config, frac, rep)
+                    tqdm.write(f"  Saved {torchscript_path}")
+                    results[-1]["torchscript_path"] = str(torchscript_path)
+                    save_state(state_path, args, results)
+                    with open(results_path, "w", encoding="utf-8") as f:
+                        json.dump(results, f, indent=2)
+                except Exception as e:
+                    # Same reasoning as above: don't let this take anything
+                    # else down. The .ckpt is still on disk either way, so
+                    # export can always be retried separately later.
+                    tqdm.write(f"  WARNING: TorchScript export failed ({type(e).__name__}: {e}) -- "
+                               f"continuing without it. The checkpoint is still at {keep_checkpoint_to}.")
+
+    return results, final_report_sent
 
 
 # ---------------------------------------------------------------------------
@@ -640,6 +725,64 @@ def plot_learning_curve(results: list[dict], metric_key: str, ylabel: str, title
     plt.close(fig)
 
 
+def plot_val_metrics_vs_epoch(epoch_log_path: Path, out_path: Path, epoch_of_best: int | None = None) -> None:
+    """Val MCC and val loss across training epochs for one run (the 100%
+    run, in practice -- the only one whose per-epoch log survives past its
+    own run). Two stacked panels sharing an epoch x-axis, since MCC and loss
+    aren't on comparable scales (never a dual y-axis chart for two
+    different-unit measures -- see the dataviz "one axis" rule).
+
+    Answers "did this run need more epochs?" at a glance: if val_mcc is
+    still climbing at the last epoch plotted, more training likely would
+    have helped; if it's flat or falling, it had already converged (or
+    started overfitting) within the epochs actually run. The dashed vertical
+    line marks the epoch whose checkpoint was actually kept (now selected by
+    best val_mcc, not val_loss -- see train_and_evaluate).
+    """
+    records = []
+    with open(epoch_log_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                records.append(json.loads(line))
+    if not records:
+        return
+
+    epochs = [r["epoch"] for r in records]
+    val_mcc = [r["val_mcc"] for r in records]
+    val_loss = [r["val_loss"] for r in records]
+
+    fig, (ax_mcc, ax_loss) = plt.subplots(2, 1, figsize=(7, 7.5), dpi=150, sharex=True)
+    fig.patch.set_facecolor(SURFACE)
+
+    panels = [(ax_mcc, val_mcc, "Val MCC", PALETTE[1]), (ax_loss, val_loss, "Val loss", PALETTE[5])]
+    for ax, ys, ylabel, color in panels:
+        ax.set_facecolor(SURFACE)
+        ax.plot(epochs, ys, color=color, marker="o", markersize=6, linewidth=1.8, zorder=3)
+        if epoch_of_best is not None:
+            ax.axvline(epoch_of_best, color=INK_SECONDARY, linewidth=1, linestyle="--", zorder=1)
+        ax.set_ylabel(ylabel, color=INK_PRIMARY)
+        ax.tick_params(colors=INK_SECONDARY, labelsize=9)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["left"].set_color(GRIDLINE)
+        ax.spines["bottom"].set_color(GRIDLINE)
+        ax.yaxis.grid(True, color=GRIDLINE, linewidth=0.8)
+        ax.set_axisbelow(True)
+
+    ax_mcc.set_title("Val MCC and val loss vs. epoch (100% run)", color=INK_PRIMARY, fontsize=13, pad=14)
+    if epoch_of_best is not None:
+        ax_mcc.annotate("checkpoint kept", xy=(epoch_of_best, val_mcc[epochs.index(epoch_of_best)]),
+                         xytext=(6, 6), textcoords="offset points", color=INK_SECONDARY, fontsize=8)
+    ax_loss.set_xlabel("Epoch", color=INK_SECONDARY)
+    ax_loss.set_xticks(epochs)
+
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, facecolor=SURFACE)
+    plt.close(fig)
+
+
 # ---------------------------------------------------------------------------
 # Completion email
 # ---------------------------------------------------------------------------
@@ -665,41 +808,46 @@ def send_completion_email(to_addr: str, output_dir: Path, plot_paths: list, resu
               "env vars to enable it (see send_completion_email's docstring).")
         return
 
-    best_100 = [r for r in results if r["fraction"] == 100]
-    summary_line = ""
-    if best_100:
-        r = best_100[0]
-        summary_line = (f"\n100% run: accuracy={r['accuracy']:.4f}  "
-                         f"macro_f1={r['macro_f1']:.4f}  mcc={r['mcc']:.4f}\n")
-
-    msg = EmailMessage()
-    msg["Subject"] = "Size learning curve benchmark finished"
-    msg["From"] = sender
-    msg["To"] = to_addr
-    msg.set_content(
-        f"benchmark_size_learning_curve.py finished. Plots and raw results are attached.\n\n"
-        f"Output directory: {output_dir.resolve()}\n"
-        f"{summary_line}\n"
-        f"Plots:\n" + "\n".join(f"  - {p}" for p in plot_paths) + "\n\n"
-        f"Raw results: {output_dir.resolve() / 'results.json'}\n"
-    )
-
-    results_path = output_dir / "results.json"
-    attachments = list(plot_paths) + [results_path]
-    for path in attachments:
-        path = Path(path)
-        if not path.exists():
-            print(f"Skipping attachment (not found): {path}")
-            continue
-        if path.suffix == ".svg":
-            maintype, subtype = "image", "svg+xml"
-        elif path.suffix == ".json":
-            maintype, subtype = "application", "json"
-        else:
-            maintype, subtype = "application", "octet-stream"
-        msg.add_attachment(path.read_bytes(), maintype=maintype, subtype=subtype, filename=path.name)
-
+    # Everything below -- message construction, attaching files, the SMTP
+    # send -- is one try/except block on purpose: a failure anywhere in here
+    # (a bad attachment read, a network error, an SMTP auth problem) should
+    # never propagate and take down a multi-hour benchmark run. Worst case
+    # you just don't get this email.
     try:
+        best_100 = [r for r in results if r["fraction"] == 100]
+        summary_line = ""
+        if best_100:
+            r = best_100[0]
+            summary_line = (f"\n100% run: accuracy={r['accuracy']:.4f}  "
+                             f"macro_f1={r['macro_f1']:.4f}  mcc={r['mcc']:.4f}\n")
+
+        msg = EmailMessage()
+        msg["Subject"] = "Size learning curve benchmark finished"
+        msg["From"] = sender
+        msg["To"] = to_addr
+        msg.set_content(
+            f"benchmark_size_learning_curve.py finished. Plots and raw results are attached.\n\n"
+            f"Output directory: {output_dir.resolve()}\n"
+            f"{summary_line}\n"
+            f"Plots:\n" + "\n".join(f"  - {p}" for p in plot_paths) + "\n\n"
+            f"Raw results: {output_dir.resolve() / 'results.json'}\n"
+        )
+
+        results_path = output_dir / "results.json"
+        attachments = list(plot_paths) + [results_path]
+        for path in attachments:
+            path = Path(path)
+            if not path.exists():
+                print(f"Skipping attachment (not found): {path}")
+                continue
+            if path.suffix == ".svg":
+                maintype, subtype = "image", "svg+xml"
+            elif path.suffix == ".json":
+                maintype, subtype = "application", "json"
+            else:
+                maintype, subtype = "application", "octet-stream"
+            msg.add_attachment(path.read_bytes(), maintype=maintype, subtype=subtype, filename=path.name)
+
         with smtplib.SMTP("smtp.gmail.com", 587) as server:
             server.starttls()
             server.login(sender, app_password)
@@ -707,6 +855,42 @@ def send_completion_email(to_addr: str, output_dir: Path, plot_paths: list, resu
         print(f"Sent completion email to {to_addr} with {len(attachments)} attachment(s)")
     except Exception as e:
         print(f"Failed to send completion email: {type(e).__name__}: {e}")
+
+
+def send_progress_email(to_addr: str, frac: int, rep: int, repeats: int, metrics: dict,
+                         n_used: int, elapsed: float) -> None:
+    """Best-effort per-run notification -- sent after every (fraction,
+    repeat) finishes, so progress on a long sweep can be tracked without
+    watching the terminal. Same env-var gating as send_completion_email; the
+    whole body is one try/except for the same reason (a failed/skipped send
+    must never take down the run) -- it just doesn't re-print the setup
+    instructions every single run.
+    """
+    sender = os.environ.get("GMAIL_ADDRESS")
+    app_password = os.environ.get("GMAIL_APP_PASSWORD")
+    if not sender or not app_password:
+        return
+
+    try:
+        msg = EmailMessage()
+        msg["Subject"] = f"Size learning curve: fraction={frac}% repeat={rep + 1}/{repeats} done"
+        msg["From"] = sender
+        msg["To"] = to_addr
+        msg.set_content(
+            f"fraction={frac}%  repeat={rep + 1}/{repeats}\n"
+            f"n_frames_train={n_used}\n"
+            f"accuracy={metrics['accuracy']:.4f}\n"
+            f"macro_f1={metrics['macro_f1']:.4f}\n"
+            f"mcc={metrics['mcc']:.4f}\n"
+            f"wall_seconds={elapsed:.1f}\n"
+        )
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(sender, app_password)
+            server.send_message(msg)
+        tqdm.write(f"  Sent progress email to {to_addr}")
+    except Exception as e:
+        tqdm.write(f"  WARNING: progress email failed ({type(e).__name__}: {e}) -- continuing.")
 
 
 # ---------------------------------------------------------------------------
@@ -771,12 +955,20 @@ def main():
                   f"(pass --resume to continue it instead)")
         completed = []
 
-    results = run_experiment(args, completed)
+    results, final_report_sent = run_experiment(args, completed)
 
     results_path = output_dir / "results.json"
     with open(results_path, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
     print(f"\nSaved raw results to {results_path}")
+
+    if final_report_sent:
+        # run_experiment already wrote results.json (again, harmlessly, just
+        # above), generated every plot, and emailed the report the moment
+        # the frac=100 run completed -- before touching TorchScript export.
+        # Redoing it here would just duplicate the email.
+        print("Final report (plots + email) was already sent when the 100% run completed.")
+        return
 
     x_unit = "seconds" if args.fps > 0 else "frames"
     accuracy_path = output_dir / f"accuracy_vs_{x_unit}.svg"
