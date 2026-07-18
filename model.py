@@ -404,15 +404,52 @@ def _find_bouts(labels_arr: np.ndarray, max_chunk_len: int = 300) -> list:
     return bouts
 
 
+_SPLIT_NAMES = ("train", "val", "test")
+
+
+def _chronological_split_indices(total, train_percent, val_percent, test_percent,
+                                 split_order=("train", "val", "test")):
+    """Return exact-size contiguous chronological blocks in ``split_order``.
+
+    The final block receives any integer-rounding remainder. With the default
+    order this is identical to the historical first-train, then-val, then-test
+    behavior.
+    """
+    order = tuple(split_order)
+    if len(order) != 3 or set(order) != set(_SPLIT_NAMES):
+        raise ValueError(
+            "split_order must contain train, val, and test exactly once; "
+            f"got {list(order)!r}"
+        )
+
+    proportions = {
+        "train": train_percent,
+        "val": val_percent,
+        "test": test_percent,
+    }
+    indices = np.arange(total)
+    by_split = {}
+    start = 0
+    cumulative_fraction = 0.0
+    for position, split_name in enumerate(order):
+        cumulative_fraction += proportions[split_name]
+        end = total if position == len(order) - 1 else int(total * cumulative_fraction)
+        by_split[split_name] = indices[start:end]
+        start = end
+    return by_split
+
+
 def train_test_split(file_paths, labels, boundary_dists, train_percent=0.7, val_percent=0.15, test_percent=0.15,
-                     shuffle=False, random_seed=42, return_dataset_ids=False):
+                     shuffle=False, random_seed=42, return_dataset_ids=False,
+                     split_order=("train", "val", "test")):
     """
     Split data from multiple datasets into train/val/test sets.
     Splits each dataset separately, then combines across datasets.
 
-    shuffle=False (chronological, the old default): each video is cut in
-    native-frame order -- first train_percent, next val_percent, last
-    test_percent. Simple, but behavior bouts cluster in time within a
+    shuffle=False (chronological): each video is cut into three contiguous
+    blocks in native-frame order. ``split_order`` controls which role gets
+    each block; its default is train, then val, then test. Simple, but behavior
+    bouts cluster in time within a
     session (e.g. grooming can taper off entirely by the end of a
     recording), so val/test can land on wildly different class balances
     than train purely from where in the timeline the cut fell, not from any
@@ -447,6 +484,8 @@ def train_test_split(file_paths, labels, boundary_dists, train_percent=0.7, val_
         test_percent: Percentage of data for testing (0-1)
         shuffle: False = chronological split; True = bout-level stratified split
         random_seed: Random seed for reproducibility (only used when shuffle=True)
+        split_order: Permutation of (train, val, test) specifying the temporal
+            block order when shuffle=False. Ignored when shuffle=True.
         return_dataset_ids: If True, also return a per-sample array (parallel
             to y_train) recording which source dataset each training sample
             came from -- needed by callers that stratify/report on top of the
@@ -518,12 +557,12 @@ def train_test_split(file_paths, labels, boundary_dists, train_percent=0.7, val_
             val_indices = np.array(sorted(val_pos), dtype=int)
             test_indices = np.array(sorted(test_pos), dtype=int)
         else:
-            indices = np.arange(total)
-            train_end = int(total * train_percent)
-            val_end = int(total * (train_percent + val_percent))
-            train_indices = indices[:train_end]
-            val_indices = indices[train_end:val_end]
-            test_indices = indices[val_end:]
+            chronological = _chronological_split_indices(
+                total, train_percent, val_percent, test_percent, split_order
+            )
+            train_indices = chronological["train"]
+            val_indices = chronological["val"]
+            test_indices = chronological["test"]
 
         # Split this dataset
         x_train.extend(dataset_paths_arr[train_indices].tolist())
