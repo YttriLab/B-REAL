@@ -124,6 +124,104 @@ def export_model(checkpoint_path, output_name, output_dir, device="cuda",
     return output_path
 
 
+def benchmark_model(
+    variant="b0",
+    num_frames=3,
+    tsm_stages=None,
+    temporal_pool="last",
+    image_size=224,
+    batch_size=1,
+    precision="fp32",
+    iters=100,
+    warmup=20,
+    device=None,
+):
+    """Time the *optimized* (TorchScript + optimize_for_inference) forward pass
+    for an untrained model of the given architecture.
+
+    Inference latency depends only on architecture + input shape, not on trained
+    weights, so this lets a user size their "compute budget" before training. It
+    mirrors what export_model produces (same wrapper, same optimization), so the
+    numbers reflect the artifact actually deployed to the rig.
+
+    Returns a dict of timings and the resolved environment.
+    """
+    import time
+
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    note = None
+    use_half = str(precision).lower() in ("fp16", "half", "16")
+    if use_half and device != "cuda":
+        # Half convs are unsupported / pathologically slow on CPU — don't pretend.
+        use_half = False
+        note = "FP16 requested but no CUDA device; benchmarked FP32 instead."
+
+    torch.backends.cudnn.benchmark = True
+
+    # Untrained model with the requested architecture (weights don't affect timing;
+    # pretrained=False avoids a download). Two classes is representative.
+    model = TSMClassifier(
+        variant=variant,
+        num_frames=num_frames,
+        tsm_stages=tsm_stages,
+        temporal_pool=temporal_pool,
+        pretrained=False,
+        class_names=["a", "b"],
+    )
+    wrapper = TSMInferenceWrapper(model).to(device).eval()
+    dtype = torch.float16 if use_half else torch.float32
+    if use_half:
+        wrapper = wrapper.half()
+
+    x = torch.randn(batch_size, num_frames, 3, image_size, image_size,
+                    device=device, dtype=dtype)
+
+    with torch.no_grad():
+        traced = torch.jit.trace(wrapper, x)
+        try:
+            traced = torch.jit.optimize_for_inference(traced)
+        except Exception:
+            pass  # some graphs reject it; fall back to the plain traced module
+
+        for _ in range(max(1, warmup)):
+            traced(x)
+        if device == "cuda":
+            torch.cuda.synchronize()
+
+        t0 = time.perf_counter()
+        for _ in range(max(1, iters)):
+            traced(x)
+        if device == "cuda":
+            torch.cuda.synchronize()
+        total = time.perf_counter() - t0
+
+    clips = max(1, iters) * batch_size
+    clips_per_sec = clips / total
+    ms_per_clip = 1000.0 / clips_per_sec
+    ms_per_batch = (total / max(1, iters)) * 1000.0
+
+    result = {
+        "device": device,
+        "device_name": torch.cuda.get_device_name(0) if device == "cuda" else "CPU",
+        "precision": "fp16" if use_half else "fp32",
+        "variant": variant,
+        "num_frames": num_frames,
+        "tsm_stages": tsm_stages,
+        "temporal_pool": temporal_pool,
+        "image_size": image_size,
+        "batch_size": batch_size,
+        "iters": iters,
+        "ms_per_clip": ms_per_clip,
+        "ms_per_batch": ms_per_batch,
+        "clips_per_sec": clips_per_sec,
+    }
+    if note:
+        result["note"] = note
+    return result
+
+
 def main():
     checkpoint_path = r"aeagle-yttri-lab\zmjox2sf\checkpoints\epoch=22-step=19711.ckpt"
     output_name = "tsm_binary_groom"

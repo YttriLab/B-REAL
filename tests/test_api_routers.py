@@ -202,6 +202,38 @@ class TestTrainingRouter:
         assert data["datasets"][0]["not_extracted"] == 2
 
     @pytest.mark.asyncio
+    async def test_benchmark_inference(self, ac):
+        """Pre-training latency benchmark returns positive timings for the arch."""
+        resp = await ac.post("/api/training/benchmark-inference", json={
+            "variant": "b0",
+            "num_frames": 3,
+            "tsm_stages": [5, 6, 7],
+            "iters": 2,
+            "warmup": 1,  # keep the test fast (CPU on CI)
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ms_per_clip"] > 0
+        assert data["clips_per_sec"] > 0
+        assert data["variant"] == "b0"
+        assert data["num_frames"] == 3
+        assert data["precision"] == "fp32"
+
+    @pytest.mark.asyncio
+    async def test_benchmark_inference_fp16_on_cpu_downgrades(self, ac):
+        """FP16 without CUDA must not error — it downgrades to FP32 with a note."""
+        import torch
+        if torch.cuda.is_available():
+            pytest.skip("CUDA present; downgrade path not exercised")
+        resp = await ac.post("/api/training/benchmark-inference", json={
+            "variant": "b0", "iters": 2, "warmup": 1, "precision": "fp16",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["precision"] == "fp32"
+        assert "note" in data
+
+    @pytest.mark.asyncio
     async def test_config_defaults(self, ac, tmp_path):
         """All optional fields should have defaults."""
         resp = await ac.post("/api/training/start", json={

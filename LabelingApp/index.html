@@ -380,7 +380,12 @@
               <div class="form-row" style="margin-top:16px;">
                 <button id="trainStart" class="primary">Start Training</button>
                 <button id="trainStop" class="danger" disabled>Stop</button>
+                <button id="benchInfer" title="Time the optimized (TorchScript) inference latency for this architecture — no training needed">Benchmark inference</button>
+                <label style="display:inline-flex;align-items:center;gap:4px;font-weight:normal;">
+                  <input id="benchFp16" type="checkbox" /> FP16
+                </label>
               </div>
+              <div id="benchResult" class="metrics-display" style="display:none;"></div>
               <div class="progress-area">
                 <progress id="trainProgress" value="0" max="100"></progress>
                 <span id="trainStatus">Idle</span>

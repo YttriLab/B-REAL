@@ -3904,6 +3904,53 @@ document.getElementById("trainStop").addEventListener("click", async () => {
   }
 });
 
+// ── Inference benchmark (pre-training compute budget) ───────────────────────
+// Times the optimized (TorchScript) forward pass for the CURRENT architecture
+// without training it — latency depends on architecture + input shape, not on
+// trained weights — so users can decide if a variant fits their rig's frame rate.
+document.getElementById("benchInfer").addEventListener("click", async () => {
+  const btn = document.getElementById("benchInfer");
+  const out = document.getElementById("benchResult");
+  const tsmStages = document.getElementById("trainTsmStages").value
+    .split(",").map((s) => parseInt(s.trim())).filter((n) => !isNaN(n));
+  const body = {
+    variant: document.getElementById("trainVariant").value,
+    num_frames: parseInt(document.getElementById("trainFramesPerGroup").value, 10) || 3,
+    tsm_stages: tsmStages,
+    temporal_pool: document.getElementById("trainTemporalPool").value,
+    precision: document.getElementById("benchFp16").checked ? "fp16" : "fp32",
+  };
+
+  btn.disabled = true;
+  out.style.display = "block";
+  out.textContent = "Building + tracing model, timing…";
+  try {
+    const r = await backendFetch("/api/training/benchmark-inference", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    const fps30 = (r.clips_per_sec / 30).toFixed(1);
+    const fps60 = (r.clips_per_sec / 60).toFixed(1);
+    out.innerHTML = "";
+    const rows = [
+      `Architecture: ${r.variant}, T=${r.num_frames}, stages [${(r.tsm_stages || []).join(",")}], pool ${r.temporal_pool}`,
+      `Device: ${r.device_name} (${r.precision.toUpperCase()})`,
+      `Latency: ${r.ms_per_clip.toFixed(2)} ms/clip  →  ${r.clips_per_sec.toFixed(1)} clips/s`,
+      `Real-time headroom: ${fps30}× at 30 fps · ${fps60}× at 60 fps`,
+    ];
+    if (r.note) rows.push(`Note: ${r.note}`);
+    for (const line of rows) {
+      const div = document.createElement("div");
+      div.textContent = line;
+      out.appendChild(div);
+    }
+  } catch (e) {
+    out.textContent = `Benchmark failed: ${e.message || e}`;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 // ── TorchScript export ─────────────────────────────────────────────────────
 
 document.getElementById("trainExportSelectCkpt").addEventListener("click", async () => {

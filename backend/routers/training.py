@@ -84,6 +84,19 @@ class ExportTorchscriptRequest(BaseModel):
     tsm_stages: Optional[list[int]] = None
 
 
+class BenchmarkRequest(BaseModel):
+    """Architecture to time the optimized inference path for (pre-training)."""
+    variant: str = "b0"
+    num_frames: int = 3
+    tsm_stages: Optional[list[int]] = None
+    temporal_pool: str = "last"
+    image_size: int = 224
+    batch_size: int = 1
+    precision: str = "fp32"  # fp32 | fp16
+    iters: int = 100
+    warmup: int = 20
+
+
 # ── Endpoints ──────────────────────────────────────────────────────────────
 
 @router.post("/start")
@@ -221,5 +234,29 @@ async def api_export_torchscript(req: ExportTorchscriptRequest):
     try:
         output_path = await asyncio.to_thread(_run)
         return {"output_path": output_path}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+
+
+@router.post("/benchmark-inference")
+async def api_benchmark_inference(req: BenchmarkRequest):
+    """Time the optimized (TorchScript) inference latency for an architecture
+    before training it — so a user can size their real-time compute budget."""
+    def _run():
+        from convert_torchscript_tsm import benchmark_model
+        return benchmark_model(
+            variant=req.variant,
+            num_frames=req.num_frames,
+            tsm_stages=req.tsm_stages,
+            temporal_pool=req.temporal_pool,
+            image_size=req.image_size,
+            batch_size=req.batch_size,
+            precision=req.precision,
+            iters=req.iters,
+            warmup=req.warmup,
+        )
+
+    try:
+        return await asyncio.to_thread(_run)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
