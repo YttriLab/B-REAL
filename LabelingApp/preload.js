@@ -72,6 +72,7 @@ contextBridge.exposeInMainWorld("api", {
   openCsv: () => ipcRenderer.invoke("open-csv"),
   saveVideoDialog: (payload) => ipcRenderer.invoke("save-video-dialog", payload),
   reencodeVideo: (payload) => ipcRenderer.invoke("reencode-video", payload),
+  remuxVideo: (payload) => ipcRenderer.invoke("remux-video", payload),
   runFfmpeg: (payload) => ipcRenderer.invoke("run-ffmpeg", payload),
   createMp4File: () => {
     const moduleRef = loadMp4Box();

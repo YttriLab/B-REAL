@@ -106,7 +106,8 @@ Projects export to a single HDF5 `.rlt` file in **two flavors** (mirroring SLEAP
 - **Async task management**: Services use background tasks with task IDs, progress callbacks, and cancellation support. Task registries are module-level dicts cleared between tests via `autouse` fixture.
 - **Pydantic v2**: `model_config` is a reserved field name — use `extra_model_config` instead.
 - **CSV import**: `parseCsvAndImport(content, sourceName)` is the reusable core; `importCsv()` and Import Project both delegate to it.
-- **Misclassification detection**: `buildMisclassifiedArray()` cross-references model predictions against user-labeled bouts. Hooked into `saveProgress()` with try-catch for TDZ safety (defined after `alState`).
+- **Misclassification detection**: `buildMisclassifiedArray()` cross-references model predictions against user-labeled bouts. Hooked into `saveProgress()` with try-catch for TDZ safety (defined after `alState`). Compares in the model's label space via `mapLabelToModelClass()` — a binarized model predicts `['other', <positive>]`, so raw behavior names must be mapped first (returns null = "not comparable", never flagged).
+- **MKV / non-MP4 containers**: the frame-accurate WebCodecs path demuxes with mp4box (ISO/MP4 only), so MKV/WebM/AVI/etc. are remuxed to MP4 first (`remux-video` IPC → stream-copy, else H.264 re-encode; audio dropped; faststart). `loadWebcodecsFile` keeps `currentVideoName`/`currentFile` as the **original** — backend ops (preprocess/AL/export) read it via ffmpeg and need no remux; only the in-renderer decoder does. Stream-copy preserves frame count so native indices stay aligned.
 - **Model mocking in tests**: `monkeypatch.setattr(model_tsm.TSMClassifier, "load_from_checkpoint", ...)` with a `FakeModel` returning fixed logits.
 
 ## API Endpoints

@@ -1897,6 +1897,59 @@ const loadHtml5File = (file) => {
   setStatus(`Loaded ${file.name}`);
 };
 
+// Containers mp4box can't demux (it's ISO/MP4-only). The frame-accurate
+// WebCodecs path needs these remuxed to MP4 first (see ensureRemuxedForWebcodecs).
+// Backend ops (preprocess/AL/export) read the original via ffmpeg and need no remux.
+const REMUX_EXTS = new Set(["mkv", "webm", "avi", "wmv", "flv", "mpg", "mpeg", "ts", "m2ts", "ogv"]);
+const remuxCache = new Map(); // original path -> remuxed MP4 path (per session)
+
+function needsRemux(name) {
+  const m = /\.([^.]+)$/.exec(name || "");
+  return m ? REMUX_EXTS.has(m[1].toLowerCase()) : false;
+}
+
+// Ensure an MP4 the WebCodecs path can decode exists for a non-MP4 source.
+// Returns the MP4 path, or null if it can't/shouldn't proceed (user declined,
+// no ffmpeg bridge, or remux failed). Stream-copy keeps frames identical so the
+// decoded frame indices stay aligned with the backend's view of the original.
+async function ensureRemuxedForWebcodecs(file) {
+  if (!file || !file.path) return null;
+
+  // Reuse within the session, and across sessions if the file is still on disk.
+  const cached = remuxCache.get(file.path);
+  if (cached && await fileExists(cached)) return cached;
+  if (cached) remuxCache.delete(file.path);
+
+  if (!window.api || typeof window.api.remuxVideo !== "function") {
+    setWebcodecsStatus("This container needs conversion to MP4, but ffmpeg is unavailable.");
+    return null;
+  }
+
+  const proceed = confirm(
+    `"${file.name}" isn't an MP4. Frame-accurate (WebCodecs) mode can only ` +
+    `demux MP4, so it needs converting.\n\n` +
+    `Convert now? A fast stream-copy is used when possible (no re-encode, no ` +
+    `quality loss); an MP4 is written next to the original and reused afterward.`
+  );
+  if (!proceed) return null;
+
+  setWebcodecsStatus("Converting to MP4…");
+  let res;
+  try {
+    res = await window.api.remuxVideo({ inputPath: file.path });
+  } catch (e) {
+    setWebcodecsStatus("Conversion failed: " + (e && e.message ? e.message : e));
+    return null;
+  }
+  if (!res || !res.success) {
+    const msg = (res && (res.error || res.stderr)) || "unknown error";
+    setWebcodecsStatus("Conversion failed: " + String(msg).split("\n").pop());
+    return null;
+  }
+  remuxCache.set(file.path, res.outputPath);
+  return res.outputPath;
+}
+
 const loadWebcodecsFile = async (file) => {
   webcodecsOperationInProgress = true;
   currentVideoName = file.name;
@@ -1907,9 +1960,34 @@ const loadWebcodecsFile = async (file) => {
   webcodecsLoading = true;
   setStatus(`Loading ${file.name} with WebCodecs...`);
   setWebcodecsStatus("Loading...");
+
+  // mp4box (the WebCodecs demuxer) is MP4-only. For MKV and other non-ISO
+  // containers, decode a remuxed MP4 instead — but keep currentVideoName/
+  // currentFile as the ORIGINAL so labels, progress, and backend ops (which read
+  // the source via ffmpeg) stay keyed to it. Stream-copy keeps frame indices aligned.
+  let decodeFile = file;
+  if (needsRemux(file.name)) {
+    const remuxedPath = await ensureRemuxedForWebcodecs(file);
+    if (!remuxedPath) {
+      // Declined or failed → best-effort HTML5 playback of the original.
+      webcodecsLoading = false;
+      webcodecsOperationInProgress = false;
+      useWebCodecsInput.checked = false;
+      setWebcodecsMode(false);
+      loadHtml5File(file);
+      if (pendingVideoSwitch) {
+        const next = pendingVideoSwitch;
+        pendingVideoSwitch = null;
+        if (next !== currentVideoName) switchToVideo(next);
+      }
+      return;
+    }
+    decodeFile = { name: file.name, path: remuxedPath };
+  }
+
   let success = false;
   try {
-    success = await initWebcodecsFromFile(file);
+    success = await initWebcodecsFromFile(decodeFile);
   } catch (err) {
     // A thrown/rejected load must NEVER wedge the loader. Without this catch the
     // rejection would skip the `webcodecsLoading = false` reset below, leaving the

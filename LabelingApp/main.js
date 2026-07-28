@@ -233,6 +233,56 @@ ipcMain.handle("reencode-video", async (_event, payload) => {
   });
 });
 
+// Remux a non-MP4 container (e.g. MKV) into MP4 for the frame-accurate WebCodecs
+// path, which demuxes with mp4box (ISO/MP4 only). Tries a fast stream-copy first
+// (no re-encode, no quality loss — works when the video codec is MP4-compatible:
+// H.264/H.265/AV1) and falls back to an H.264 re-encode otherwise. Audio is
+// dropped: the labeling app never uses it, and this makes the copy succeed
+// regardless of the source audio codec. faststart puts moov up front so the
+// renderer's chunked reader reaches track metadata early.
+ipcMain.handle("remux-video", async (_event, payload) => {
+  const { inputPath } = payload || {};
+  if (!inputPath) return { success: false, error: "No input path" };
+
+  const fs = require("fs");
+  const ext = path.extname(inputPath);
+  const base = path.basename(inputPath, ext);
+  const dir = path.dirname(inputPath);
+  const outputPath = path.join(dir, base + "_remuxed.mp4");
+
+  // Reuse a previous successful conversion (fast re-open across switches/sessions).
+  try {
+    if (fs.statSync(outputPath).size > 0) {
+      return { success: true, outputPath, method: "cached" };
+    }
+  } catch { /* not present yet */ }
+
+  const { execFile } = require("child_process");
+  const run = (args) => new Promise((resolve) => {
+    const proc = execFile("ffmpeg", args, { maxBuffer: 50 * 1024 * 1024 }, (error, _o, stderr) => {
+      resolve({ error, stderr: stderr || "" });
+    });
+    proc.on("error", (err) => resolve({ error: err, stderr: err.message || "ffmpeg not found", spawnFail: true }));
+  });
+  const produced = () => { try { return fs.statSync(outputPath).size > 0; } catch { return false; } };
+
+  // 1) Fast path: stream-copy the video, drop audio.
+  let r = await run(["-y", "-i", inputPath, "-map", "0:v:0", "-c:v", "copy",
+                     "-an", "-movflags", "+faststart", outputPath]);
+  if (r.spawnFail) return { success: false, error: "ffmpeg not found", stderr: r.stderr };
+  if (!r.error && produced()) return { success: true, outputPath, method: "copy" };
+
+  // 2) Fallback: re-encode (codec not MP4-compatible, or copy produced nothing).
+  try { fs.unlinkSync(outputPath); } catch { /* ignore */ }
+  r = await run(["-y", "-i", inputPath, "-map", "0:v:0",
+                 "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+                 "-an", "-movflags", "+faststart", outputPath]);
+  if (!r.error && produced()) return { success: true, outputPath, method: "reencode" };
+
+  return { success: false, error: (r.error && r.error.message) || "Remux failed",
+           stderr: r.stderr, outputPath };
+});
+
 ipcMain.handle("run-ffmpeg", async (_event, payload) => {
   const { inputPath, outputPath, filterStr } = payload || {};
   if (!inputPath || !outputPath || !filterStr) {
