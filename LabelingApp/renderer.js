@@ -1657,15 +1657,86 @@ const getBoutCountForVideo = (videoName) => {
 const updateContentLayout = () => {
   const contentEl = document.querySelector(".content");
   if (!contentEl) return;
-  const sidebarShown = true; // sidebar is always visible (holds the Add button)
+  // The player (and with it the splitter) is hidden on the Train tab, which has
+  // no video. The track list has to match the number of visible children,
+  // otherwise the leftovers wrap into implicit rows.
   const playerShown = document.body.dataset.tab !== "train";
-  let cols;
-  if (sidebarShown && playerShown) cols = "auto 2.2fr 1fr";
-  else if (!sidebarShown && playerShown) cols = "2.2fr 1fr";
-  else if (sidebarShown && !playerShown) cols = "auto 1fr";
-  else cols = "1fr";
-  contentEl.style.gridTemplateColumns = cols;
+  const splitter = document.getElementById("playerSplitter");
+  if (splitter) splitter.style.display = playerShown ? "" : "none";
+  contentEl.style.gridTemplateColumns = playerShown
+    ? "auto var(--player-col) var(--splitter-w) 1fr"
+    : "auto 1fr";
 };
+
+// ── Player / panel split sizing ───────────────────────────────────────────
+// The player's width is a grid `fr` share (--player-col) weighed against the
+// side panels' 1fr. Dragging the splitter rewrites that share, and it's
+// persisted, so a layout you set up survives a restart. Height needs no control
+// — the video shell flex-fills whatever the window leaves it.
+
+const DEFAULT_PLAYER_COL = 2.6;
+const MIN_PANE_PX = 260;      // neither pane may be dragged narrower than this
+let playerCol = DEFAULT_PLAYER_COL;
+
+function applyPlayerCol() {
+  document.documentElement.style.setProperty("--player-col", `${playerCol}fr`);
+}
+
+function setPlayerCol(value) {
+  if (!Number.isFinite(value)) return;
+  playerCol = Math.min(8, Math.max(0.3, value));
+  applyPlayerCol();
+}
+
+(() => {
+  const splitter = document.getElementById("playerSplitter");
+  if (!splitter) return;
+  const playerEl = document.querySelector(".player");
+  const panelsEl = document.querySelector(".side-panels");
+  if (!playerEl || !panelsEl) return;
+  let dragging = false;
+
+  const onMove = (e) => {
+    if (!dragging) return;
+    // Convert the pointer position into an fr ratio between the two flexible
+    // columns, measuring across the span they jointly occupy.
+    const left = playerEl.getBoundingClientRect().left;
+    const right = panelsEl.getBoundingClientRect().right;
+    const total = right - left;
+    if (total <= 0) return;
+    const playerW = Math.max(MIN_PANE_PX, Math.min(e.clientX - left, total - MIN_PANE_PX));
+    const panelsW = total - playerW;
+    if (panelsW > 0) setPlayerCol(playerW / panelsW);
+  };
+
+  const stop = () => {
+    if (!dragging) return;
+    dragging = false;
+    splitter.classList.remove("dragging");
+    document.body.style.userSelect = "";
+    document.body.style.cursor = "";
+    debouncedSave();
+  };
+
+  splitter.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    splitter.classList.add("dragging");
+    // Suppress text selection and hold the resize cursor for the whole drag,
+    // even when the pointer runs ahead of the splitter.
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    splitter.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  splitter.addEventListener("pointermove", onMove);
+  splitter.addEventListener("pointerup", stop);
+  splitter.addEventListener("pointercancel", stop);
+  splitter.addEventListener("dblclick", () => {
+    setPlayerCol(DEFAULT_PLAYER_COL);
+    debouncedSave();
+    setStatus("Player width reset.");
+  });
+})();
 
 const renderVideoSidebar = () => {
   const sidebar = document.getElementById("videoSidebar");
@@ -4857,6 +4928,8 @@ function saveSettings() {
     lastCheckpointPath: alState.checkpointPath,
     // Data sources
     trainDataSources: trainState.dataSources,
+    // Layout
+    playerCol,
   };
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -4924,6 +4997,9 @@ function loadSettings() {
       trainState.dataSources = s.trainDataSources;
       renderTrainDataSources();
     }
+
+    // Layout
+    if (s.playerCol !== undefined) setPlayerCol(s.playerCol);
   } catch { /* corrupted or unavailable */ }
 }
 

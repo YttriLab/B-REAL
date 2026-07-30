@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, screen } = require("electron");
 const fs = require("fs/promises");
 const fsSync = require("fs");
 const path = require("path");
@@ -111,9 +111,16 @@ const createWindow = () => {
     __dirname,
     process.platform === "win32" ? "labelerlogo.ico" : "labelerlogo.png"
   );
+  // Open relative to the actual display rather than a fixed 1400x900, which is
+  // a small window on a large monitor — and the video shell now flex-fills, so
+  // window size translates directly into how big the video is.
+  const { workAreaSize } = screen.getPrimaryDisplay();
   const win = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    width: Math.max(1100, Math.min(1920, Math.round(workAreaSize.width * 0.92))),
+    height: Math.max(720, Math.min(1200, Math.round(workAreaSize.height * 0.92))),
+    minWidth: 1000,
+    minHeight: 680,
+    center: true,
     icon: fsSync.existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
       preload: preloadPath,

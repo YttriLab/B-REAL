@@ -2,6 +2,15 @@
   box-sizing: border-box;
 }
 
+:root {
+  /* Width the player column gets, as a grid `fr` share against the side panels
+     (which are 1fr). Dragged by the splitter, persisted in settings. */
+  --player-col: 2.6fr;
+  --splitter-w: 8px;
+  /* Floor for the video area so the player can't be dragged/squeezed away. */
+  --video-min-h: 160px;
+}
+
 /* Modal dialog (e.g. unsupported video format prompt) */
 .modal-overlay {
   position: fixed;
@@ -68,10 +77,15 @@ body {
   color: #1d1d1f;
 }
 
+/* The app is a fixed-viewport shell, not a scrolling page: the video should use
+   whatever vertical space the window has rather than sitting at a hard-coded
+   height with the rest of the screen empty. Anything long (the side panels, the
+   video list) scrolls inside its own pane instead of scrolling the whole app. */
 .app {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .header {
@@ -106,9 +120,11 @@ body {
 
 .content {
   display: grid;
-  grid-template-columns: auto 2.2fr 1fr;
-  gap: 24px;
-  padding: 24px 32px;
+  grid-template-columns: auto var(--player-col) var(--splitter-w) 1fr;
+  gap: 16px;
+  padding: 16px 24px;
+  flex: 1;
+  min-height: 0;   /* let the grid shrink so its children can scroll internally */
 }
 
 /* ═══ Video sidebar ═══ */
@@ -120,9 +136,9 @@ body {
   padding: 12px;
   box-shadow: 0 4px 12px rgba(15, 20, 34, 0.08);
   overflow-y: auto;
-  max-height: calc(100vh - 180px);
+  min-height: 0;
   transition: width 0.2s;
-  align-self: start;
+  align-self: stretch;
 }
 
 .video-sidebar.hidden {
@@ -234,6 +250,44 @@ body {
   border-radius: 12px;
   padding: 16px;
   box-shadow: 0 4px 12px rgba(15, 20, 34, 0.08);
+  /* Column layout so the video shell can flex-fill whatever height is left
+     after the controls and trackbar, which keep their natural size. */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Draggable divider between the player and the side panels. Drag to trade
+   width between them; double-click to restore the default. */
+.player-splitter {
+  align-self: stretch;
+  border-radius: 4px;
+  background: transparent;
+  cursor: col-resize;
+  position: relative;
+  transition: background 0.15s;
+}
+
+.player-splitter::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 4px;
+  height: 40px;
+  border-radius: 2px;
+  background: #d3d7e3;
+  transition: background 0.15s;
+}
+
+.player-splitter:hover::after,
+.player-splitter.dragging::after {
+  background: #2563eb;
+}
+
+.player-splitter.dragging {
+  background: rgba(37, 99, 235, 0.08);
 }
 
 /* The Train tab never uses the video — hide the player (it stays in the DOM,
@@ -308,7 +362,10 @@ body[data-tab="train"] .player {
   background: #111;
   border-radius: 8px;
   overflow: hidden;
-  height: 420px;
+  /* Fills the leftover height instead of a fixed 420px, so a bigger window
+     means a bigger video rather than more empty page. */
+  flex: 1 1 auto;
+  min-height: var(--video-min-h);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -338,6 +395,8 @@ video {
   justify-content: space-between;
   margin-top: 12px;
   gap: 12px;
+  flex: 0 0 auto;   /* keep natural height; the video shell absorbs the slack */
+  flex-wrap: wrap;
 }
 
 .controls button {
@@ -444,6 +503,7 @@ body.webcodecs video {
 .trackbar-wrapper {
   position: relative;
   margin-top: 12px;
+  flex: 0 0 auto;
 }
 
 .uncertainty-canvas {
@@ -729,16 +789,30 @@ tbody td {
 }
 
 @media (max-width: 980px) {
-  .content {
-    grid-template-columns: 1fr;
+  /* Narrow window: stack player above panels and let the page scroll again —
+     a side-by-side split isn't usable at this width. */
+  .app {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
   }
 
-  .video-sidebar {
+  .content {
+    grid-template-columns: 1fr !important;
+  }
+
+  .video-sidebar,
+  .player-splitter {
     display: none;
+  }
+
+  .side-panels {
+    overflow-y: visible;
   }
 
   .video-shell {
     height: 300px;
+    flex: 0 0 auto;
   }
 }
 
@@ -767,7 +841,8 @@ body.fullscreen .player {
 }
 
 body.fullscreen .video-shell {
-  height: calc(100vh - 110px);
+  /* flex:1 inside the 100vh .player already claims the space */
+  height: auto;
   border-radius: 0;
 }
 
@@ -841,6 +916,10 @@ body.fullscreen .behaviors .ghost {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* Long panels (body-part lists, bout tables, training logs) scroll here
+     rather than scrolling the whole app and pushing the video off-screen. */
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .tab-panel {
