@@ -78,6 +78,19 @@
           <div id="videoShell" class="video-shell">
             <video id="video" preload="metadata"></video>
             <canvas id="videoCanvas"></canvas>
+            <!-- On-video readout of this frame's prediction vs. its label -->
+            <div id="videoHud" class="video-hud">
+              <div class="hud-row hud-pred">
+                <span class="hud-key">Predicted</span>
+                <span class="hud-val" id="hudPred">&mdash;</span>
+                <span class="hud-conf" id="hudConf"></span>
+              </div>
+              <div class="hud-bar" id="hudBar"><div class="hud-bar-fill" id="hudBarFill"></div></div>
+              <div class="hud-row hud-label">
+                <span class="hud-key">Label</span>
+                <span class="hud-val" id="hudLabel">&mdash;</span>
+              </div>
+            </div>
           </div>
           <div class="controls">
             <button id="playPause">Play</button>
@@ -103,6 +116,10 @@
             <label class="pause-control">
               <input id="pauseOnLabelEnd" type="checkbox" />
               <span>Pause on label end</span>
+            </label>
+            <label class="pause-control">
+              <input id="showHud" type="checkbox" checked />
+              <span>Info overlay</span>
             </label>
             <div class="time">
               <span id="currentTime">00:00:000</span>

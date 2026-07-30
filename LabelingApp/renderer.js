@@ -1346,6 +1346,11 @@ const renderBouts = () => {
     row.appendChild(actionsCell);
     boutsTable.appendChild(row);
   });
+
+  // The bout covering the current frame may have just changed, so refresh the
+  // label readout (panel + on-video HUD). Without this, closing a bout on a
+  // paused frame leaves the overlay showing the pre-edit state until you scrub.
+  updateAlFrameInfo();
 };
 
 const saveBehaviors = () => {
@@ -4218,6 +4223,54 @@ function renderAlBehaviorButtons() {
   });
 }
 
+// What the model says about the current frame vs. what the human labeled.
+// Shared by the Active Learning panel's text readout and the on-video HUD so
+// the two can never disagree about the same frame.
+function currentFrameInfo() {
+  let classNames = [];
+  let cfg = null;
+  let predName = null;
+  let uncertainty = null;
+  let hasPrediction = false;
+  let hasResults = false;
+
+  // Every read of alState stays inside this guard: updateAlFrameInfo runs
+  // during module evaluation (via renderBehaviors/renderBouts), which is before
+  // `const alState` is initialized, so an unguarded touch is a TDZ crash.
+  try {
+    if (alState && alState.results && alState.frameByIndex) {
+      hasResults = true;
+      classNames = alState.results.class_names || [];
+      cfg = getAlModelConfig();
+      const f = alState.frameByIndex.get(currentFrameIndex);
+      if (f) {
+        hasPrediction = true;
+        predName = classNames[f.predicted_class] ?? `class ${f.predicted_class}`;
+        if (typeof f.uncertainty === "number") uncertainty = f.uncertainty;
+      }
+    }
+  } catch { /* alState not initialized yet */ }
+
+  // Current label = the bout covering this frame, if any, translated into the
+  // model's label space (a binarized model can't predict the raw behavior name).
+  const bout = bouts.find(
+    (b) => currentFrameIndex >= b.startFrame && currentFrameIndex <= b.endFrame
+  );
+  const truth = bout ? mapLabelToModelClass(bout.behaviorName, classNames, cfg) : null;
+  // A real disagreement, in the same label space only (null truth = the two
+  // aren't comparable, so it is never flagged).
+  const mismatch = !!(bout && predName && truth !== null && truth !== predName);
+
+  return { classNames, cfg, predName, uncertainty, hasPrediction, hasResults, bout, truth, mismatch };
+}
+
+// Uncertainty is normalized Shannon entropy in [0,1]; confidence is its
+// complement, which is what a reader actually wants on screen.
+function confidenceFrom(uncertainty) {
+  if (typeof uncertainty !== "number") return null;
+  return Math.max(0, Math.min(1, 1 - uncertainty));
+}
+
 function updateAlFrameInfo() {
   const frameEl = document.getElementById("alCurFrame");
   const predEl = document.getElementById("alCurPredicted");
@@ -4226,46 +4279,91 @@ function updateAlFrameInfo() {
 
   frameEl.textContent = currentFrameIndex;
 
-  // Predicted class for this frame (if inference has been run).
-  let predName = null;
+  const info = currentFrameInfo();
+
   let predText = "—";
-  let classNames = [];
-  let cfg = null;
-  try {
-    if (alState && alState.results && alState.frameByIndex) {
-      classNames = alState.results.class_names || [];
-      cfg = getAlModelConfig();
-      const f = alState.frameByIndex.get(currentFrameIndex);
-      if (f) {
-        predName = classNames[f.predicted_class] ?? `class ${f.predicted_class}`;
-        predText = typeof f.uncertainty === "number"
-          ? `${predName} (unc ${f.uncertainty.toFixed(2)})`
-          : predName;
-      } else {
-        predText = "(no prediction)";
-      }
-    }
-  } catch { /* alState not initialized yet */ }
+  if (info.hasPrediction) {
+    predText = info.uncertainty !== null
+      ? `${info.predName} (unc ${info.uncertainty.toFixed(2)})`
+      : info.predName;
+  } else if (info.hasResults) {
+    predText = "(no prediction)";
+  }
   predEl.textContent = predText;
 
-  // Current label = the bout covering this frame, if any, translated into the
-  // model's label space (a binarized model can't predict the raw behavior name).
-  const bout = bouts.find(
-    (b) => currentFrameIndex >= b.startFrame && currentFrameIndex <= b.endFrame
-  );
-  const truth = bout ? mapLabelToModelClass(bout.behaviorName, classNames, cfg) : null;
   // Show "walking -> other" when binarization collapses the label, so it's clear
   // why a differently-named bout is not a disagreement.
-  labelEl.textContent = !bout
+  labelEl.textContent = !info.bout
     ? "(none)"
-    : (truth && truth !== bout.behaviorName
-        ? `${bout.behaviorName} → ${truth}`
-        : bout.behaviorName);
+    : (info.truth && info.truth !== info.bout.behaviorName
+        ? `${info.bout.behaviorName} → ${info.truth}`
+        : info.bout.behaviorName);
 
-  // Flag a real disagreement (same label space only; null truth = not comparable).
-  const mismatch = !!(bout && predName && truth !== null && truth !== predName);
-  predEl.classList.toggle("al-pred-mismatch", mismatch);
+  predEl.classList.toggle("al-pred-mismatch", info.mismatch);
+
+  renderVideoHud(info);
 }
+
+// ── On-video HUD ──────────────────────────────────────────────────────────
+// Draws the current frame's prediction, confidence and label straight onto the
+// video, so reviewing a model doesn't mean reading a number in a side panel
+// while watching the animal out of the corner of your eye.
+function renderVideoHud(info) {
+  const hud = document.getElementById("videoHud");
+  const toggle = document.getElementById("showHud");
+  if (!hud || !toggle) return;
+
+  if (!toggle.checked) {
+    hud.classList.remove("visible");
+    return;
+  }
+
+  const i = info || currentFrameInfo();
+  // Nothing to report on this frame — stay entirely out of the way rather than
+  // covering the video with em dashes.
+  if (!i.hasPrediction && !i.bout) {
+    hud.classList.remove("visible");
+    return;
+  }
+
+  const predRow = hud.querySelector(".hud-pred");
+  const labelRow = hud.querySelector(".hud-label");
+  const bar = document.getElementById("hudBar");
+  const barFill = document.getElementById("hudBarFill");
+  const confEl = document.getElementById("hudConf");
+
+  predRow.style.display = i.hasPrediction ? "" : "none";
+  document.getElementById("hudPred").textContent = i.predName || "—";
+
+  const confidence = confidenceFrom(i.uncertainty);
+  if (i.hasPrediction && confidence !== null) {
+    confEl.textContent = `${Math.round(confidence * 100)}%`;
+    bar.style.display = "";
+    barFill.style.width = `${confidence * 100}%`;
+    // Match the timeline heatmap's reading of the same number: green = the
+    // model is sure, red = it isn't and this frame is worth a look.
+    barFill.style.background = `hsl(${Math.round(confidence * 120)}, 70%, 48%)`;
+  } else {
+    confEl.textContent = "";
+    bar.style.display = "none";
+  }
+
+  labelRow.style.display = i.bout ? "" : "none";
+  if (i.bout) {
+    document.getElementById("hudLabel").textContent =
+      i.truth && i.truth !== i.bout.behaviorName
+        ? `${i.bout.behaviorName} → ${i.truth}`
+        : i.bout.behaviorName;
+  }
+
+  hud.classList.toggle("mismatch", i.mismatch);
+  hud.classList.add("visible");
+}
+
+document.getElementById("showHud").addEventListener("change", () => {
+  renderVideoHud();
+  debouncedSave();
+});
 
 function buildFrameIndex() {
   alState.frameByIndex = (alState.results && alState.results.frames)
@@ -4930,6 +5028,7 @@ function saveSettings() {
     trainDataSources: trainState.dataSources,
     // Layout
     playerCol,
+    showHud: document.getElementById("showHud").checked,
   };
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -5000,6 +5099,7 @@ function loadSettings() {
 
     // Layout
     if (s.playerCol !== undefined) setPlayerCol(s.playerCol);
+    setChecked("showHud", s.showHud);
   } catch { /* corrupted or unavailable */ }
 }
 
