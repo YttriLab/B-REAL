@@ -100,6 +100,33 @@ Projects export to a single HDF5 `.rlt` file in **two flavors** (mirroring SLEAP
 - Export/import goes through the backend (`/api/project/export-rlt` with `package` flag, `/api/project/import-rlt`, `/api/project/inspect-rlt`)
 - `rlt_service.py` handles all HDF5 read/write via `h5py`
 
+## The labeling shell is shared with A-SOID Desktop
+
+`LabelingApp/` is very nearly identical to the one in the **A-SOID Desktop**
+fork (`../ASOiD-Desktop`), which swaps this project's TSM classifier for
+A-SOID's RandomForest + active learning. Measured: `preload.js` byte-identical,
+`main.js` differs by 11 lines, `styles.css` by 23, and `renderer.js` by 1,948
+lines of which **91 of 125 hunks fall in one region** — the tabs that configure
+and run a pipeline (Preprocess/Train/Predict here, Pose/Train/Predict there).
+
+The plan is to extract that shell into its own repo — a standalone bout labeler
+both projects consume — rather than keep porting between copies. The fork has
+the plugin seam already (`LabelingApp/labeler-plugin.js` and
+`LabelingApp/EXTRACTION.md` there); this repo has not been converted yet.
+
+Practical consequence when working here:
+
+- **Changes to the shell** (video player, behaviors, bouts, CSV, project
+  manifest, timeline overlays, relabel loop, HUD, layout) should stay portable —
+  they will need applying to the fork too, and eventually move into the shared
+  repo. Avoid reaching from shell code into the pipeline panels.
+- **Changes to the Preprocess/Train/Predict panels** are this project's own and
+  need not port.
+- **Don't change the inference payload shape.** Both apps return
+  `{frames: [{index, predicted_class, uncertainty}], class_names}` indexed by
+  native video frame; that single contract is why the whole Active Learning
+  panel is identical in both, and it's what the extraction depends on.
+
 ## Key Patterns
 
 - **Behavior names**: normalized (trim + collapse internal whitespace, case-insensitive match) at every create/import/rename site; `mergeDuplicateBehaviors()` collapses existing duplicates on load. **Merge UI**: tick behavior rows + "Merge selected" → `mergeBehaviors(ids, targetId)` reassigns their bouts to one survivor (across the current video + all stored per-video progress via `reassignBoutsToBehavior`) and removes the rest (destructive).
