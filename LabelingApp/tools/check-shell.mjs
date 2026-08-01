@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Two invariants that keep the labeling shell shareable. Both are invisible to
+// Three invariants that keep the labeling shell shareable. All are invisible to
 // `node --check` — the files parse fine and the app dies at runtime — so they
 // are worth a script rather than a code-review habit.
 //
@@ -12,6 +12,9 @@
 //      <script> tags, hoisting stops at each file boundary: anything a file
 //      runs during evaluation — and everything that transitively calls — must
 //      already be declared. This is what core/boot.js exists to satisfy.
+//
+//   3. PROJECT MANAGER API. project-manager.js is host-owned, but core/ calls
+//      into it, so the subset core/ uses is a contract each host must satisfy.
 //
 // Usage: node tools/check-shell.mjs [LabelingApp dir]
 
