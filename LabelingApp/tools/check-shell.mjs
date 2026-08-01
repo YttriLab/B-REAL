@@ -183,5 +183,26 @@ for (const entry of asts) {
   }
 }
 
-console.log(failures ? `\n${failures} problem(s)` : "\nshell OK: seam holds, load order clean");
+// ── 3. Project manager API ─────────────────────────────────────────────────
+//
+// project-manager.js is host-owned: its manifest schema is pipeline-specific
+// (pose files and feature sets for one, backgrounds and frame dirs for
+// another). But core/ calls into it, so the subset core/ uses is a contract the
+// host has to satisfy. A missing method is a runtime crash in a rarely-taken
+// branch, which is exactly the kind of thing that survives a manual port.
+
+const pmPath = path.join(root, "project-manager.js");
+if (fs.existsSync(pmPath)) {
+  const pmSrc = fs.readFileSync(pmPath, "utf8");
+  const wanted = new Set();
+  for (const { f, src } of asts) {
+    if (!f.startsWith("core/")) continue;
+    for (const m of src.matchAll(/(?:projectManager|\bpm)\.([A-Za-z0-9_]+)\s*\(/g)) wanted.add(m[1]);
+  }
+  const missing = [...wanted].filter((n) => !new RegExp(`\\b${n}\\b\\s*[:(]`).test(pmSrc));
+  console.log(`project manager: core/ calls ${wanted.size} methods`);
+  for (const n of missing) fail(`project-manager.js  does not define '${n}', which core/ calls`);
+}
+
+console.log(failures ? `\n${failures} problem(s)` : "\nshell OK: seam holds, load order clean, project manager complete");
 process.exit(failures ? 1 : 0);
