@@ -3,15 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RealtimeASOID</title>
+    <!-- This page names no application and no pipeline: it is the same file in
+         every build. The copy marked data-app is filled in from app.js, and the
+         pipeline arrives as plugins/pipeline.js — the only two files a host
+         supplies. -->
+    <title data-app="name">Labeler</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div class="app">
       <header class="header">
         <div class="title">
-          <h1>RealtimeASOID</h1>
-          <p>Label, preprocess, train, and refine animal behavior classifiers.</p>
+          <h1 data-app="name">Labeler</h1>
+          <p data-app="tagline">Label, train, and refine animal behavior classifiers.</p>
         </div>
         <div class="header-actions">
           <span id="projectName" class="project-name"></span>
@@ -45,7 +49,7 @@
       <div id="projectGate" class="project-gate hidden">
         <div class="project-gate-card">
           <h2>Open a project to begin</h2>
-          <p>RealtimeASOID keeps your videos, labels, frames, and models together in a project.</p>
+          <p data-app="gate">Everything this project needs — videos, labels and models — is kept together in one folder.</p>
           <div class="project-gate-actions">
             <button id="gateNewProject" class="primary">New Project</button>
             <button id="gateOpenProject">Open Project</button>
@@ -57,8 +61,6 @@
       <!-- Tab navigation -->
       <nav class="tab-bar">
         <button class="tab active" data-tab="label">Label</button>
-        <button class="tab" data-tab="preprocess">Preprocess</button>
-        <button class="tab" data-tab="train">Train</button>
         <button class="tab" data-tab="active-learning">Active Learning</button>
       </nav>
 
@@ -78,6 +80,10 @@
           <div id="videoShell" class="video-shell">
             <video id="video" preload="metadata"></video>
             <canvas id="videoCanvas"></canvas>
+            <!-- Anything the pipeline wants to draw over the frame in its own
+                 element rather than through the shell's overlay loop — A-SOID's
+                 pose skeleton canvas goes here. -->
+            <div id="videoOverlaySlot"></div>
             <!-- On-video readout of this frame's prediction vs. its label -->
             <div id="videoHud" class="video-hud">
               <div class="hud-row hud-pred">
@@ -121,6 +127,8 @@
               <input id="showHud" type="checkbox" checked />
               <span>Info overlay</span>
             </label>
+            <!-- Player toggles the pipeline owns (A-SOID's pose overlay). -->
+            <span id="playerControlsSlot"></span>
             <div class="time">
               <span id="currentTime">00:00:000</span>
               <span>/</span>
@@ -183,250 +191,6 @@
             </section>
           </div>
 
-          <!-- ═══ PREPROCESS TAB ═══ -->
-          <div class="tab-panel" data-tab="preprocess">
-            <section class="panel-card">
-              <h2>Preprocessing</h2>
-
-              <h3>Background</h3>
-              <div class="form-row">
-                <button id="ppComputeBg">Compute from Video</button>
-                <button id="ppSelectBg">Select Image</button>
-                <span id="ppBgPath" class="path-display">No background set</span>
-              </div>
-              <div class="form-row">
-                <label><span>Num frames for BG:</span>
-                  <input id="ppBgNumFrames" type="number" value="500" min="10" max="5000" />
-                </label>
-              </div>
-
-              <h3>Image</h3>
-              <p class="hint">Original frame: <span id="ppFrameSize">—</span> · Processed: <span id="ppResizedSize">—</span> <span class="muted">(preview to measure)</span></p>
-              <div class="slider-grid">
-                <label>
-                  <span>Resize whole frame: <output id="ppResizeVal">100%</output></span>
-                  <input id="ppResize" type="range" min="10" max="100" value="100" step="5" />
-                </label>
-              </div>
-
-              <h3>Crop Parameters</h3>
-              <div class="slider-grid">
-                <label>
-                  <span>Box Size: <output id="ppBoxSizeVal">220</output></span>
-                  <input id="ppBoxSize" type="range" min="10" max="500" value="220" />
-                </label>
-                <label>
-                  <span>Diff Threshold: <output id="ppDiffThreshVal">5</output></span>
-                  <input id="ppDiffThresh" type="range" min="1" max="50" value="5" />
-                </label>
-                <label>
-                  <span>Diff Mode:</span>
-                  <select id="ppDiffMode">
-                    <option value="directional">Directional (darker than bg)</option>
-                    <option value="absolute">Absolute (|frame − bg|)</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Downsample: <output id="ppDownsampleVal">1</output></span>
-                  <input id="ppDownsample" type="range" min="1" max="4" value="1" />
-                </label>
-                <label>
-                  <span>Open1 Kernel: <output id="ppOpen1Val">4</output></span>
-                  <input id="ppOpen1" type="range" min="1" max="30" value="4" />
-                </label>
-                <label>
-                  <span>Close Kernel: <output id="ppCloseVal">15</output></span>
-                  <input id="ppClose" type="range" min="1" max="30" value="15" />
-                </label>
-                <label>
-                  <span>Open2 Kernel: <output id="ppOpen2Val">10</output></span>
-                  <input id="ppOpen2" type="range" min="1" max="30" value="10" />
-                </label>
-                <label>
-                  <span>Smoothing: <output id="ppSmoothingVal">0.6</output></span>
-                  <input id="ppSmoothing" type="range" min="0" max="0.95" step="0.05" value="0.6" />
-                </label>
-                <label>
-                  <span>Dead-band (px): <output id="ppDeadbandVal">2</output></span>
-                  <input id="ppDeadband" type="range" min="0" max="20" step="1" value="2" />
-                </label>
-                <label>
-                  <span>Min Blob Area: <output id="ppMinAreaVal">0</output></span>
-                  <input id="ppMinArea" type="range" min="0" max="1000" step="10" value="0" />
-                </label>
-              </div>
-              <p class="hint">Smoothing/dead-band steady the crop center so the classifier sees the animal's motion, not box jitter. Step frames below to watch the box settle.</p>
-
-              <h3>Preview</h3>
-              <div class="form-row">
-                <button id="ppPreview">Preview Current Frame</button>
-                <button id="ppPrevFrame" class="ghost" title="Previous frame">◀ Prev</button>
-                <span class="muted">Frame <output id="ppPreviewFrame">—</output></span>
-                <button id="ppNextFrame" class="ghost" title="Next frame">Next ▶</button>
-              </div>
-              <div id="ppPreviewArea" class="preview-area">
-                <div><canvas id="ppPreviewBbox" width="320" height="240"></canvas><span>Original + BBox</span></div>
-                <div><canvas id="ppPreviewMask" width="320" height="240"></canvas><span>Mask</span></div>
-                <div><canvas id="ppPreviewCrop" width="220" height="220"></canvas><span>Cropped</span></div>
-              </div>
-
-              <h3>Run Preprocessing</h3>
-              <p class="hint">Only labeled frames are extracted, saved into the project at <code>frames/&lt;video&gt;/</code>.</p>
-              <div class="form-row">
-                <button id="ppRun" class="primary">Run Preprocessing</button>
-                <button id="ppStop" class="danger" disabled>Stop</button>
-              </div>
-              <div class="progress-area">
-                <progress id="ppProgress" value="0" max="100"></progress>
-                <span id="ppStatus">Idle</span>
-              </div>
-            </section>
-          </div>
-
-          <!-- ═══ TRAIN TAB ═══ -->
-          <div class="tab-panel" data-tab="train">
-            <section class="panel-card">
-              <h2>Training</h2>
-
-              <h3>Data Sources</h3>
-              <div id="trainVideoChecklist" class="video-checklist"></div>
-              <div id="trainDataSources" class="data-sources"></div>
-              <div class="form-row">
-                <button id="trainAddSource">Add External Source&hellip;</button>
-              </div>
-
-              <h3>Model</h3>
-              <div class="form-grid">
-                <label><span>Variant:</span>
-                  <select id="trainVariant">
-                    <option value="b0" selected>EfficientNet-B0</option>
-                    <option value="b1">EfficientNet-B1</option>
-                    <option value="b2">EfficientNet-B2</option>
-                    <option value="b3">EfficientNet-B3</option>
-                  </select>
-                </label>
-                <label><span>Frames per group:</span>
-                  <input id="trainFramesPerGroup" type="number" value="3" min="2" max="10" />
-                </label>
-                <label><span>TSM Stages:</span>
-                  <input id="trainTsmStages" type="text" value="1,2,3,4,5,6,7" placeholder="e.g. 5,6,7" />
-                </label>
-                <label><span>Temporal Pool:</span>
-                  <select id="trainTemporalPool">
-                    <option value="last" selected>Last</option>
-                    <option value="avg">Average</option>
-                    <option value="max">Max</option>
-                  </select>
-                </label>
-                <label><span>LR:</span>
-                  <input id="trainLr" type="number" value="0.0001" step="0.00001" />
-                </label>
-                <label><span>Weight Decay:</span>
-                  <input id="trainWeightDecay" type="number" value="0.001" step="0.0001" />
-                </label>
-                <label><span>Dropout:</span>
-                  <input id="trainDropout" type="number" value="0.2" min="0" max="0.9" step="0.05" />
-                </label>
-                <label><span>Max Epochs:</span>
-                  <input id="trainMaxEpochs" type="number" value="100" min="1" />
-                </label>
-                <label><span>Early Stop Patience:</span>
-                  <input id="trainPatience" type="number" value="20" min="1" />
-                </label>
-              </div>
-
-              <h3>Data Split</h3>
-              <div class="form-grid">
-                <label><span>Train %:</span>
-                  <input id="trainSplitTrain" type="number" value="0.7" min="0" max="1" step="0.05" />
-                </label>
-                <label><span>Val %:</span>
-                  <input id="trainSplitVal" type="number" value="0.15" min="0" max="1" step="0.05" />
-                </label>
-                <label><span>Test %:</span>
-                  <input id="trainSplitTest" type="number" value="0.15" min="0" max="1" step="0.05" />
-                </label>
-              </div>
-
-              <h3>Options</h3>
-              <label><span>Positive class (binarize):</span></label>
-              <div id="trainBinarizeList" class="behavior-checklist"></div>
-              <p class="hint">Tick one or more behaviors to train a binary classifier (checked = positive, rest = "other"). Leave all unchecked for multi-class.</p>
-              <div class="form-grid">
-                <label class="checkbox-label">
-                  <input id="trainBoundarySmoothing" type="checkbox" checked />
-                  <span>Boundary Smoothing</span>
-                </label>
-                <label><span>Epsilon:</span>
-                  <input id="trainBsEpsilon" type="number" value="0.3" min="0" max="1" step="0.05" />
-                </label>
-                <label><span>Window:</span>
-                  <input id="trainBsWindow" type="number" value="5" min="1" max="20" />
-                </label>
-              </div>
-
-              <h3>Weights &amp; Biases</h3>
-              <div class="form-grid">
-                <label class="checkbox-label">
-                  <input id="trainUseWandb" type="checkbox" />
-                  <span>Log to W&amp;B</span>
-                </label>
-                <label><span>Project:</span>
-                  <input id="trainWandbProject" type="text" value="realtime-asoid" placeholder="W&B project name" />
-                </label>
-                <label><span>Run Name:</span>
-                  <input id="trainWandbRunName" type="text" value="" placeholder="auto-generated if empty" />
-                </label>
-                <label><span>API Key:</span>
-                  <input id="trainWandbApiKey" type="password" value="" placeholder="leave empty if logged in" />
-                </label>
-              </div>
-
-              <h3>Export to TorchScript</h3>
-              <p class="hint">Convert a checkpoint to a single <code>.pt</code> (Bonsai / real-time rigs). Uses the TSM stages set above.</p>
-              <div class="form-row">
-                <button id="trainExportSelectCkpt">Select Checkpoint</button>
-                <span id="trainExportCkptPath" class="path-display">Last trained best checkpoint</span>
-              </div>
-              <div class="form-grid">
-                <label><span>Output name:</span>
-                  <input id="trainExportName" type="text" value="tsm_model" placeholder="tsm_model" />
-                </label>
-              </div>
-              <div class="form-row">
-                <button id="trainExportRun">Export .pt</button>
-                <span id="trainExportStatus" class="muted"></span>
-              </div>
-
-              <div class="form-row" style="margin-top:16px;">
-                <button id="trainStart" class="primary">Start Training</button>
-                <button id="trainStop" class="danger" disabled>Stop</button>
-                <button id="benchInfer" title="Time the optimized (TorchScript) inference latency for this architecture — no training needed">Benchmark inference</button>
-                <label style="display:inline-flex;align-items:center;gap:4px;font-weight:normal;">
-                  <input id="benchFp16" type="checkbox" /> FP16
-                </label>
-              </div>
-              <div id="benchResult" class="metrics-display" style="display:none;"></div>
-              <div class="progress-area">
-                <progress id="trainProgress" value="0" max="100"></progress>
-                <span id="trainStatus">Idle</span>
-              </div>
-              <div id="trainMetrics" class="metrics-display" style="display:none;">
-                <div>Epoch: <span id="trainEpoch">-</span> / <span id="trainTotalEpochs">-</span></div>
-                <div>Train Loss: <span id="trainLossVal">-</span></div>
-                <div>Val Loss: <span id="trainValLoss">-</span></div>
-                <div>Best Val Loss: <span id="trainBestValLoss">-</span></div>
-                <div>Val MCC: <span id="trainValMcc">-</span></div>
-                <div>Best Val MCC: <span id="trainBestValMcc">-</span></div>
-                <div>Stagnation (val MCC): <span id="trainStagnation">-</span></div>
-                <div>Train Acc: <span id="trainAccVal">-</span></div>
-                <div>Val Acc: <span id="trainValAcc">-</span></div>
-                <div>LR: <span id="trainLrVal">-</span></div>
-              </div>
-              <pre id="trainLog" class="train-log" style="display:none;"></pre>
-            </section>
-          </div>
-
           <!-- ═══ ACTIVE LEARNING TAB ═══ -->
           <div class="tab-panel" data-tab="active-learning">
             <section class="panel-card">
@@ -435,14 +199,14 @@
               <h3>Inference</h3>
               <div class="form-row">
                 <button id="alSelectCheckpoint">Select Checkpoint</button>
+                <button id="alUseNewest" class="ghost" title="Pick the most recently trained model in this project">Use newest</button>
                 <span id="alCheckpointPath" class="path-display">No checkpoint</span>
               </div>
-              <p class="hint">Inference runs on the current video on the fly — no frame directory needed.</p>
-              <div class="form-row">
-                <label><span>Frames per group:</span>
-                  <input id="alFramesPerGroup" type="number" value="3" min="2" max="10" />
-                </label>
-              </div>
+              <!-- Filled by the pipeline: whatever else its inference needs
+                   (a frame grouping, a background image) plus a line saying
+                   what inference actually runs on. Empty in the standalone
+                   labeler, and the panel reads fine without it. -->
+              <div id="alPipelineOptions"></div>
               <div class="form-row">
                 <label><span>Scope:</span>
                   <select id="alScope">
@@ -493,6 +257,7 @@
                 <button id="alJumpLowestConf" class="ghost">Jump to Lowest Confidence</button>
                 <button id="alJumpNextMisclassified" class="ghost">Jump to Next Misclassified</button>
                 <button id="alExportPredictions" class="ghost">Export Predictions CSV</button>
+                <button id="alPredictedVideo" class="ghost">Predicted Video</button>
               </div>
               <p class="hint"><strong>Next Uncertain</strong> walks segments in time order; <strong>Lowest Confidence</strong> walks them worst-first (most-uncertain region first, then the next). Both respect the threshold and min-segment length, so set min length to 1 to step single frames or higher to step frame sets.</p>
               <p class="hint">Predictions export as a frame-indexed one-hot matrix (same format as labels) — re-importable via Import Video+Labels.</p>
@@ -517,13 +282,54 @@
               </div>
             </section>
           </div>
+
+          <!-- ═══ ITERATION (folded into Train tab actions) ═══ -->
         </div>
       </main>
 
       <div id="status" class="status"></div>
     </div>
 
+    <!-- Classic scripts, evaluated in this order. They share one global scope,
+         so this is the same program renderer.js used to be — just cut along the
+         boundaries it already had. The one rule: nothing in core/ may name
+         anything defined in plugins/; the shell reaches a pipeline only through
+         window.labelerPlugins. `npm run check` enforces it. -->
+
+    <!-- Host identity: which application this build is. Supplied by the host,
+         not the shell. -->
+    <script src="app.js"></script>
+
+    <script src="labeler-plugin.js"></script>
     <script src="project-manager.js"></script>
-    <script type="module" src="renderer.js"></script>
+
+    <script src="core/state.js"></script>
+    <script src="core/player.js"></script>
+    <script src="core/behaviors.js"></script>
+    <script src="core/progress.js"></script>
+    <script src="core/layout.js"></script>
+    <script src="core/videos.js"></script>
+    <script src="core/csv.js"></script>
+    <script src="core/trackbar.js"></script>
+    <script src="core/backend.js"></script>
+    <script src="core/panels.js"></script>
+
+    <!-- The pipeline, supplied by the host under a fixed name. Swapping this
+         one file is what turns the shell into a different application; delete
+         it for the standalone labeler. Its tabs are markup it mounts itself —
+         see core/panels.js — so this page carries only the Label and Active
+         Learning tabs the shell owns. -->
+    <script src="plugins/pipeline.js"></script>
+
+    <script src="core/active-learning.js"></script>
+    <script src="core/hud.js"></script>
+    <script src="core/inference.js"></script>
+    <script src="core/timeline.js"></script>
+    <script src="core/settings.js"></script>
+    <script src="core/events.js"></script>
+    <script src="core/project.js"></script>
+
+    <!-- Last: modules declare, boot executes. -->
+    <script src="core/boot.js"></script>
   </body>
 </html>

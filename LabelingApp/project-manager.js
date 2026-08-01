@@ -152,6 +152,22 @@
     return sanitizeId(videoName);
   }
 
+  // The shell records a video's length here the first time its duration is
+  // known, so saved predictions can be checked against the video they belong to.
+  function setVideoFrameCount(videoName, nFrames) {
+    if (!activeProject || !nFrames || nFrames <= 0) return;
+    const entry = getVideoEntry(videoName);
+    if (entry && entry.n_frames !== nFrames) {
+      entry.n_frames = nFrames;
+      saveManifest();
+    }
+  }
+
+  function getVideoFrameCount(videoName) {
+    const entry = getVideoEntry(videoName);
+    return (entry && entry.n_frames) || null;
+  }
+
   // ── Label I/O ─────────────────────────────────────────────────────────────
 
   async function saveVideoLabels(videoName, csvContent) {
@@ -443,6 +459,8 @@
     setVideoPath,
     getVideoEntry,
     getVideoIdFromName,
+    setVideoFrameCount,
+    getVideoFrameCount,
 
     // Labels
     saveVideoLabels,

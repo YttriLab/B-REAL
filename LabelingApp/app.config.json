@@ -1,0 +1,11 @@
+{
+  "title": "RealtimeASOID",
+  "projectDirs": [
+    "labels",
+    "frames",
+    "backgrounds",
+    "models/checkpoints",
+    "models/exports"
+  ],
+  "manifestVersion": 1
+}

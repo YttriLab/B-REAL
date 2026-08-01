@@ -9,6 +9,22 @@ const BACKEND_PORT = 8741;
 const BACKEND_CWD = path.resolve(__dirname, "..");
 let backendProcess = null;
 
+// Everything about *this* application rather than the labeling shell: its
+// window title and the folder layout a new project gets scaffolded with. Kept
+// in app.config.json so main.js itself is the same file in every build.
+const APP = (() => {
+  const defaults = {
+    title: "Labeler",
+    projectDirs: ["labels", path.join("models", "checkpoints")],
+    manifestVersion: 1,
+  };
+  try {
+    return { ...defaults, ...JSON.parse(fsSync.readFileSync(path.join(__dirname, "app.config.json"), "utf8")) };
+  } catch {
+    return defaults;   // running the shell standalone, with no host config
+  }
+})();
+
 // ── Backend lifecycle ─────────────────────────────────────────────────────
 
 // Choose the Python interpreter that runs the backend (and therefore training).
@@ -136,7 +152,7 @@ const createWindow = () => {
   win.loadFile("index.html");
 
   win.webContents.on("did-finish-load", () => {
-    win.setTitle("RealtimeASOID");
+    win.setTitle(APP.title);
     win.webContents
       .executeJavaScript("Boolean(window.api)")
       .then((hasApi) => {
@@ -462,15 +478,16 @@ ipcMain.handle("project:open-dialog", async () => {
 
 ipcMain.handle("project:create", async (_event, payload) => {
   const { rootDir, name } = payload;
-  const subdirs = ["labels", "frames", "backgrounds",
-    path.join("models", "checkpoints"), path.join("models", "exports")];
-  for (const sub of subdirs) {
+  // What a fresh project contains is the pipeline's business — pose features
+  // for one, extracted frames and backgrounds for another — so it comes from
+  // app.config.json rather than being written into the shared shell.
+  for (const sub of APP.projectDirs) {
     await fs.mkdir(path.join(rootDir, sub), { recursive: true });
   }
   const manifest = {
     name: name || path.basename(rootDir),
     created: new Date().toISOString().slice(0, 10),
-    version: 1,
+    version: APP.manifestVersion,
     behaviors: [],
     videos: [],
     preprocessing: {},
