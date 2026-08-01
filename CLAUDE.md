@@ -7,11 +7,18 @@ Real-time clip-based animal behavior classifier. An Electron desktop app for lab
 ## Project Structure
 
 ```
-├── LabelingApp/           # Electron app (labeling UI)
-│   ├── main.js            # Main process — spawns Python backend
-│   ├── renderer.js        # Renderer process — all UI logic (~10K LOC)
-│   ├── preload.js         # IPC bridge (contextBridge)
-│   └── index.html / styles.css
+├── LabelingApp/           # Electron app. Four files are ours; the rest is the
+│   │                      # @asoid/labeling-shell package (see the section below).
+│   ├── app.js             # OURS — which application this is
+│   ├── app.config.json    # OURS — window title, project folder layout
+│   ├── plugins/pipeline.js# OURS — the whole TSM pipeline: Preprocess/Train
+│   ├── project-manager.js # OURS — project manifest (schema is pipeline-specific)
+│   ├── index.html         # shell — names no application and no pipeline
+│   ├── core/              # shell — 18 classic scripts, loaded in order
+│   ├── labeler-plugin.js  # shell — plugin registry: the shell/pipeline seam
+│   ├── main.js            # shell — main process; spawns the Python backend
+│   ├── preload.js         # shell — IPC bridge (contextBridge)
+│   └── tools/             # shell — `npm run check` invariants
 ├── backend/               # FastAPI REST server (port 8741)
 │   ├── server.py          # App init + CORS
 │   ├── routers/           # preprocessing, training, inference endpoints
@@ -100,32 +107,46 @@ Projects export to a single HDF5 `.rlt` file in **two flavors** (mirroring SLEAP
 - Export/import goes through the backend (`/api/project/export-rlt` with `package` flag, `/api/project/import-rlt`, `/api/project/inspect-rlt`)
 - `rlt_service.py` handles all HDF5 read/write via `h5py`
 
-## The labeling shell is shared with A-SOID Desktop
+## The labeling shell is upstream — don't edit it here
 
-`LabelingApp/` is very nearly identical to the one in the **A-SOID Desktop**
-fork (`../ASOiD-Desktop`), which swaps this project's TSM classifier for
-A-SOID's RandomForest + active learning. Measured: `preload.js` byte-identical,
-`main.js` differs by 11 lines, `styles.css` by 23, and `renderer.js` by 1,948
-lines of which **91 of 125 hunks fall in one region** — the tabs that configure
-and run a pipeline (Preprocess/Train/Predict here, Pose/Train/Predict there).
+`LabelingApp/` used to be a 5,500-line `renderer.js` maintained as a second copy
+of the one in **A-SOID Desktop** (`../ASOiD-Desktop`), which swaps this
+project's TSM classifier for A-SOID's RandomForest. They had drifted 1,948
+lines apart, but **91 of 125 divergent hunks sat in one region** — the tabs that
+configure and run a pipeline.
 
-The plan is to extract that shell into its own repo — a standalone bout labeler
-both projects consume — rather than keep porting between copies. The fork has
-the plugin seam already (`LabelingApp/labeler-plugin.js` and
-`LabelingApp/EXTRACTION.md` there); this repo has not been converted yet.
+That shell is now its own repo, `@asoid/labeling-shell`, which both projects
+consume and which also runs standalone as a bout labeler with no model behind
+it.
 
-Practical consequence when working here:
+**Only four files in `LabelingApp/` belong to this project**: `app.js`,
+`app.config.json`, `plugins/pipeline.js` (background subtraction, crop tuning,
+the TSM training loop, the TorchScript export), `project-manager.js`. Everything
+else — `index.html`, `styles.css`, `core/`, `main.js`, `preload.js`,
+`labeler-plugin.js`, `mp4box-worker.js`, `tools/` — is synced in and is
+byte-identical to A-SOID Desktop's copies. Editing a synced file here is the
+mistake to avoid; the next `npm run shell:sync` overwrites it silently. Fix it
+in the shell repo, then:
 
-- **Changes to the shell** (video player, behaviors, bouts, CSV, project
-  manifest, timeline overlays, relabel loop, HUD, layout) should stay portable —
-  they will need applying to the fork too, and eventually move into the shared
-  repo. Avoid reaching from shell code into the pipeline panels.
-- **Changes to the Preprocess/Train/Predict panels** are this project's own and
-  need not port.
-- **Don't change the inference payload shape.** Both apps return
-  `{frames: [{index, predicted_class, uncertainty}], class_names}` indexed by
-  native video frame; that single contract is why the whole Active Learning
-  panel is identical in both, and it's what the extraction depends on.
+```bash
+npm run verify        # sync from the package, then run the checks
+```
+
+### The rule that keeps this working
+
+**The shell must not name pipeline-specific code.** `core/` makes zero backend
+calls — labeling works with the backend down. This pipeline reaches the shell
+only through `window.labelerPlugins`: `onVideoSwitched` restores a video's
+background and crop, `inference.buildRequest` supplies `video_path` / `bg_path` /
+`crop_params` / `frames_per_group`, `settings.save|load` contribute the crop and
+training keys, `models` declares `.ckpt`/`.pt`, and the frames-per-group control
+mounts into the `#alPipelineOptions` slot. `npm run check` enforces the seam,
+the load order, and that `project-manager.js` defines every method `core/` calls.
+
+**Don't change the inference payload shape.** Both apps return
+`{frames: [{index, predicted_class, uncertainty}], class_names}` indexed by
+native video frame. That single contract is why the whole Active Learning panel
+is shared code rather than two copies, and it is what the sharing rests on.
 
 ## Key Patterns
 
