@@ -17,8 +17,10 @@ function updateProjectUI() {
     nameEl.textContent = manifest.name || "Untitled";
     saveBtn.classList.remove("hidden");
     closeBtn.classList.remove("hidden");
-    exportRltBtn.classList.remove("hidden");
-    exportRltPkgBtn.classList.remove("hidden");
+    // .rlt bundling is done by the backend (it packs pose files, features and
+    // model blobs into HDF5), so these only work in a build that has one.
+    exportRltBtn.classList.toggle("hidden", !BACKEND_ENABLED);
+    exportRltPkgBtn.classList.toggle("hidden", !BACKEND_ENABLED);
   } else {
     nameEl.textContent = "";
     saveBtn.classList.add("hidden");

@@ -19,7 +19,7 @@ channels = ["conda-forge"]
 platforms = ["win-64"]   # add "linux-64" / "osx-64" here, then re-run `pixi install`
 
 [tasks]
-backend = "uvicorn backend.server:app --port 8741 --host 127.0.0.1"
+backend = "uvicorn backend.server:app --port 8742 --host 127.0.0.1"
 test = "pytest"
 
 [dependencies]

@@ -1,5 +1,10 @@
 {
   "title": "RealtimeASOID",
+  "backend": {
+    "_port": "8742, not 8741: A-SOID Desktop uses 8741, and two apps sharing a port means whichever starts second silently drives the other's server.",
+    "port": 8742,
+    "module": "backend.server:app"
+  },
   "projectDirs": [
     "labels",
     "frames",

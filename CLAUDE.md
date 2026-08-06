@@ -19,7 +19,7 @@ Real-time clip-based animal behavior classifier. An Electron desktop app for lab
 │   ├── main.js            # shell — main process; spawns the Python backend
 │   ├── preload.js         # shell — IPC bridge (contextBridge)
 │   └── tools/             # shell — `npm run check` invariants
-├── backend/               # FastAPI REST server (port 8741)
+├── backend/               # FastAPI REST server (port 8742)
 │   ├── server.py          # App init + CORS
 │   ├── routers/           # preprocessing, training, inference endpoints
 │   └── services/          # Core logic (async tasks with cancellation)
@@ -44,12 +44,12 @@ npm install
 npm start
 ```
 
-The Electron main process spawns `uvicorn backend.server:app --port 8741` automatically and tears it down on exit. `main.js::resolveBackendPython()` resolves the interpreter in order: **`RTASOID_PYTHON`/`PYTHON` override → the project-local pixi env (`.pixi/envs/default/python.exe`) → bare `python`**. The pixi env is the supported path (no env var needed); the override is an advanced escape hatch. The chosen interpreter is logged as `[backend] launching with interpreter: ...`, and `GET /api/health` reports its torch/CUDA status (`device` block). `pixi.toml` is the source of truth for Python deps (`backend/requirements.txt` is a pip fallback). Standalone: `pixi run backend`, tests: `pixi run test`.
+The Electron main process spawns `uvicorn backend.server:app --port 8742` automatically and tears it down on exit. `main.js::resolveBackendPython()` resolves the interpreter in order: **`RTASOID_PYTHON`/`PYTHON` override → the project-local pixi env (`.pixi/envs/default/python.exe`) → bare `python`**. The pixi env is the supported path (no env var needed); the override is an advanced escape hatch. The chosen interpreter is logged as `[backend] launching with interpreter: ...`, and `GET /api/health` reports its torch/CUDA status (`device` block). `pixi.toml` is the source of truth for Python deps (`backend/requirements.txt` is a pip fallback). Standalone: `pixi run backend`, tests: `pixi run test`.
 
 ## Running the Backend Standalone
 
 ```bash
-pixi run backend     # uvicorn backend.server:app --port 8741 --host 127.0.0.1
+pixi run backend     # uvicorn backend.server:app --port 8742 --host 127.0.0.1
 ```
 
 ## Running Tests

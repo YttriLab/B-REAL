@@ -1,7 +1,21 @@
 const { contextBridge, ipcRenderer } = require("electron");
 const fs = require("fs/promises");
+const fsSync = require("fs");
 const path = require("path");
 const { createRequire } = require("module");
+
+// The same app.config.json main.js reads. Read directly rather than round-
+// tripping over IPC, because the renderer wants this synchronously at load —
+// and because the port living in exactly one place is the point.
+const APP_BACKEND = (() => {
+  try {
+    const cfg = JSON.parse(fsSync.readFileSync(path.join(__dirname, "app.config.json"), "utf8"));
+    return cfg.backend || null;
+  } catch {
+    return null;   // standalone labeler: no backend
+  }
+})();
+
 let MP4Box = null;
 let mp4boxError = "";
 let preloadError = "";
@@ -115,8 +129,11 @@ contextBridge.exposeInMainWorld("api", {
     mp4boxError,
     preloadError
   }),
-  // ── New: backend integration ──
-  backendPort: 8741,
+  // ── Backend integration ──
+  // backendEnabled false = this build has no Python side. The renderer uses it
+  // to stop polling for health and to hide the controls that would fail.
+  backendEnabled: Boolean(APP_BACKEND),
+  backendPort: (APP_BACKEND && APP_BACKEND.port) || 8741,
   selectDirectory: () => ipcRenderer.invoke("select-directory"),
   selectFile: (payload) => ipcRenderer.invoke("select-file", payload),
   selectFiles: (payload) => ipcRenderer.invoke("select-files", payload),

@@ -65,9 +65,19 @@ async function checkBackendHealth() {
   }
 }
 
-// Poll health every 10s
-checkBackendHealth();
-setInterval(checkBackendHealth, 10000);
+// Whether this build has a Python side at all (see app.config.json). Labeling
+// never touches it — the player, bouts, CSV and project files are pure Electron
+// — so a build without one is a complete application, not a broken one.
+const BACKEND_ENABLED = !window.api || window.api.backendEnabled !== false;
+
+if (BACKEND_ENABLED) {
+  checkBackendHealth();
+  setInterval(checkBackendHealth, 10000);
+} else {
+  // Say nothing rather than "Disconnected", which reads as a fault.
+  backendStatusEl.textContent = "";
+  backendStatusEl.className = "backend-status";
+}
 
 // ── Tab switching ─────────────────────────────────────────────────────────
 

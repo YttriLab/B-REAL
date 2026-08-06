@@ -50,14 +50,14 @@ npm install
 npm start
 ```
 
-The Electron main process spawns the FastAPI backend (`uvicorn backend.server:app --port 8741`) using the **pixi env it auto-discovers** at `.pixi/envs/default/` (no env var needed), and shuts it down on exit. The header shows a **Backend** status pill (green = connected); `GET /api/health` reports the interpreter + CUDA status.
+The Electron main process spawns the FastAPI backend (`uvicorn backend.server:app --port 8742`) using the **pixi env it auto-discovers** at `.pixi/envs/default/` (no env var needed), and shuts it down on exit. The header shows a **Backend** status pill (green = connected); `GET /api/health` reports the interpreter + CUDA status.
 
 > **Interpreter resolution** (`main.js::resolveBackendPython`): `RTASOID_PYTHON`/`PYTHON` override → the project-local pixi env → bare `python` on PATH. The override is an advanced escape hatch; the normal path is the pixi env.
 
 To run the backend on its own (e.g. for API testing) or the tests:
 
 ```bash
-pixi run backend     # uvicorn backend.server:app --port 8741 --host 127.0.0.1
+pixi run backend     # uvicorn backend.server:app --port 8742 --host 127.0.0.1
 pixi run test        # pytest
 ```
 
@@ -232,7 +232,7 @@ The Electron renderer UI is not covered by automated tests.
 │   ├── preload.js      # contextBridge IPC
 │   ├── project-manager.js
 │   └── index.html / styles.css
-├── backend/            # FastAPI server (port 8741)
+├── backend/            # FastAPI server (port 8742)
 │   ├── server.py
 │   ├── routers/        # preprocess, training, inference, project endpoints
 │   └── services/       # core logic incl. rlt_service.py (.rlt files)

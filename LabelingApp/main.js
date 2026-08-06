@@ -5,25 +5,40 @@ const path = require("path");
 const { spawn } = require("child_process");
 const http = require("http");
 
-const BACKEND_PORT = 8741;
 const BACKEND_CWD = path.resolve(__dirname, "..");
 let backendProcess = null;
 
 // Everything about *this* application rather than the labeling shell: its
-// window title and the folder layout a new project gets scaffolded with. Kept
-// in app.config.json so main.js itself is the same file in every build.
+// window title, the folder layout a new project gets scaffolded with, and
+// whether there is a Python backend behind it at all. Kept in app.config.json
+// so main.js itself is the same file in every build.
 const APP = (() => {
   const defaults = {
     title: "Labeler",
     projectDirs: ["labels", path.join("models", "checkpoints")],
     manifestVersion: 1,
+    backend: null,        // no backend: labeling only
   };
   try {
     return { ...defaults, ...JSON.parse(fsSync.readFileSync(path.join(__dirname, "app.config.json"), "utf8")) };
   } catch {
-    return defaults;   // running the shell standalone, with no host config
+    return defaults;      // running the shell standalone, with no host config
   }
 })();
+
+// Two applications with a backend must not share a port, or whichever starts
+// second silently drives the first one's server — its UI would look fine while
+// running the wrong pipeline.
+const BACKEND_PORT = (APP.backend && APP.backend.port) || 8741;
+
+// A backend has to be both configured and actually on disk. The standalone
+// labeler has neither; a host checked out without its Python side has the
+// first but not the second, and spawning uvicorn there just fails 30 times.
+function backendAvailable() {
+  if (!APP.backend) return false;
+  const pkg = (APP.backend.module || "backend.server:app").split(".")[0];
+  return fsSync.existsSync(path.join(BACKEND_CWD, pkg));
+}
 
 // ── Backend lifecycle ─────────────────────────────────────────────────────
 
@@ -54,7 +69,8 @@ function startBackend() {
   console.log(`[backend] launching with interpreter: ${pythonCmd}`);
   backendProcess = spawn(
     pythonCmd,
-    ["-m", "uvicorn", "backend.server:app", "--port", String(BACKEND_PORT), "--host", "127.0.0.1"],
+    ["-m", "uvicorn", (APP.backend && APP.backend.module) || "backend.server:app",
+     "--port", String(BACKEND_PORT), "--host", "127.0.0.1"],
     {
       cwd: BACKEND_CWD,
       stdio: ["ignore", "pipe", "pipe"],
@@ -172,9 +188,21 @@ const createWindow = () => {
 // ── App lifecycle ─────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
-  startBackend();
-  await waitForBackend();
+  // Show the window first. Labeling needs no backend at all — the player,
+  // bouts, CSV and project files are pure Electron — so making someone stare at
+  // nothing while uvicorn boots (or while it fails to, thirty seconds of
+  // retries) was backwards. The renderer polls health and flips its own status
+  // indicator when the backend turns up.
   createWindow();
+
+  if (backendAvailable()) {
+    startBackend();
+    waitForBackend();
+  } else if (APP.backend) {
+    console.warn(`[backend] configured but not found under ${BACKEND_CWD} — labeling only`);
+  } else {
+    console.log("[backend] none configured — labeling only");
+  }
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

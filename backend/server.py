@@ -5,7 +5,7 @@ Provides endpoints for video preprocessing, model training, and inference
 with active learning support. Designed to be spawned by the Electron app.
 
 Usage:
-    python -m uvicorn backend.server:app --port 8741
+    python -m uvicorn backend.server:app --port 8742
     (run from C:\\AdenCode\\RealtimeASOID)
 """
 
@@ -87,4 +87,4 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.server:app", host="127.0.0.1", port=8741, reload=False)
+    uvicorn.run("backend.server:app", host="127.0.0.1", port=8742, reload=False)

@@ -15,6 +15,16 @@
 
 document.body.dataset.tab = "label";   // matches the default active tab
 
+// Active Learning is the one shell tab that needs a model behind it — every
+// control in it either lists checkpoints or runs inference. With no pipeline
+// registered there is nothing it could do, so drop it rather than leave a tab
+// of dead buttons. Every other tab works with no backend at all.
+if (!window.labelerPlugins || !window.labelerPlugins.capability("inference")) {
+  for (const el of document.querySelectorAll('[data-tab="active-learning"]')) el.remove();
+  const uc = document.getElementById("uncertaintyCanvas");
+  if (uc) uc.style.display = "none";
+}
+
 renderBehaviors();
 renderBouts();
 updateDurationDisplay();
