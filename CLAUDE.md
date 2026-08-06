@@ -110,7 +110,7 @@ Projects export to a single HDF5 `.rlt` file in **two flavors** (mirroring SLEAP
 ## The labeling shell is upstream — don't edit it here
 
 `LabelingApp/` used to be a 5,500-line `renderer.js` maintained as a second copy
-of the one in **A-SOID Desktop** (`../ASOiD-Desktop`), which swaps this
+of the one in **IntegratedASOiD** (https://github.com/adeneagle/IntegratedASOiD), which swaps this
 project's TSM classifier for A-SOID's RandomForest. They had drifted 1,948
 lines apart, but **91 of 125 divergent hunks sat in one region** — the tabs that
 configure and run a pipeline.
@@ -124,7 +124,7 @@ it.
 the TSM training loop, the TorchScript export), `project-manager.js`. Everything
 else — `index.html`, `styles.css`, `core/`, `main.js`, `preload.js`,
 `labeler-plugin.js`, `mp4box-worker.js`, `tools/` — is synced in and is
-byte-identical to A-SOID Desktop's copies. Editing a synced file here is the
+byte-identical to IntegratedASOiD's copies. Editing a synced file here is the
 mistake to avoid; the next `npm run shell:sync` overwrites it silently. Fix it
 in the shell repo, then:
 
