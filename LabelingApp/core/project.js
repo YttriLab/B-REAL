@@ -17,8 +17,6 @@ function updateProjectUI() {
     nameEl.textContent = manifest.name || "Untitled";
     saveBtn.classList.remove("hidden");
     closeBtn.classList.remove("hidden");
-    // .rlt bundling is done by the backend (it packs pose files, features and
-    // model blobs into HDF5), so these only work in a build that has one.
     exportRltBtn.classList.toggle("hidden", !BACKEND_ENABLED);
     exportRltPkgBtn.classList.toggle("hidden", !BACKEND_ENABLED);
   } else {
@@ -53,6 +51,28 @@ document.getElementById("gateOpenProject").addEventListener("click", () => {
 document.getElementById("gateImportRlt").addEventListener("click", () => {
   document.getElementById("importRlt").click();
 });
+
+// ── .rlt is a backend format ───────────────────────────────────────────────
+// An .rlt is an HDF5 bundle written by the Python side: the lightweight flavor
+// carries the manifest and labels, the package flavor also carries whatever the
+// pipeline produced (pose files and feature sets, or extracted frames and
+// backgrounds) plus model blobs. A build with no backend can neither write nor
+// read one, so it should not offer to.
+//
+// The code stays here rather than moving into a plugin because both pipelines
+// drive it through the identical endpoints and the identical project-manager
+// API — pushing it out would mean maintaining the same 60 lines twice, which is
+// the duplication this whole split exists to remove. Hiding the entry points is
+// enough: nothing below is reachable without them.
+// Hidden rather than removed: the handlers below are attached to these same
+// elements further down this file, and updateProjectUI reaches for two of them
+// every time a project opens. Hiding is what the user sees either way.
+if (!BACKEND_ENABLED) {
+  for (const id of ["exportRlt", "exportRltPackage", "importRlt", "gateImportRlt"]) {
+    const el = document.getElementById(id);
+    if (el) el.classList.add("hidden");
+  }
+}
 
 async function restoreProjectVideos(manifest) {
   // Restore behaviors from manifest

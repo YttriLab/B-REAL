@@ -72,7 +72,7 @@
     "electron-builder": "^25.1.8"
   },
   "dependencies": {
-    "behavior-labeler": "github:adeneagle/BehaviorLabeler#v1.0.1",
+    "behavior-labeler": "github:adeneagle/BehaviorLabeler#v1.0.2",
     "mp4box": "^2.3.0",
     "xlsx": "^0.18.5"
   }
