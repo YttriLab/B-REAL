@@ -1,0 +1,12 @@
+# The labeling shell is synced in from the behavior-labeler package, which
+# writes LF. Without this, every `npm run shell:sync` on Windows shows up as
+# ~25 line-ending-only modifications, which is both noise and a good way to
+# commit a change nobody made. Pin the synced paths to LF in the working tree.
+LabelingApp/core/**             text eol=lf
+LabelingApp/tools/**            text eol=lf
+LabelingApp/index.html          text eol=lf
+LabelingApp/styles.css          text eol=lf
+LabelingApp/main.js             text eol=lf
+LabelingApp/preload.js          text eol=lf
+LabelingApp/mp4box-worker.js    text eol=lf
+LabelingApp/labeler-plugin.js   text eol=lf
