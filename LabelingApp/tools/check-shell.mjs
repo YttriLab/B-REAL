@@ -5,7 +5,7 @@
 //
 //   1. SEAM. Nothing in core/ may name anything declared in plugins/. The shell
 //      has to be runnable with plugins/ deleted; that is what lets the same
-//      core/ serve A-SOID Desktop, RealtimeASOID and a standalone labeler.
+//      core/ serve IntegratedASOiD, RealtimeASOID and a standalone labeler.
 //
 //   2. LOAD ORDER. The shell used to be one 6,000-line script, where every
 //      function declaration hoisted over the whole file. Split into separate

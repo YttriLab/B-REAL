@@ -2,7 +2,7 @@
 //
 // The shell (video player, behaviors, bouts, project manifest, timeline
 // overlays, the active-learning relabel loop) is identical across
-// ASOiD-Desktop and RealtimeASOID; measured, 91 of 125 divergent hunks in
+// IntegratedASOiD and RealtimeASOID; measured, 91 of 125 divergent hunks in
 // renderer.js sit in one region — the tabs that configure and run a pipeline.
 // Everything else differs by a handful of lines.
 //
