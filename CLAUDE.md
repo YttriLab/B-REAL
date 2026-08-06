@@ -8,7 +8,7 @@ Real-time clip-based animal behavior classifier. An Electron desktop app for lab
 
 ```
 ├── LabelingApp/           # Electron app. Four files are ours; the rest is the
-│   │                      # @asoid/labeling-shell package (see the section below).
+│   │                      # behavior-labeler package (see the section below).
 │   ├── app.js             # OURS — which application this is
 │   ├── app.config.json    # OURS — window title, project folder layout
 │   ├── plugins/pipeline.js# OURS — the whole TSM pipeline: Preprocess/Train
@@ -115,7 +115,7 @@ project's TSM classifier for A-SOID's RandomForest. They had drifted 1,948
 lines apart, but **91 of 125 divergent hunks sat in one region** — the tabs that
 configure and run a pipeline.
 
-That shell is now its own repo, `@asoid/labeling-shell`, which both projects
+That shell is now its own repo, `behavior-labeler`, which both projects
 consume and which also runs standalone as a bout labeler with no model behind
 it.
 
