@@ -129,6 +129,7 @@ def benchmark_model(
     num_frames=3,
     tsm_stages=None,
     temporal_pool="last",
+    unidirectional=False,
     image_size=224,
     batch_size=1,
     precision="fp32",
@@ -167,6 +168,7 @@ def benchmark_model(
         num_frames=num_frames,
         tsm_stages=tsm_stages,
         temporal_pool=temporal_pool,
+        unidirectional=unidirectional,
         pretrained=False,
         class_names=["a", "b"],
     )
@@ -210,6 +212,7 @@ def benchmark_model(
         "num_frames": num_frames,
         "tsm_stages": tsm_stages,
         "temporal_pool": temporal_pool,
+        "unidirectional": unidirectional,
         "image_size": image_size,
         "batch_size": batch_size,
         "iters": iters,

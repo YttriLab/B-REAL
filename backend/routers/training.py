@@ -41,6 +41,7 @@ class TrainingConfig(BaseModel):
     num_frames: int = 3
     variant: str = "b0"
     shift_fraction: float = 0.125
+    unidirectional: bool = False
     pretrained: bool = True
     tsm_stages: list[int] = [5, 6, 7]
     dropout: float = 0.2
@@ -90,6 +91,7 @@ class BenchmarkRequest(BaseModel):
     num_frames: int = 3
     tsm_stages: Optional[list[int]] = None
     temporal_pool: str = "last"
+    unidirectional: bool = False
     image_size: int = 224
     batch_size: int = 1
     precision: str = "fp32"  # fp32 | fp16
@@ -121,6 +123,7 @@ async def api_start_training(req: TrainingConfig):
             "num_frames": req.num_frames,
             "variant": req.variant,
             "shift_fraction": req.shift_fraction,
+            "unidirectional": req.unidirectional,
             "pretrained": req.pretrained,
             "tsm_stages": req.tsm_stages,
             "dropout": req.dropout,
@@ -249,6 +252,7 @@ async def api_benchmark_inference(req: BenchmarkRequest):
             num_frames=req.num_frames,
             tsm_stages=req.tsm_stages,
             temporal_pool=req.temporal_pool,
+            unidirectional=req.unidirectional,
             image_size=req.image_size,
             batch_size=req.batch_size,
             precision=req.precision,

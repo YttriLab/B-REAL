@@ -50,12 +50,19 @@ class TemporalShift(nn.Module):
         num_frames: Number of frames in the temporal window (T).
         shift_fraction: Fraction of channels to shift in each direction.
             Total shifted = 2 * shift_fraction (half forward, half backward).
+        unidirectional: If True, use a CAUSAL shift — all shifted channels come
+            from PAST frames only (t-1), never t+1. This matches online/real-time
+            inference where future frames don't exist yet, avoiding a train/deploy
+            mismatch on a live rig. The same total channel count (2*shift_fraction)
+            is shifted, so model capacity is comparable to the bidirectional shift.
     """
 
-    def __init__(self, num_frames: int = 3, shift_fraction: float = 0.125):
+    def __init__(self, num_frames: int = 3, shift_fraction: float = 0.125,
+                 unidirectional: bool = False):
         super().__init__()
         self.num_frames = num_frames
         self.shift_fraction = shift_fraction
+        self.unidirectional = unidirectional
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (B*T, C, H, W)
@@ -68,13 +75,21 @@ class TemporalShift(nn.Module):
         shift_c = int(C * self.shift_fraction)
 
         out = x.clone()
-        # Shift forward: frame t gets channels from frame t-1
-        out[:, 1:, :shift_c, :, :] = x[:, :-1, :shift_c, :, :]
-        out[:, 0, :shift_c, :, :] = 0  # zero-pad first frame
+        if self.unidirectional:
+            # Causal: shift 2*shift_c channels from the PAST only (t-1). No future
+            # leakage, so training matches online inference frame-for-frame.
+            n = min(2 * shift_c, C)
+            out[:, 1:, :n, :, :] = x[:, :-1, :n, :, :]
+            out[:, 0, :n, :, :] = 0  # zero-pad first frame (no past)
+        else:
+            # Bidirectional (default): half from past, half from future.
+            # Shift forward: frame t gets channels from frame t-1
+            out[:, 1:, :shift_c, :, :] = x[:, :-1, :shift_c, :, :]
+            out[:, 0, :shift_c, :, :] = 0  # zero-pad first frame
 
-        # Shift backward: frame t gets channels from frame t+1
-        out[:, :-1, shift_c:2*shift_c, :, :] = x[:, 1:, shift_c:2*shift_c, :, :]
-        out[:, -1, shift_c:2*shift_c, :, :] = 0  # zero-pad last frame
+            # Shift backward: frame t gets channels from frame t+1
+            out[:, :-1, shift_c:2*shift_c, :, :] = x[:, 1:, shift_c:2*shift_c, :, :]
+            out[:, -1, shift_c:2*shift_c, :, :] = 0  # zero-pad last frame
 
         # Remaining channels unchanged (already from clone)
 
@@ -84,9 +99,11 @@ class TemporalShift(nn.Module):
 class TSMWrappedBlock(nn.Module):
     """Wraps an existing nn.Module (e.g. MBConv block) with a TSM shift."""
 
-    def __init__(self, block: nn.Module, num_frames: int = 3, shift_fraction: float = 0.125):
+    def __init__(self, block: nn.Module, num_frames: int = 3, shift_fraction: float = 0.125,
+                 unidirectional: bool = False):
         super().__init__()
-        self.tsm = TemporalShift(num_frames=num_frames, shift_fraction=shift_fraction)
+        self.tsm = TemporalShift(num_frames=num_frames, shift_fraction=shift_fraction,
+                                 unidirectional=unidirectional)
         self.block = block
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -104,6 +121,7 @@ def build_tsm_efficientnet(
     shift_fraction: float = 0.125,
     pretrained: bool = True,
     tsm_stages: list = None,
+    unidirectional: bool = False,
 ):
     """
     Build an EfficientNet with TSM inserted into selected MBConv stages.
@@ -172,7 +190,8 @@ def build_tsm_efficientnet(
         wrapped_blocks = []
         for block in stage:
             wrapped_blocks.append(
-                TSMWrappedBlock(block, num_frames=num_frames, shift_fraction=shift_fraction)
+                TSMWrappedBlock(block, num_frames=num_frames, shift_fraction=shift_fraction,
+                                unidirectional=unidirectional)
             )
         net.features[stage_idx] = nn.Sequential(*wrapped_blocks)
 
@@ -203,6 +222,7 @@ class TSMClassifier(L.LightningModule):
         shift_fraction: float = 0.125,
         pretrained: bool = True,
         tsm_stages: list = None,
+        unidirectional: bool = False,  # causal shift (past-only) for online inference
         freeze_stem: bool = True,  # backward compat (ignored, use tsm_stages)
         dropout: float = 0.2,
         lr: float = 1e-4,
@@ -234,6 +254,7 @@ class TSMClassifier(L.LightningModule):
             shift_fraction=shift_fraction,
             pretrained=pretrained,
             tsm_stages=tsm_stages,
+            unidirectional=unidirectional,
         )
 
         # Classifier head

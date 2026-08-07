@@ -153,6 +153,10 @@ mountPanels([
         <option value="max">Max</option>
       </select>
     </label>
+    <label title="Causal shift: temporal mixing uses past frames only (never future), matching real-time/online inference on a live rig.">
+      <span>Unidirectional (causal) TSM:</span>
+      <input id="trainUnidirectional" type="checkbox" />
+    </label>
     <label><span>LR:</span>
       <input id="trainLr" type="number" value="0.0001" step="0.00001" />
     </label>
@@ -867,6 +871,7 @@ document.getElementById("trainStart").addEventListener("click", async () => {
     num_frames: framesPerGroup,
     variant: document.getElementById("trainVariant").value,
     shift_fraction: 0.125,
+    unidirectional: document.getElementById("trainUnidirectional").checked,
     pretrained: true,
     tsm_stages: tsmStages,
     dropout: parseFloat(document.getElementById("trainDropout").value),
@@ -994,6 +999,7 @@ document.getElementById("trainStart").addEventListener("click", async () => {
                   label_union: config.label_union,
                   num_frames: config.num_frames,
                   tsm_stages: config.tsm_stages,
+                  unidirectional: config.unidirectional,
                 },
               });
             }
@@ -1035,6 +1041,7 @@ document.getElementById("benchInfer").addEventListener("click", async () => {
     num_frames: parseInt(document.getElementById("trainFramesPerGroup").value, 10) || 3,
     tsm_stages: tsmStages,
     temporal_pool: document.getElementById("trainTemporalPool").value,
+    unidirectional: document.getElementById("trainUnidirectional").checked,
     precision: document.getElementById("benchFp16").checked ? "fp16" : "fp32",
   };
 
@@ -1197,6 +1204,7 @@ window.labelerPlugins.register({
       trainFramesPerGroup: parseInt(document.getElementById("trainFramesPerGroup").value),
       trainTsmStages: document.getElementById("trainTsmStages").value,
       trainTemporalPool: document.getElementById("trainTemporalPool").value,
+      trainUnidirectional: document.getElementById("trainUnidirectional").checked,
       trainLr: parseFloat(document.getElementById("trainLr").value),
       trainWeightDecay: parseFloat(document.getElementById("trainWeightDecay").value),
       trainDropout: parseFloat(document.getElementById("trainDropout").value),
@@ -1230,6 +1238,7 @@ window.labelerPlugins.register({
       setVal("trainFramesPerGroup", s.trainFramesPerGroup);
       setVal("trainTsmStages", s.trainTsmStages);
       setVal("trainTemporalPool", s.trainTemporalPool);
+      setChecked("trainUnidirectional", s.trainUnidirectional);
       setVal("trainLr", s.trainLr);
       setVal("trainWeightDecay", s.trainWeightDecay);
       setVal("trainDropout", s.trainDropout);

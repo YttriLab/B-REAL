@@ -9,6 +9,7 @@ model:
   num_frames: 3
   variant: b0              # EfficientNet variant (b0, b1, b2, b3)
   shift_fraction: 0.125    # fraction of channels shifted per direction (1/8)
+  unidirectional: False    # True = causal (past-only) shift for real-time/online inference
   pretrained: True
   tsm_stages: [1, 2, 3, 4, 5, 6, 7]   # which MBConv stages get TSM (1-7). Everything before is frozen.
   dropout: 0.2
