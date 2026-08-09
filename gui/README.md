@@ -15,12 +15,36 @@ gui/
     video_reader.py      #   frame-accurate random-access decoder (replaces WebCodecs + mp4box + remux)
     video_widget.py      #   VideoView + PlayerWidget (transport, scrubber, FPS lock, shortcuts)
     qt_image.py          #   numpy RGB <-> QImage
+    backend/             #   seam to the FastAPI/PyTorch backend (successor to core/backend.js + main.js spawn)
+      config.py          #     BackendConfig (local-spawn vs remote host)
+      process.py         #     spawn/health/stop local uvicorn; interpreter resolution
+      client.py          #     HTTP client + SSE parsing, one method per endpoint
+      manager.py         #     Backend: client + (optional) process behind one object
   tools/
     index_video.py       # synthetic index-marked test videos (ground-truth per frame)
   tests/
-    test_video_reader.py # frame-exactness of the decoder (MP4 + MKV)
-    test_qt_display.py    # frame-exactness of the decode->QImage->widget path (offscreen)
+    test_video_reader.py  # frame-exactness of the decoder (MP4 + MKV)
+    test_qt_display.py     # frame-exactness of the decode->QImage->widget path (offscreen)
+    test_backend_client.py # backend client HTTP/SSE contract (stdlib stub server)
   spike_player.py        # runnable minimal player for manual/visual checks
+```
+
+## Backend seam (Phase 1)
+
+The GUI talks to the existing FastAPI backend over HTTP/SSE via
+`labeling_shell.backend`. It is HTTP-only by design: for a single-machine
+install it spawns a local `uvicorn` (`BackendConfig(spawn_local=True)`), and for
+the split setup it connects to a remote one (`BackendConfig.remote(host)`) — e.g.
+labeling on a light box, training on the 3090 rig. Callers use only
+`Backend(...).client`; no backend files were modified.
+
+```python
+from labeling_shell.backend import Backend, BackendConfig
+with Backend(BackendConfig()) as be:          # local spawn + health wait
+    be.start()
+    print(be.client.health())
+    for ev in be.client.training_status(task_id):
+        ...  # per-epoch metric dicts, streamed from SSE
 ```
 
 ## Dev environment
