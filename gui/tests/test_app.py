@@ -113,6 +113,41 @@ def test_mainwindow_project_autosave_roundtrip():
             win.player.reader.close()
 
 
+def test_mainwindow_al_results_drive_timeline_and_hud():
+    _app()
+    from app import MainWindow
+    from labeling_shell.active_learning import AlState
+    from labeling_shell.bouts import Bout
+    win = MainWindow()
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        path = os.path.join(d, "clip.mp4")
+        write_index_video(path, 60, fps=30, gop=12)
+        win.load_video(path)
+        a = win.model.add_behavior("groom")
+        win.model.insert_bout_sorted(Bout(a.id, a.name, 12, 12))  # label frame 12 groom
+
+        state = AlState()
+        state.load_results({
+            "class_names": ["other", "groom"],
+            "frames": [
+                {"index": 10, "predicted_class": "groom", "uncertainty": 0.9, "predictions": [0.1, 0.9]},
+                {"index": 12, "predicted_class": "other", "uncertainty": 0.6, "predictions": [0.8, 0.2]},
+            ],
+        })
+        win.set_al_results(state)
+        # timeline knows the frame count and the misclassified frame (12: pred other vs label groom)
+        assert win.timeline.num_frames == 60
+        assert 12 in win.timeline.misclassified
+        # HUD shows a mismatch at frame 12 (isHidden reflects show/hide state even
+        # when the top-level window was never shown, as in offscreen tests)
+        win._update_hud(12)
+        assert not win.hud.isHidden()
+        assert "pred: other" in win.hud.text()
+
+        if win.player.reader is not None:
+            win.player.reader.close()
+
+
 def _main() -> int:
     _app()
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

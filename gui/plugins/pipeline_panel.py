@@ -391,14 +391,18 @@ class ExportTab(_Base):
 class PipelinePanel(QtWidgets.QTabWidget):
     def __init__(self, ctx, parent=None):
         super().__init__(parent)
+        from .active_learning_panel import ActiveLearningPanel  # lazy: avoids import cycle
         self.preprocess = PreprocessTab(ctx)
         self.train = TrainTab(ctx)
         self.export = ExportTab(ctx)
+        self.active_learning = ActiveLearningPanel(ctx)
         self.addTab(self.preprocess, "Preprocess")
         self.addTab(self.train, "Train")
         self.addTab(self.export, "Export")
+        self.addTab(self.active_learning, "Active Learning")
 
     def refresh(self) -> None:
         self.preprocess.refresh()
         self.train.refresh()
         self.export.refresh()
+        self.active_learning.refresh()

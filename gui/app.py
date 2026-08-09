@@ -29,6 +29,8 @@ from labeling_shell.csv_io import (  # noqa: E402
     generate_bouts_csv, generate_training_label_csv, parse_csv_and_import,
 )
 from labeling_shell.project import ProjectStore, safe_id  # noqa: E402
+from labeling_shell.active_learning import hud_info  # noqa: E402
+from labeling_shell.timeline_widget import UncertaintyTimeline  # noqa: E402
 from labeling_shell.video_widget import PlayerWidget  # noqa: E402
 from plugins.pipeline_panel import PipelinePanel  # noqa: E402
 
@@ -46,6 +48,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._video_path: str | None = None
         self.backend: Backend | None = None
         self._bg_workers: set = set()
+        self._al_state = None
+        self.al_threshold = 0.5
 
         self.player = PlayerWidget()
         self.player.frameChanged.connect(self._on_frame)
@@ -65,8 +69,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs.addTab(label_tab, "Label")
         self.tabs.addTab(self.pipeline, "Pipeline")
 
+        self.timeline = UncertaintyTimeline()
+        self.timeline.seekRequested.connect(self._seek)
+        left = QtWidgets.QWidget()
+        lv = QtWidgets.QVBoxLayout(left)
+        lv.setContentsMargins(0, 0, 0, 0)
+        lv.addWidget(self.player, 1)
+        lv.addWidget(self.timeline)
+
+        # On-video HUD (prediction / confidence / label), overlaid on the frame.
+        self.hud = QtWidgets.QLabel(self.player.view)
+        self.hud.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.hud.hide()
+
         split = QtWidgets.QSplitter()
-        split.addWidget(self.player)
+        split.addWidget(left)
         split.addWidget(self.tabs)
         split.setStretchFactor(0, 3)
         split.setStretchFactor(1, 2)
@@ -110,11 +127,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def _seek(self, frame: int) -> None:
         self.player._show(frame)
 
-    def _on_frame(self, _idx: int) -> None:
-        pass  # Phase 4 uses this to drive the HUD / current-bout highlight
+    def _on_frame(self, idx: int) -> None:
+        self.timeline.set_current(idx)
+        self._update_hud(idx)
 
     def _on_model_changed(self) -> None:
         self._refresh_all()
+        self._recompute_misclassified()
         self._autosave()
 
     def _autosave(self) -> None:
@@ -169,6 +188,63 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def status(self, msg):
         self._status(msg)
+
+    # ---- active-learning ctx ----------------------------------------------
+    def crop_params(self):
+        return self.pipeline.preprocess.build_crop_params()
+
+    def al_state(self):
+        return self._al_state
+
+    def current_frame(self):
+        return self.player.index
+
+    def seek(self, frame):
+        self._seek(frame)
+
+    def set_al_threshold(self, t):
+        self.al_threshold = t
+        self.timeline.set_threshold(t)
+
+    def set_al_results(self, state):
+        self._al_state = state
+        if self.player.reader is not None:
+            n = self.player.reader.num_frames
+        else:
+            n = (max(state.by_index) + 1) if state.by_index else 0
+        self.timeline.set_data(state, n)
+        self._recompute_misclassified()
+        self._update_hud(self.player.index)
+
+    def _recompute_misclassified(self) -> None:
+        if self._al_state is None:
+            return
+
+        def label_at(i):
+            b = self.model.bout_at_frame(i)
+            return b.behavior_name if b else None
+
+        self.timeline.set_misclassified(self._al_state.misclassified_frames(label_at))
+
+    def _update_hud(self, frame: int) -> None:
+        b = self.model.bout_at_frame(frame)
+        human = b.behavior_name if b else None
+        info = hud_info(self._al_state, frame, human)
+        if self._al_state is None or info["predicted"] is None:
+            self.hud.hide()
+            return
+        text = f"pred: {info['predicted']}"
+        if info["confidence"] is not None:
+            text += f"  ({info['confidence']:.2f})"
+        if info["label"]:
+            text += f"\nlabel: {info['label']}"
+        color = "#ff5555" if info["mismatch"] else "#ffffff"
+        self.hud.setText(text)
+        self.hud.setStyleSheet(
+            f"background: rgba(0,0,0,160); color: {color}; padding:4px; border-radius:4px;")
+        self.hud.adjustSize()
+        self.hud.move(10, 10)
+        self.hud.show()
 
     # ------------------------------------------------------------------ video
     def open_video(self) -> None:
