@@ -1,7 +1,9 @@
 """RealtimeASOID desktop app (PySide6) — main window.
 
 The all-Python successor to the Electron shell. Left: frame-accurate video
-player. Right: behaviors + bouts panels (and, in later phases, pipeline tabs).
+player. Right: a tabbed panel — "Label" (behaviors + bouts) plus the pipeline
+tabs (Preprocess / Train / Export), backed by the FastAPI backend.
+
 Keyboard: 1-0 toggle behavior bouts at the current frame, Space play/pause,
 Left/Right step, F fullscreen — same shortcuts as the Electron app.
 
@@ -18,16 +20,20 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from PySide6 import QtCore, QtWidgets  # noqa: E402
 
+from labeling_shell.backend import Backend, BackendConfig  # noqa: E402
+from labeling_shell.backend_worker import CallWorker  # noqa: E402
 from labeling_shell.behaviors_panel import BehaviorsPanel  # noqa: E402
-from labeling_shell.bouts import KEY_ORDER, LabelModel  # noqa: E402
+from labeling_shell.bouts import KEY_ORDER, Behavior, LabelModel  # noqa: E402
 from labeling_shell.bouts_panel import BoutsPanel  # noqa: E402
 from labeling_shell.csv_io import (  # noqa: E402
     generate_bouts_csv, generate_training_label_csv, parse_csv_and_import,
 )
 from labeling_shell.project import ProjectStore, safe_id  # noqa: E402
 from labeling_shell.video_widget import PlayerWidget  # noqa: E402
+from plugins.pipeline_panel import PipelinePanel  # noqa: E402
 
-EDITABLE = (QtWidgets.QLineEdit, QtWidgets.QAbstractSpinBox, QtWidgets.QComboBox)
+EDITABLE = (QtWidgets.QLineEdit, QtWidgets.QAbstractSpinBox, QtWidgets.QComboBox,
+            QtWidgets.QPlainTextEdit)
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -37,6 +43,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.model = LabelModel()
         self.project: ProjectStore | None = None
         self.current_video_id: str | None = None
+        self._video_path: str | None = None
+        self.backend: Backend | None = None
+        self._bg_workers: set = set()
 
         self.player = PlayerWidget()
         self.player.frameChanged.connect(self._on_frame)
@@ -45,21 +54,26 @@ class MainWindow(QtWidgets.QMainWindow):
         self.behaviors_panel.changed.connect(self._on_model_changed)
         self.bouts_panel.changed.connect(self._on_model_changed)
         self.bouts_panel.seekRequested.connect(self._seek)
+        self.pipeline = PipelinePanel(self)  # MainWindow is the pipeline ctx
 
-        right = QtWidgets.QWidget()
-        rl = QtWidgets.QVBoxLayout(right)
-        rl.addWidget(self.behaviors_panel, 1)
-        rl.addWidget(self.bouts_panel, 2)
+        label_tab = QtWidgets.QWidget()
+        ll = QtWidgets.QVBoxLayout(label_tab)
+        ll.addWidget(self.behaviors_panel, 1)
+        ll.addWidget(self.bouts_panel, 2)
+
+        self.tabs = QtWidgets.QTabWidget()
+        self.tabs.addTab(label_tab, "Label")
+        self.tabs.addTab(self.pipeline, "Pipeline")
 
         split = QtWidgets.QSplitter()
         split.addWidget(self.player)
-        split.addWidget(right)
+        split.addWidget(self.tabs)
         split.setStretchFactor(0, 3)
         split.setStretchFactor(1, 2)
         self.setCentralWidget(split)
 
         self._build_menu()
-        self.resize(1280, 800)
+        self.resize(1320, 820)
         QtWidgets.QApplication.instance().installEventFilter(self)
 
     # ------------------------------------------------------------------ menu
@@ -75,6 +89,11 @@ class MainWindow(QtWidgets.QMainWindow):
         fm.addAction("New Project…", self.new_project)
         fm.addAction("Open Project…", self.open_project)
 
+        bm = m.addMenu("&Backend")
+        bm.addAction("Connect Local…", self.connect_local)
+        bm.addAction("Connect Remote…", self.connect_remote)
+        bm.addAction("Disconnect", self.disconnect_backend)
+
     # --------------------------------------------------------------- helpers
     def _fps(self) -> float:
         return self.player.reader.fps if self.player.reader else 30.0
@@ -86,16 +105,16 @@ class MainWindow(QtWidgets.QMainWindow):
     def _refresh_all(self) -> None:
         self.behaviors_panel.refresh()
         self.bouts_panel.refresh()
+        self.pipeline.refresh()
 
     def _seek(self, frame: int) -> None:
         self.player._show(frame)
 
     def _on_frame(self, _idx: int) -> None:
-        pass  # Phase 4 will use this to highlight the current bout / HUD
+        pass  # Phase 4 uses this to drive the HUD / current-bout highlight
 
     def _on_model_changed(self) -> None:
-        self.behaviors_panel.refresh()
-        self.bouts_panel.refresh()
+        self._refresh_all()
         self._autosave()
 
     def _autosave(self) -> None:
@@ -104,6 +123,52 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _status(self, msg: str) -> None:
         self.statusBar().showMessage(msg, 5000)
+
+    # ---- pipeline context (duck-typed for PipelinePanel) ------------------
+    def client(self):
+        return self.backend.client if self.backend else None
+
+    def video_path(self):
+        return self._video_path
+
+    def fps(self):
+        return self._fps()
+
+    def bouts(self):
+        return self.model.bouts
+
+    def behaviors(self):
+        return self.model.behaviors
+
+    def frames_per_group(self):
+        return self.pipeline.train.frames_per_group.value()
+
+    def current_frames_dir(self):
+        if self.project and self.current_video_id:
+            return str(self.project.frames_dir(self.current_video_id))
+        return None
+
+    def current_bg_path(self):
+        if self.project and self.current_video_id:
+            p = self.project.background_path(self.current_video_id)
+            return str(p) if p.exists() else None
+        return None
+
+    def label_paths(self):
+        if self.project and self.current_video_id:
+            p = self.project.label_csv_path(self.current_video_id)
+            return [str(p)] if p.exists() else []
+        return []
+
+    def frame_dirs(self):
+        d = self.current_frames_dir()
+        return [d] if d else []
+
+    def checkpoint_dir(self):
+        return str(self.project.checkpoint_dir()) if self.project else None
+
+    def status(self, msg):
+        self._status(msg)
 
     # ------------------------------------------------------------------ video
     def open_video(self) -> None:
@@ -114,8 +179,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.load_video(path)
 
     def load_video(self, path: str) -> None:
-        self._autosave()  # persist the outgoing video first
+        self._autosave()
         self.player.load(path)
+        self._video_path = path
         name = Path(path).name
         self.current_video_id = safe_id(name)
         if self.project:
@@ -186,8 +252,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._status("No bouts to export.")
             return
         if self.model.find_overlapping_bouts() is not None:
-            QtWidgets.QMessageBox.warning(
-                self, "Overlap", "Cannot export: some bouts overlap.")
+            QtWidgets.QMessageBox.warning(self, "Overlap", "Cannot export: some bouts overlap.")
             return
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self, "Export bout CSV", "bouts.csv", "CSV (*.csv)")
@@ -225,13 +290,54 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Not a project", "No project.json found.")
             return
         self.project = store
-        from labeling_shell.bouts import Behavior
         self.model = LabelModel()
         self.model.behaviors = [Behavior(**b) for b in store.load_manifest().get("behaviors", [])]
         self.current_video_id = None
         self._rebind_model()
         self._refresh_all()
         self._status(f"Opened project {store.load_manifest().get('name')}")
+
+    # --------------------------------------------------------------- backend
+    def _spawn_bg(self, fn, on_done):
+        w = CallWorker(fn)
+        w.done.connect(on_done)
+        w.failed.connect(self._status)
+        w.finished.connect(lambda: self._bg_workers.discard(w))
+        self._bg_workers.add(w)
+        w.start()
+
+    def connect_local(self) -> None:
+        self.disconnect_backend()
+        self.backend = Backend(BackendConfig())
+        self._status("Starting local backend…")
+        self._spawn_bg(
+            lambda: self.backend.start(wait=True, timeout=40),
+            lambda ok: self._status("Backend ready." if ok else "Backend failed to start."),
+        )
+
+    def connect_remote(self) -> None:
+        host, ok = QtWidgets.QInputDialog.getText(
+            self, "Connect remote backend", "Host (e.g. 192.168.1.20):")
+        if not ok or not host.strip():
+            return
+        self.disconnect_backend()
+        self.backend = Backend(BackendConfig.remote(host.strip()))
+        self._status(f"Connecting to {host}…")
+        self._spawn_bg(
+            lambda: self.backend.start(wait=True, timeout=20),
+            lambda ok: self._status("Backend reachable." if ok else "Backend not reachable."),
+        )
+
+    def disconnect_backend(self) -> None:
+        if self.backend is not None:
+            self.backend.stop()
+            self.backend = None
+            self._status("Backend disconnected.")
+
+    def closeEvent(self, event) -> None:
+        self._autosave()
+        self.disconnect_backend()
+        super().closeEvent(event)
 
 
 def main() -> int:

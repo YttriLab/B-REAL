@@ -76,6 +76,16 @@ class ProjectStore:
     def label_csv_path(self, video_id) -> Path:
         return self.labels_dir / f"{video_id}_labels.csv"
 
+    def frames_dir(self, video_id) -> Path:
+        """Where preprocessing extracts this video's frames (the trainer's frame_dir)."""
+        return self.root / "frames" / str(video_id)
+
+    def background_path(self, video_id) -> Path:
+        return self.root / "backgrounds" / f"{video_id}.png"
+
+    def checkpoint_dir(self) -> Path:
+        return self.root / "checkpoints"
+
     def save_video_labels(self, video_id, model: LabelModel) -> None:
         """Persist this video's bouts (+ the training CSV) and the global behaviors."""
         self.labels_dir.mkdir(parents=True, exist_ok=True)
