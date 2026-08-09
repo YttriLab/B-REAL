@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from PySide6 import QtWidgets  # noqa: E402
 
 from labeling_shell.qt_image import ndarray_to_qimage, qimage_to_ndarray  # noqa: E402
-from labeling_shell.video_widget import PlayerWidget, format_ms  # noqa: E402
+from labeling_shell.video_widget import PlayerWidget, format_time  # noqa: E402
 from tools.index_video import make_index_frame, read_index_frame, write_index_video  # noqa: E402
 
 N = 120
@@ -81,10 +81,10 @@ def test_player_displays_exact_frame():
                 player.reader.close()
 
 
-def test_format_ms():
-    assert format_ms(0) == "00:00.000"
-    assert format_ms(1000) == "00:01.000"
-    assert format_ms(61_500) == "01:01.500"
+def test_format_time():
+    assert format_time(0) == "00:00:000"
+    assert format_time(1000) == "00:01:000"
+    assert format_time(61_500) == "01:01:500"
 
 
 def _main() -> int:
@@ -92,7 +92,7 @@ def _main() -> int:
     failures = []
     for fn in (test_qimage_roundtrip_is_lossless,
                test_player_displays_exact_frame,
-               test_format_ms):
+               test_format_time):
         try:
             fn()
             print(f"  [PASS] {fn.__name__}")

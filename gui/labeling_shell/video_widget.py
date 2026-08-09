@@ -15,15 +15,8 @@ from __future__ import annotations
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from .qt_image import ndarray_to_qimage
+from .timefmt import format_time
 from .video_reader import VideoReader
-
-
-def format_ms(ms: float) -> str:
-    """Milliseconds -> MM:SS.mmm (the Electron app's display convention)."""
-    total = int(round(ms))
-    minutes, rem = divmod(total, 60_000)
-    seconds, millis = divmod(rem, 1000)
-    return f"{minutes:02d}:{seconds:02d}.{millis:03d}"
 
 
 class VideoView(QtWidgets.QWidget):
@@ -186,7 +179,7 @@ class PlayerWidget(QtWidgets.QWidget):
             return
         self.info.setText(
             f"frame {self.index} / {r.num_frames - 1}   "
-            f"{format_ms(r.frame_to_ms(self.index))}   "
+            f"{format_time(r.frame_to_ms(self.index))}   "
             f"{r.fps:.3f} fps{' (locked)' if r._fps_override else ''}"
         )
 

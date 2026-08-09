@@ -15,6 +15,9 @@ gui/
     video_reader.py      #   frame-accurate random-access decoder (replaces WebCodecs + mp4box + remux)
     video_widget.py      #   VideoView + PlayerWidget (transport, scrubber, FPS lock, shortcuts)
     qt_image.py          #   numpy RGB <-> QImage
+    timefmt.py           #   frame<->time + MM:SS:mmm format/parse (matches Electron)
+    bouts.py             #   Behavior/Bout model: toggle, sorted insert, overlap, merge (core/behaviors.js)
+    csv_io.py            #   bout CSV, training one-hot matrix (load_data format), import auto-detect (core/csv.js)
     backend/             #   seam to the FastAPI/PyTorch backend (successor to core/backend.js + main.js spawn)
       config.py          #     BackendConfig (local-spawn vs remote host)
       process.py         #     spawn/health/stop local uvicorn; interpreter resolution
@@ -26,6 +29,8 @@ gui/
     test_video_reader.py  # frame-exactness of the decoder (MP4 + MKV)
     test_qt_display.py     # frame-exactness of the decode->QImage->widget path (offscreen)
     test_backend_client.py # backend client HTTP/SSE contract (stdlib stub server)
+    test_bouts.py          # behavior/bout model logic
+    test_csv_io.py         # CSV export/import + round-trips (bout CSV, training matrix)
   spike_player.py        # runnable minimal player for manual/visual checks
 ```
 
