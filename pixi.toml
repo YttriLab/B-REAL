@@ -18,6 +18,13 @@ description = "Real-time clip-based animal behavior classifier (Electron GUI + F
 channels = ["conda-forge"]
 platforms = ["win-64"]   # add "linux-64" / "osx-64" here, then re-run `pixi install`
 
+# Without this, pixi solves as if no CUDA is present (for lockfile portability),
+# so pytorch-gpu can never be solved on any machine, GPU or not. 12.0 is a
+# conservative floor compatible with recent drivers (raise if a newer
+# pytorch-gpu build requires it; check `pixi info` for what your driver reports).
+[system-requirements]
+cuda = "12.0"
+
 [tasks]
 backend = "uvicorn backend.server:app --port 8742 --host 127.0.0.1"
 test = "pytest"
@@ -51,3 +58,12 @@ wandb = "*"
 pytest = "*"
 pytest-asyncio = "*"
 httpx = "*"
+
+# albucore (an albumentations dependency) imports simsimd unconditionally, but
+# the conda-forge simsimd 7.7.0 win-64/py312 build ships an empty payload (a
+# packaging bug upstream — its paths.json lists zero files), so `import
+# albumentations` fails no matter what conda-forge version/pin is tried. simsimd
+# is a pure C-extension leaf package with no system-library entanglements, so
+# sourcing it from PyPI (where the wheel build is intact) sidesteps the bug.
+[pypi-dependencies]
+simsimd = "*"
