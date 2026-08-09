@@ -7,8 +7,10 @@ dist/
 build/
 *.whl
 .venv/
+.venv-gui/
 venv/
 env/
+.pixi/
 
 # PyTorch / Training artifacts
 lightning_logs/
