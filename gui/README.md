@@ -4,9 +4,10 @@ The Python successor to the Electron/npm frontend under `LabelingApp/`, built on
 the `python-rewrite` branch. `main` remains the working Electron app (restore
 point: the `electron-baseline` tag).
 
-Stack: **PySide6** (Qt) + **PyAV** (ffmpeg/libav) + NumPy. The existing
-FastAPI/PyTorch backend is kept and reached over HTTP/SSE via a `BackendClient`
-(local-spawned or remote). No JavaScript, no Electron, no npm.
+Stack: **PySide6** (Qt) + **PyAV** (ffmpeg/libav) + NumPy, themed with
+**qt-material**. The existing FastAPI/PyTorch backend is kept and reached over
+HTTP/SSE via a `BackendClient` (local-spawned or remote). No JavaScript, no
+Electron, no npm.
 
 ## Run the app
 
@@ -24,8 +25,8 @@ Backend menu: connect a local or remote backend to use the Pipeline tabs
 ```
 gui/
   app.py                     # MainWindow: player + Label/Pipeline tabs, menus, shortcuts, project
-  run_all_tests.py           # run every suite offscreen, aggregate PASS/FAIL
-  requirements.txt           # frontend deps (av, numpy, PySide6-Essentials, httpx)
+  run_all_tests.py           # run every suite offscreen, each in its own subprocess, aggregate PASS/FAIL
+  requirements.txt           # frontend deps (av, numpy, PySide6-Essentials, httpx, qt-material)
   labeling_shell/            # reusable, pipeline-agnostic shell (successor to core/*.js)
     video_reader.py          #   frame-accurate PyAV decoder (replaces WebCodecs+mp4box+remux)
     video_widget.py          #   VideoView + PlayerWidget (transport, scrubber, FPS lock, keys)
@@ -40,7 +41,7 @@ gui/
     timeline_widget.py       #   uncertainty/misclassification heatmap strip, click-to-seek
     behaviors_panel.py       #   add/rename/remove/merge behaviors
     bouts_panel.py           #   bouts table: seek, reassign, edit, delete
-    theme.qss / theme.py     #   dark QSS theme (applied once at QApplication level)
+    theme.py                 #   qt-material theme (applied once at QApplication level) + accent/compact QSS patches
     backend/                 #   seam to the FastAPI backend (core/backend.js + main.js spawn)
       config.py / process.py / client.py / manager.py
   plugins/                   # RealtimeASOID pipeline UI (successor to plugins/pipeline.js)
@@ -72,6 +73,13 @@ C:/AdenCode/RealtimeASOID/.venv-gui/Scripts/python.exe gui/run_all_tests.py
 All suites run headless (Qt offscreen; synthetic videos). What needs the backend's
 pixi/torch env — live preprocess/train/inference — is not exercised here; those
 paths are covered at the contract level (stub server, config building).
+
+Each suite runs in its own subprocess, not in-process: qt-material's stylesheet/
+resource registration, combined with several `MainWindow` instances created and
+torn down across suites, produced a delayed segfault when suites shared one
+long-lived `QApplication` (a real user only ever constructs one QApplication per
+process, so this was a test-runner isolation issue, not an app bug — but it's
+worth knowing if you're tempted to merge suites back into one process).
 
 ## Status (python-rewrite branch)
 
