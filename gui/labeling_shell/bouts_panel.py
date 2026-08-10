@@ -10,6 +10,7 @@ from __future__ import annotations
 from PySide6 import QtCore, QtWidgets
 
 from .bouts import LabelModel
+from .theme import mark_compact
 from .timefmt import format_time, frame_to_ms, ms_to_frame, parse_time
 
 
@@ -31,6 +32,7 @@ class BoutsPanel(QtWidgets.QWidget):
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         self.table.cellClicked.connect(self._on_cell_clicked)
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -66,6 +68,8 @@ class BoutsPanel(QtWidgets.QWidget):
             ah.setContentsMargins(0, 0, 0, 0)
             edit_btn = QtWidgets.QPushButton("Edit")
             del_btn = QtWidgets.QPushButton("Delete")
+            mark_compact(edit_btn)
+            mark_compact(del_btn)
             edit_btn.clicked.connect(lambda _=False, row=idx: self._edit(row))
             del_btn.clicked.connect(lambda _=False, row=idx: self.delete_bout(row))
             ah.addWidget(edit_btn)

@@ -10,6 +10,7 @@ from __future__ import annotations
 from PySide6 import QtCore, QtWidgets
 
 from .bouts import LabelModel
+from .theme import mark_accent
 
 
 class BehaviorsPanel(QtWidgets.QWidget):
@@ -25,6 +26,7 @@ class BehaviorsPanel(QtWidgets.QWidget):
         self.add_edit = QtWidgets.QLineEdit()
         self.add_edit.setPlaceholderText("New behavior name")
         self.add_btn = QtWidgets.QPushButton("Add")
+        mark_accent(self.add_btn)
         add_row = QtWidgets.QHBoxLayout()
         add_row.addWidget(self.add_edit, 1)
         add_row.addWidget(self.add_btn)
@@ -101,13 +103,14 @@ class BehaviorsPanel(QtWidgets.QWidget):
         badge = QtWidgets.QLabel(behavior.key or "-")
         badge.setFixedWidth(20)
         badge.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        badge.setStyleSheet("background:#e0e0e0;border-radius:3px;font-weight:bold;")
+        badge.setStyleSheet(
+            "background:#3c3f41;color:#e6e6e6;border-radius:3px;font-weight:bold;")
 
         name = QtWidgets.QLineEdit(behavior.name)
         name.editingFinished.connect(lambda bid=behavior.id, e=name: self._commit_rename(bid, e))
 
         rec = QtWidgets.QLabel("● REC" if self.model.is_recording(behavior.id) else "")
-        rec.setStyleSheet("color:#c0392b;font-weight:bold;")
+        rec.setStyleSheet("color:#ff5c5c;font-weight:bold;")
 
         remove = QtWidgets.QPushButton("Remove")
         remove.clicked.connect(lambda _=False, bid=behavior.id: self.remove_behavior(bid))

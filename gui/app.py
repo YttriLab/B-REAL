@@ -30,6 +30,7 @@ from labeling_shell.csv_io import (  # noqa: E402
 )
 from labeling_shell.project import ProjectStore, safe_id  # noqa: E402
 from labeling_shell.active_learning import hud_info  # noqa: E402
+from labeling_shell.theme import apply_theme  # noqa: E402
 from labeling_shell.timeline_widget import UncertaintyTimeline  # noqa: E402
 from labeling_shell.video_widget import PlayerWidget  # noqa: E402
 from plugins.pipeline_panel import PipelinePanel  # noqa: E402
@@ -418,6 +419,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
 def main() -> int:
     app = QtWidgets.QApplication(sys.argv)
+    apply_theme(app)
     win = MainWindow()
     if len(sys.argv) > 1:
         win.load_video(sys.argv[1])

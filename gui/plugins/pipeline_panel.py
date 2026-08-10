@@ -19,6 +19,7 @@ from PySide6 import QtWidgets
 
 from labeling_shell.backend_worker import CallWorker, StreamWorker
 from labeling_shell.frame_ranges import compute_labeled_frame_ranges
+from labeling_shell.theme import mark_accent
 
 from .pipeline_config import CROP_DEFAULTS, build_train_config, parse_stages
 
@@ -93,6 +94,7 @@ class PreprocessTab(_Base):
 
         self.progress = QtWidgets.QProgressBar()
         run_btn = QtWidgets.QPushButton("Run preprocessing")
+        mark_accent(run_btn)
         run_btn.clicked.connect(self._run)
         form.addRow(run_btn)
         form.addRow(self.progress)
@@ -193,6 +195,7 @@ class TrainTab(_Base):
         btns = QtWidgets.QHBoxLayout()
         self.coverage_btn = QtWidgets.QPushButton("Check coverage")
         self.start_btn = QtWidgets.QPushButton("Start training")
+        mark_accent(self.start_btn)
         self.stop_btn = QtWidgets.QPushButton("Stop")
         self.stop_btn.setEnabled(False)
         self.coverage_btn.clicked.connect(self._check_coverage)
@@ -319,6 +322,7 @@ class ExportTab(_Base):
         bf.addRow("", self.b_uni)
         bf.addRow("precision", self.b_prec)
         bench_btn = QtWidgets.QPushButton("Run benchmark")
+        mark_accent(bench_btn)
         bench_btn.clicked.connect(self._benchmark)
         bf.addRow(bench_btn)
         self.bench_result = QtWidgets.QLabel("—")
@@ -340,6 +344,7 @@ class ExportTab(_Base):
         ef.addRow("output dir", self.out_dir)
         ef.addRow("output name", self.out_name)
         export_btn = QtWidgets.QPushButton("Export")
+        mark_accent(export_btn)
         export_btn.clicked.connect(self._export)
         ef.addRow(export_btn)
         layout.addWidget(export)

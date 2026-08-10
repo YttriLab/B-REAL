@@ -15,6 +15,7 @@ from __future__ import annotations
 from PySide6 import QtCore, QtWidgets
 
 from labeling_shell.active_learning import AlState
+from labeling_shell.theme import mark_accent
 
 from .pipeline_panel import _Base
 
@@ -47,6 +48,7 @@ class ActiveLearningPanel(_Base):
         form.addRow(self.progress)
 
         run_btn = QtWidgets.QPushButton("Run inference (current video)")
+        mark_accent(run_btn)
         run_btn.clicked.connect(self._run)
         next_btn = QtWidgets.QPushButton("Next uncertain →")
         next_btn.clicked.connect(self._next_uncertain)
