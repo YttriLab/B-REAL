@@ -1,6 +1,10 @@
 """Render MainWindow to a PNG via QWidget.grab() — works offscreen, no display.
 
-    QT_QPA_PLATFORM=offscreen .venv-gui/Scripts/python.exe gui/tools/screenshot_app.py [out.png]
+    .venv-gui/Scripts/python.exe gui/tools/screenshot_app.py [out.png] [tab]
+
+`tab` selects what's showing: label (default), preprocess, train, export,
+active_learning, or al_results (active-learning tab + fake results loaded, so
+the uncertainty timeline and on-video HUD render too).
 
 Loads a synthetic sample video and adds a couple of behaviors/bouts so panels
 aren't empty, for a representative screenshot.
@@ -22,13 +26,39 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from PySide6 import QtWidgets  # noqa: E402
 
 from app import MainWindow  # noqa: E402
+from labeling_shell.active_learning import AlState  # noqa: E402
 from labeling_shell.bouts import Bout  # noqa: E402
 from labeling_shell.theme import apply_theme  # noqa: E402
 from tools.index_video import write_index_video  # noqa: E402
 
+TAB_WIDGETS = {
+    "preprocess": "preprocess",
+    "train": "train",
+    "export": "export",
+    "active_learning": "active_learning",
+    "al_results": "active_learning",
+}
+
+
+def _fake_al_results(num_frames: int) -> AlState:
+    import random
+    rnd = random.Random(7)
+    frames = []
+    for i in range(num_frames):
+        u = max(0.0, min(1.0, abs(rnd.gauss(0.3, 0.25))))
+        pred = "groom" if (i // 20) % 2 == 0 else "other"
+        frames.append({
+            "index": i, "predicted_class": pred, "uncertainty": u,
+            "predictions": [1 - u, u],
+        })
+    state = AlState()
+    state.load_results({"class_names": ["other", "groom"], "frames": frames})
+    return state
+
 
 def main() -> None:
     out_path = sys.argv[1] if len(sys.argv) > 1 else "screenshot.png"
+    tab = sys.argv[2] if len(sys.argv) > 2 else "label"
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     apply_theme(app)
@@ -48,9 +78,14 @@ def main() -> None:
     win.behaviors_panel.model.insert_bout_sorted(Bout(a.id, a.name, 150, 200))
     win._seek(75)
     win._refresh_all()
-    if len(sys.argv) > 2 and sys.argv[2] == "pipeline":
+
+    if tab == "al_results":
+        win.set_al_results(_fake_al_results(win.player.reader.num_frames))
+        win._seek(25)  # inside the groom[10,45] bout; predicted "other" here -> mismatch
+
+    if tab in TAB_WIDGETS:
         win.tabs.setCurrentWidget(win.pipeline)
-        win.pipeline.setCurrentWidget(win.pipeline.train)
+        win.pipeline.setCurrentWidget(getattr(win.pipeline, TAB_WIDGETS[tab]))
 
     win.ensurePolished()
     win.adjustSize()
