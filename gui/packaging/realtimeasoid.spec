@@ -14,14 +14,10 @@ Notes:
     backend from the pixi env, or connects to a remote one (3090 rig); either way
     torch/torchvision are excluded here to keep the GUI bundle small.
   * PyAV needs ffmpeg shared libs -> collect_dynamic_libs("av").
-  * qt-material (the UI theme) ships its own PyInstaller hook that bundles its
-    theme XML/fonts/QSS template — pointed to via hookspath below. Without it
-    the packaged app runs but renders unstyled (falls back to plain Qt).
 """
 
 import os
 
-import qt_material
 from PyInstaller.utils.hooks import collect_dynamic_libs, collect_submodules
 
 GUI_DIR = os.path.dirname(SPECPATH)          # .../gui
@@ -29,7 +25,6 @@ ENTRY = os.path.join(GUI_DIR, "app.py")
 
 hiddenimports = collect_submodules("labeling_shell") + collect_submodules("plugins")
 binaries = collect_dynamic_libs("av")        # ffmpeg libs PyAV loads at runtime
-qt_material_dir = os.path.dirname(qt_material.__file__)
 
 a = Analysis(
     [ENTRY],
@@ -37,7 +32,7 @@ a = Analysis(
     binaries=binaries,
     datas=[],
     hiddenimports=hiddenimports,
-    hookspath=[qt_material_dir],             # picks up qt_material's hook-qt_material.py
+    hookspath=[],
     runtime_hooks=[],
     excludes=["torch", "torchvision", "lightning", "tkinter", "matplotlib"],
     noarchive=False,
