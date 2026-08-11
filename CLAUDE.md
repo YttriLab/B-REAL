@@ -2,7 +2,12 @@
 
 ## Project Overview
 
-Real-time clip-based animal behavior classifier. An Electron desktop app for labeling video with behavioral bouts, backed by a FastAPI server that handles video preprocessing, TSM model training (PyTorch Lightning), and per-frame inference with active learning.
+Real-time clip-based animal behavior classifier. A desktop app for labeling video with behavioral bouts, backed by a FastAPI server that handles video preprocessing, TSM model training (PyTorch Lightning), hyperparameter sweeps, and per-frame inference with active learning.
+
+There are **two frontends on `main`**, both driving the same backend over HTTP/SSE:
+
+- `gui/` — the all-Python PySide6 app (`gui/app.py`). The direction of travel; the `python-rewrite` branch was merged into `main`. New frontend work goes here — it is the only one with the Tune (hyperparameter sweep) tab.
+- `LabelingApp/` — the original Electron app, still present and still working. `electron-baseline` tags the last commit before the rewrite.
 
 ## Project Structure
 

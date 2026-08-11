@@ -1,8 +1,11 @@
 # gui/ — all-Python (PySide6) frontend
 
-The Python successor to the Electron/npm frontend under `LabelingApp/`, built on
-the `python-rewrite` branch. `main` remains the working Electron app (restore
-point: the `electron-baseline` tag).
+The Python successor to the Electron/npm frontend under `LabelingApp/`. It was
+developed on the `python-rewrite` branch, which has now been merged into `main`
+— `main` carries both frontends, with this one as the direction of travel. The
+Electron app under `LabelingApp/` is still present and still runs. The last
+commit before the rewrite is tagged `electron-baseline` if you need to get back
+to an Electron-only tree.
 
 Stack: **PySide6** (Qt) + **PyAV** (ffmpeg/libav) + NumPy. The existing
 FastAPI/PyTorch backend is kept and reached over HTTP/SSE via a `BackendClient`
@@ -73,7 +76,7 @@ All suites run headless (Qt offscreen; synthetic videos). What needs the backend
 pixi/torch env — live preprocess/train/inference — is not exercised here; those
 paths are covered at the contract level (stub server, config building).
 
-## Status (python-rewrite branch)
+## Status
 
 - Phase 0 — frame-accurate PyAV video (frame-exact MP4+MKV, no remux). ✅
 - Phase 1 — BackendClient seam (local-spawn or remote). ✅
