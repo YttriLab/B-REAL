@@ -2,9 +2,9 @@
 
 Validates the HTTP + SSE contract the client speaks, plus interpreter
 resolution. The real backend needs the CUDA/torch pixi env; this exercises the
-*client* seam in isolation so it runs in .venv-gui.
+*client* seam in isolation so it runs in the gui pixi env.
 
-    .venv-gui/Scripts/python.exe gui/tests/test_backend_client.py
+    pixi run -e gui python gui/tests/test_backend_client.py
     pytest gui/tests/test_backend_client.py
 """
 

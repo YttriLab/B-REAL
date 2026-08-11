@@ -1,10 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller spec for the RealtimeASOID desktop GUI (gui/app.py).
 
-Build from the repo root, in the GUI venv with PyInstaller installed:
+Build from the repo root — pyinstaller is a dependency of the gui pixi env:
 
-    .venv-gui/Scripts/pip install pyinstaller          # Windows
-    .venv-gui/Scripts/pyinstaller gui/packaging/realtimeasoid.spec
+    pixi install -e gui
+    pixi run -e gui pyinstaller gui/packaging/realtimeasoid.spec
 
 Output: dist/RealtimeASOID/ (onedir). Run PyInstaller on each target OS
 separately — a build is not cross-compiling.

@@ -1,6 +1,6 @@
 """Render MainWindow to a PNG via QWidget.grab() — works offscreen, no display.
 
-    .venv-gui/Scripts/python.exe gui/tools/screenshot_app.py [out.png] [tab]
+    pixi run -e gui python gui/tools/screenshot_app.py [out.png] [tab]
 
 `tab` selects what's showing: label (default), preprocess, train, tune, export,
 active_learning, or al_results (active-learning tab + fake results loaded, so

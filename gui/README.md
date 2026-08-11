@@ -12,7 +12,7 @@ FastAPI/PyTorch backend is kept and reached over HTTP/SSE via a `BackendClient`
 ## Run the app
 
 ```bash
-C:/AdenCode/RealtimeASOID/.venv-gui/Scripts/python.exe C:/AdenCode/RealtimeASOID/gui/app.py
+pixi run gui
 ```
 
 Open a video, add behaviors, press `1`–`0` to record bouts, Space/←/→ to
@@ -26,7 +26,6 @@ Backend menu: connect a local or remote backend to use the Pipeline tabs
 gui/
   app.py                     # MainWindow: player + Label/Pipeline tabs, menus, shortcuts, project
   run_all_tests.py           # run every suite offscreen, aggregate PASS/FAIL
-  requirements.txt           # frontend deps (av, numpy, PySide6-Essentials, httpx)
   labeling_shell/            # reusable, pipeline-agnostic shell (successor to core/*.js)
     video_reader.py          #   frame-accurate PyAV decoder (replaces WebCodecs+mp4box+remux)
     video_widget.py          #   VideoView + PlayerWidget (transport, scrubber, FPS lock, keys)
@@ -56,18 +55,21 @@ gui/
 
 ## Dev environment
 
-Isolated venv (`.venv-gui/`, gitignored) so the frontend never drags in the
-backend's CUDA/torch stack:
+The frontend is its own pixi environment (`gui`, defined in `pixi.toml` next to
+the backend's `default`) so it never drags in the backend's CUDA/torch stack —
+it installs and runs even on a machine with no GPU. One lockfile, one command:
 
 ```bash
-python -m venv .venv-gui
-.venv-gui/Scripts/pip install -r gui/requirements.txt   # Windows (…/bin on mac/linux)
+pixi install -e gui
 ```
+
+`pixi run gui` and `pixi run -e gui <anything>` (tests, pyinstaller, …) then use
+this environment automatically.
 
 ## Tests
 
 ```bash
-C:/AdenCode/RealtimeASOID/.venv-gui/Scripts/python.exe gui/run_all_tests.py
+pixi run -e gui python gui/run_all_tests.py
 ```
 
 All suites run headless (Qt offscreen; synthetic videos). What needs the backend's

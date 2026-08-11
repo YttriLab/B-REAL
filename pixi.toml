@@ -1,36 +1,46 @@
-# pixi project definition — the reproducible Python environment for the backend.
+# pixi project definition — the reproducible Python environments for both the
+# backend and the PySide6 frontend, in one lockfile.
 #
-# This is the source of truth for the Python side (replacing manual conda envs +
-# RTASOID_PYTHON). It pulls CUDA-enabled PyTorch, ffmpeg, and the native
-# scientific stack from conda-forge into a project-local env at a deterministic
-# path (.pixi/envs/default), which the Electron app auto-discovers.
+# Two environments, solved independently so the GUI never drags in CUDA/torch:
+#   default — the FastAPI/PyTorch backend (.pixi/envs/default)
+#   gui     — the PySide6 desktop app (.pixi/envs/gui)
 #
-#   pixi install        # materialize/pin the env (writes pixi.lock) + downloads
+#   pixi install        # materialize/pin BOTH envs (writes pixi.lock) + downloads
+#   pixi run gui         # launch the app
 #   pixi run backend    # run the FastAPI backend standalone
-#   pixi run test       # run the pytest suite
+#   pixi run test        # run the pytest suite
 #
-# CPU-only machine? Swap `pytorch-gpu` for `pytorch-cpu` below.
+# CPU-only machine? Swap `pytorch-gpu` for `pytorch-cpu` under [feature.backend.dependencies].
 
 [project]
 name = "realtimeasoid"
 version = "0.1.0"
-description = "Real-time clip-based animal behavior classifier (Electron GUI + FastAPI/PyTorch backend)."
+description = "Real-time clip-based animal behavior classifier (PySide6 GUI + FastAPI/PyTorch backend)."
 channels = ["conda-forge"]
 platforms = ["win-64"]   # add "linux-64" / "osx-64" here, then re-run `pixi install`
+
+[dependencies]
+# Shared by both environments — kept minimal so the gui environment stays
+# free of CUDA/torch. Everything backend-specific lives under
+# [feature.backend], everything gui-specific under [feature.gui].
+python = "3.12.*"
+numpy = "*"
+
+[feature.backend]
+[feature.backend.tasks]
+backend = "uvicorn backend.server:app --port 8742 --host 127.0.0.1"
+test = "pytest"
 
 # Without this, pixi solves as if no CUDA is present (for lockfile portability),
 # so pytorch-gpu can never be solved on any machine, GPU or not. 12.0 is a
 # conservative floor compatible with recent drivers (raise if a newer
 # pytorch-gpu build requires it; check `pixi info` for what your driver reports).
-[system-requirements]
+# Scoped to this feature only — the gui environment has no CUDA dependency and
+# must not be gated on a CUDA-capable driver to solve/install.
+[feature.backend.system-requirements]
 cuda = "12.0"
 
-[tasks]
-backend = "uvicorn backend.server:app --port 8742 --host 127.0.0.1"
-test = "pytest"
-
-[dependencies]
-python = "3.12.*"
+[feature.backend.dependencies]
 # Deep learning (CUDA build pulled from conda-forge — bundles the CUDA runtime,
 # no separate CUDA toolkit install needed).
 pytorch-gpu = "*"
@@ -42,7 +52,6 @@ timm = "*"
 opencv = "*"
 albumentations = "*"
 ffmpeg = "*"
-numpy = "*"
 pandas = "*"
 scipy = "*"
 h5py = "*"
@@ -56,9 +65,9 @@ optuna = "*"
 wandb = "*"
 # Deployment-format export + latency measurement (see optimized_runtime.py).
 # ONNX is the shared intermediate; OpenVINO serves the CPU target. The GPU
-# target uses tensorrt-cu12, declared under [pypi-dependencies] below (it is not
-# on conda-forge). A missing runtime fails loudly rather than falling back to
-# TorchScript numbers that don't predict the frame budget.
+# target uses tensorrt-cu12, declared under [feature.backend.pypi-dependencies]
+# below (it is not on conda-forge). A missing runtime fails loudly rather than
+# falling back to TorchScript numbers that don't predict the frame budget.
 onnx = "*"
 openvino = "*"
 # Tests
@@ -72,11 +81,29 @@ httpx = "*"
 # albumentations` fails no matter what conda-forge version/pin is tried. simsimd
 # is a pure C-extension leaf package with no system-library entanglements, so
 # sourcing it from PyPI (where the wheel build is intact) sidesteps the bug.
-[pypi-dependencies]
+[feature.backend.pypi-dependencies]
 simsimd = "*"
 # TensorRT: the GPU deployment runtime the tuning latency gate measures against
 # (optimized_runtime.py). NVIDIA publishes it only to PyPI, not conda-forge, and
-# the env has no pip — so it goes here, where pixi resolves it. The -cu12 variant
-# matches the CUDA 12 runtime pytorch-gpu brings in; tensorrt-cu13 would load a
-# second, conflicting CUDA into the same process.
+# pixi resolves pypi-dependencies itself (no system pip needed), so it goes
+# here. The -cu12 variant matches the CUDA 12 runtime pytorch-gpu brings in;
+# tensorrt-cu13 would load a second, conflicting CUDA into the same process.
 tensorrt-cu12 = "*"
+
+# The PySide6 desktop app. No torch, no CUDA — this environment installs (and
+# solves) on a machine with no GPU at all, which matters for anyone running the
+# GUI against a remote backend.
+[feature.gui.tasks]
+gui = "python gui/app.py"
+
+[feature.gui.dependencies]
+pyside6 = ">=6.7"
+av = ">=12"   # PyAV: frame-accurate decode via ffmpeg/libav
+
+[feature.gui.pypi-dependencies]
+httpx = ">=0.27"
+pyinstaller = "*"   # gui/packaging/ — desktop bundle build only
+
+[environments]
+default = { features = ["backend"] }
+gui = { features = ["gui"] }

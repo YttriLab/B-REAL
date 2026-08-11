@@ -7,7 +7,7 @@ tabs (Preprocess / Train / Export), backed by the FastAPI backend.
 Keyboard: 1-0 toggle behavior bouts at the current frame, Space play/pause,
 Left/Right step, F fullscreen — same shortcuts as the Electron app.
 
-    .venv-gui/Scripts/python.exe gui/app.py [video]
+    pixi run -e gui python gui/app.py [video]
 """
 
 from __future__ import annotations

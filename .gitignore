@@ -7,10 +7,10 @@ dist/
 build/
 *.whl
 .venv/
-.venv-gui/
+.venv-gui/    # pre-pixi frontend venv; harmless to keep ignoring if it lingers
 venv/
 env/
-.pixi/
+.pixi/         # both environments (default = backend, gui = frontend)
 
 # PyTorch / Training artifacts
 lightning_logs/

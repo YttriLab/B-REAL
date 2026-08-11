@@ -1,6 +1,6 @@
 """Phase 2: CSV import/export (bout CSV, training matrix, one-hot) + round-trips.
 
-    .venv-gui/Scripts/python.exe gui/tests/test_csv_io.py
+    pixi run -e gui python gui/tests/test_csv_io.py
     pytest gui/tests/test_csv_io.py
 """
 

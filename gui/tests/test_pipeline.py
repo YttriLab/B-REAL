@@ -4,7 +4,7 @@ Live preprocess/train/export need the backend's CUDA/torch env; this validates
 the config marshalling, the widgets' construction/refresh, and the threaded
 worker plumbing in isolation.
 
-    QT_QPA_PLATFORM=offscreen .venv-gui/Scripts/python.exe gui/tests/test_pipeline.py
+    QT_QPA_PLATFORM=offscreen pixi run -e gui python gui/tests/test_pipeline.py
 """
 
 from __future__ import annotations

@@ -33,18 +33,15 @@ The original Electron frontend (`LabelingApp/`) was removed once this replaced i
 ## Running the App
 
 ```bash
-# Python env (pixi.toml + pixi.lock → .pixi/envs/default, with CUDA torch + ffmpeg)
+# Both environments from one pixi.toml/pixi.lock: default (backend — CUDA torch,
+# ffmpeg) and gui (frontend — PySide6/PyAV, no CUDA).
 pixi install
 
-# Frontend env (kept separate so the UI never drags in CUDA/torch)
-python -m venv .venv-gui
-.venv-gui/Scripts/pip install -r gui/requirements.txt
-
 # Launch
-.venv-gui/Scripts/python.exe gui/app.py
+pixi run gui
 ```
 
-The Backend menu spawns `uvicorn backend.server:app --port 8742` and tears it down on exit, resolving the interpreter in order: **`RTASOID_PYTHON`/`PYTHON` override → the project-local pixi env (`.pixi/envs/default/python.exe`) → bare `python`**. The pixi env is the supported path (no env var needed); the override is an advanced escape hatch. The chosen interpreter is logged as `[backend] launching with interpreter: ...`, and `GET /api/health` reports its torch/CUDA status (`device` block). `pixi.toml` is the source of truth for Python deps (`backend/requirements.txt` is a pip fallback). Standalone: `pixi run backend`, tests: `pixi run test`.
+The Backend menu spawns `uvicorn backend.server:app --port 8742` and tears it down on exit, resolving the interpreter in order: **`RTASOID_PYTHON`/`PYTHON` override → the project-local pixi env (`.pixi/envs/default/python.exe`) → bare `python`**. The pixi env is the supported path (no env var needed); the override is an advanced escape hatch. The chosen interpreter is logged as `[backend] launching with interpreter: ...`, and `GET /api/health` reports its torch/CUDA status (`device` block). `pixi.toml` is the source of truth for Python deps for both environments (`backend/requirements.txt` is a pip fallback for the backend only — nothing pip-installs the `gui` environment; that's pixi-only). Standalone backend: `pixi run backend`, tests: `pixi run test`, GUI tests: `pixi run -e gui python gui/run_all_tests.py`.
 
 ## Running the Backend Standalone
 
@@ -227,5 +224,5 @@ PyInstaller spec and per-OS notes: `gui/packaging/`.
 (`pixi.toml` is the authoritative list — conda-forge env with a `pixi.lock`; `backend/requirements.txt` is a pip fallback.)
 
 - **Python** (via pixi/conda-forge): FastAPI, Uvicorn, PyTorch (`pytorch-gpu` CUDA build, swap to `pytorch-cpu` on CPU machines), torchvision, Lightning, torchmetrics, timm, OpenCV, Albumentations, OmegaConf, numpy, pandas, h5py (`.rlt` files), wandb (optional training logging), matplotlib, pyyaml, scipy, optuna (hyperparameter sweeps), onnx + openvino (deployment-format export and latency measurement — see `optimized_runtime.py`), tensorrt-cu12 (PyPI, under `[pypi-dependencies]` — the GPU deployment runtime; needs a GPU of compute capability 7.5+, i.e. Turing or newer, so it will not run on Pascal cards like a GTX 10xx), **ffmpeg** (re-encode / labeled-video, now provided by the env)
-- **Frontend** (separate `.venv-gui`, `gui/requirements.txt`): PySide6-Essentials, PyAV, numpy, httpx
+- **Frontend** (pixi `gui` environment, `[feature.gui]` in `pixi.toml`): PySide6, PyAV, numpy, httpx, pyinstaller
 - **Test**: pytest, pytest-asyncio, httpx

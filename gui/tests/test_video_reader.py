@@ -1,7 +1,7 @@
 """Phase 0 gate: prove frame-exact random access with the PyAV VideoReader.
 
 Runnable two ways:
-    .venv-gui/Scripts/python.exe gui/tests/test_video_reader.py     # prints PASS/FAIL
+    pixi run -e gui python gui/tests/test_video_reader.py     # prints PASS/FAIL
     pytest gui/tests/test_video_reader.py                            # if pytest installed
 
 Each frame of the synthetic videos encodes its own index (see tools/index_video),

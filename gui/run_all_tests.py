@@ -1,6 +1,6 @@
 """Run every gui/tests/test_*.py suite in one process and aggregate results.
 
-    C:/AdenCode/RealtimeASOID/.venv-gui/Scripts/python.exe gui/run_all_tests.py
+    pixi run -e gui python gui/run_all_tests.py
 
 Each suite is self-contained (prints its own PASS/FAIL and raises SystemExit with
 a nonzero code on failure). Qt runs offscreen so no display is needed.

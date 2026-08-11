@@ -2,7 +2,7 @@
 also frame-exact, headlessly (offscreen Qt platform, no window shown).
 
 Runnable two ways:
-    .venv-gui/Scripts/python.exe gui/tests/test_qt_display.py
+    pixi run -e gui python gui/tests/test_qt_display.py
     pytest gui/tests/test_qt_display.py
 """
 

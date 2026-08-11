@@ -27,31 +27,25 @@ A complete pipeline in one app:
   - macOS/Linux: `curl -fsSL https://pixi.sh/install.sh | bash`
 - A **CUDA GPU** is recommended for training/inference but not required (see CPU note below).
 
-> You no longer install Python, PyTorch, CUDA, or ffmpeg yourself — `pixi` provisions a pinned, project-local environment from `pixi.toml`/`pixi.lock`, and the app discovers it automatically. (No more `conda create` / `RTASOID_PYTHON`.)
+> You no longer install Python, PyTorch, CUDA, ffmpeg, or PySide6 yourself — `pixi` provisions two pinned, project-local environments from one `pixi.toml`/`pixi.lock`: `default` (the backend — PyTorch+CUDA, ffmpeg, the training/tuning stack) and `gui` (the PySide6 frontend — no CUDA/torch, so it installs even on a machine with no GPU). The app discovers the backend env automatically.
 
 ---
 
 ## Installation
 
 ```bash
-# 1. Python environment (creates .pixi/envs/default from pixi.toml + pixi.lock,
-#    pulling CUDA PyTorch + ffmpeg + deps from conda-forge). Run from repo root.
-pixi install
-
-# 2. Frontend environment (kept separate so the UI never drags in CUDA/torch)
-python -m venv .venv-gui
-.venv-gui/Scripts/pip install -r gui/requirements.txt   # Windows (…/bin elsewhere)
+pixi install   # both environments — .pixi/envs/default (backend) and .pixi/envs/gui (frontend)
 ```
 
-**CPU-only machine?** Edit `pixi.toml` and replace `pytorch-gpu` with `pytorch-cpu`, then re-run `pixi install`.
+**CPU-only machine?** Edit `pixi.toml` and replace `pytorch-gpu` with `pytorch-cpu` under `[feature.backend.dependencies]`, then re-run `pixi install`. This only affects the backend environment — `gui` never depended on CUDA.
 
 ## Running
 
 ```bash
-.venv-gui/Scripts/python.exe gui/app.py
+pixi run gui
 ```
 
-Use the **Backend** menu to spawn a local backend (`uvicorn backend.server:app --port 8742`, run from the **pixi env** at `.pixi/envs/default/`) or to attach to a remote one. `GET /api/health` reports the interpreter + CUDA status.
+Use the **Backend** menu to spawn a local backend (`uvicorn backend.server:app --port 8742`, run from the **backend pixi env**) or to attach to a remote one. `GET /api/health` reports the interpreter + CUDA status. To run the backend on its own: `pixi run backend`.
 
 To run the backend on its own (e.g. for API testing) or the tests:
 
@@ -192,11 +186,11 @@ Normally the app auto-discovers the pixi env (`.pixi/envs/default/`). To force a
 
 ```powershell
 # Windows (PowerShell)
-$env:RTASOID_PYTHON = "C:\path\to\python.exe"; .venv-gui\Scripts\python.exe gui\app.py
+$env:RTASOID_PYTHON = "C:\path\to\python.exe"; pixi run gui
 ```
 ```bash
 # macOS / Linux
-export RTASOID_PYTHON="/path/to/python"; .venv-gui/bin/python gui/app.py
+export RTASOID_PYTHON="/path/to/python"; pixi run gui
 ```
 
 The chosen interpreter is printed as `[backend] launching with interpreter: ...`, and `/api/health` reports its torch/CUDA status.
@@ -216,7 +210,7 @@ pixi run pytest tests/test_rlt_service.py   # a single module
 The frontend has its own headless suite (Qt offscreen, synthetic videos):
 
 ```bash
-.venv-gui/Scripts/python.exe gui/run_all_tests.py
+pixi run -e gui python gui/run_all_tests.py
 ```
 
 ---

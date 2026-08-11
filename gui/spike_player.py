@@ -1,6 +1,6 @@
 """Standalone Phase 0 spike: a minimal frame-accurate video player.
 
-    .venv-gui/Scripts/python.exe gui/spike_player.py [video_path]
+    pixi run -e gui python gui/spike_player.py [video_path]
 
 With no argument it generates a synthetic index-marked sample so you can watch
 frame-accurate stepping (each frame shows its own index) immediately. Use the

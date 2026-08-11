@@ -1,6 +1,6 @@
 """Phase 2: MainWindow + panels, offscreen (no window shown).
 
-    QT_QPA_PLATFORM=offscreen .venv-gui/Scripts/python.exe gui/tests/test_app.py
+    QT_QPA_PLATFORM=offscreen pixi run -e gui python gui/tests/test_app.py
     pytest gui/tests/test_app.py
 """
 

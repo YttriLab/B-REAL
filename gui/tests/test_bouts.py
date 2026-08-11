@@ -1,6 +1,6 @@
 """Phase 2: behavior/bout model logic.
 
-    .venv-gui/Scripts/python.exe gui/tests/test_bouts.py
+    pixi run -e gui python gui/tests/test_bouts.py
     pytest gui/tests/test_bouts.py
 """
 

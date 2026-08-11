@@ -8,18 +8,10 @@ remote one (e.g. the 3090 rig), so torch/CUDA stay out of the GUI bundle.
 ## Build (run on each target OS separately)
 
 ```bash
-# Windows (from repo root, in the GUI venv)
-.venv-gui/Scripts/pip install -r gui/requirements.txt pyinstaller
-.venv-gui/Scripts/pyinstaller gui/packaging/realtimeasoid.spec
-# -> dist/RealtimeASOID/RealtimeASOID.exe
-```
-
-```bash
-# macOS / Linux
-python -m venv .venv-gui
-.venv-gui/bin/pip install -r gui/requirements.txt pyinstaller
-.venv-gui/bin/pyinstaller gui/packaging/realtimeasoid.spec
-# -> dist/RealtimeASOID/RealtimeASOID
+# From repo root — pyinstaller is a dependency of the gui pixi environment
+pixi install -e gui
+pixi run -e gui pyinstaller gui/packaging/realtimeasoid.spec
+# -> dist/RealtimeASOID/RealtimeASOID(.exe)
 ```
 
 PyInstaller does not cross-compile: build the Windows bundle on Windows, the mac
