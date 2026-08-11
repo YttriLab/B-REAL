@@ -2,7 +2,7 @@
 
     .venv-gui/Scripts/python.exe gui/tools/screenshot_app.py [out.png] [tab]
 
-`tab` selects what's showing: label (default), preprocess, train, export,
+`tab` selects what's showing: label (default), preprocess, train, tune, export,
 active_learning, or al_results (active-learning tab + fake results loaded, so
 the uncertainty timeline and on-video HUD render too).
 
@@ -34,6 +34,7 @@ from tools.index_video import write_index_video  # noqa: E402
 TAB_WIDGETS = {
     "preprocess": "preprocess",
     "train": "train",
+    "tune": "tune",
     "export": "export",
     "active_learning": "active_learning",
     "al_results": "active_learning",

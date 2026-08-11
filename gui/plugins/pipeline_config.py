@@ -9,6 +9,34 @@ from __future__ import annotations
 
 from typing import Optional
 
+# Architecture choices, shared by the Train, Tune and benchmark UIs so they can't
+# drift apart. b4-b7 are supported by model_tsm.build_tsm_efficientnet but are
+# ImageNet-trained at higher resolutions (see VARIANT_NATIVE_SIZE) and need a
+# smaller batch to fit in VRAM.
+VARIANTS = ["b0", "b1", "b2", "b3", "b4", "b5", "b6", "b7"]
+VARIANT_NATIVE_SIZE = {"b0": 224, "b1": 240, "b2": 260, "b3": 300,
+                       "b4": 380, "b5": 456, "b6": 528, "b7": 600}
+POOLS = ["last", "mean", "max"]
+
+# Sweep choices.
+OBJECTIVES = ["val_mcc", "val_balanced_acc", "val_acc", "val_loss"]
+BATCH_CHOICES = [8, 16, 32, 64, 128]
+IMAGE_SIZE_CHOICES = [224, 260, 300, 380]
+FRAMES_CHOICES = [2, 3, 4, 5]
+PRECISIONS = ["fp32", "fp16"]
+
+# Deployment runtimes latency is measured in. TorchScript is kept only for
+# comparison — it is not what a rig runs, and it mispredicts the frame budget
+# badly (on one box, b0@224: TorchScript CPU p99 81ms vs OpenVINO 24ms).
+TARGETS = ["auto", "openvino", "tensorrt", "torchscript"]
+TARGET_LABELS = {
+    "auto": "auto (TensorRT if CUDA, else OpenVINO)",
+    "openvino": "CPU rig — OpenVINO",
+    "tensorrt": "GPU rig — TensorRT",
+    "torchscript": "TorchScript (comparison only)",
+}
+EXPORT_FORMATS = ["torchscript", "onnx", "openvino", "tensorrt"]
+
 # CropParams defaults mirror backend/routers/preprocessing.py::CropParams.
 CROP_DEFAULTS = {
     "box_size": 220,
@@ -50,6 +78,9 @@ def build_train_config(
     dropout: float = 0.2,
     lr: float = 1e-4,
     weight_decay: float = 1e-3,
+    batch_size: int = 64,
+    num_workers: int = 4,
+    image_size: int = 224,
     max_epochs: int = 100,
     early_stopping_patience: int = 20,
     binarize: Optional[str] = None,
@@ -77,6 +108,9 @@ def build_train_config(
         "dropout": dropout,
         "lr": lr,
         "weight_decay": weight_decay,
+        "batch_size": batch_size,
+        "num_workers": num_workers,
+        "image_size": image_size,
         "max_epochs": max_epochs,
         "early_stopping_patience": early_stopping_patience,
         "train_percent": train_percent,
@@ -90,3 +124,48 @@ def build_train_config(
     if run_name:
         cfg["run_name"] = run_name
     return cfg
+
+
+def range_spec(low: float, high: float, log: bool = False) -> dict:
+    """One continuous dimension of the search space (RangeSpec)."""
+    return {"low": float(low), "high": float(high), "log": bool(log)}
+
+
+def choice_spec(choices: list) -> dict:
+    """One discrete dimension of the search space (CategoricalSpec)."""
+    return {"choices": list(choices)}
+
+
+def latency_spec(max_p99_ms: float, *, batch_size: int = 1, precision: str = "fp32",
+                 iters: int = 100, warmup: int = 20, target: str = "auto") -> dict:
+    """Frame-budget constraint (LatencyConstraint). Architectures whose p99 in
+    the deployment runtime exceeds max_p99_ms are rejected before they train.
+
+    `target` names that runtime — pick the one the rig runs, which need not be
+    the machine doing the sweep.
+    """
+    return {
+        "max_p99_ms": float(max_p99_ms), "batch_size": int(batch_size),
+        "precision": precision, "iters": int(iters), "warmup": int(warmup),
+        "target": target,
+    }
+
+
+def build_tuning_request(base: dict, *, space: dict, n_trials: int = 20,
+                         objective: str = "val_mcc",
+                         latency: Optional[dict] = None) -> dict:
+    """Flat dict for POST /api/tuning/start (TuningRequest).
+
+    `base` is a build_train_config() result — the fixed baseline the sweep varies
+    around. `space` maps parameter name -> range_spec()/choice_spec(); only the
+    parameters present are swept.
+    """
+    req = {
+        "base": base,
+        "n_trials": int(n_trials),
+        "objective_metric": objective,
+        **space,
+    }
+    if latency:
+        req["latency"] = latency
+    return req

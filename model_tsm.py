@@ -154,11 +154,19 @@ def build_tsm_efficientnet(
     weights = "DEFAULT" if pretrained else None
     print(f"[build_tsm_efficientnet] pretrained={pretrained}, weights={weights}")
 
+    # b4-b7 share b0-b3's layout (features[0] stem, features[1-7] MBConv,
+    # classifier[1]), so everything below works unchanged. They are ImageNet-trained
+    # at 380/456/528/600px though, so at the data module's default 224 they cost
+    # their full parameter count for little gain — raise image_size with them.
     builder = {
         "b0": models.efficientnet_b0,
         "b1": models.efficientnet_b1,
         "b2": models.efficientnet_b2,
         "b3": models.efficientnet_b3,
+        "b4": models.efficientnet_b4,
+        "b5": models.efficientnet_b5,
+        "b6": models.efficientnet_b6,
+        "b7": models.efficientnet_b7,
     }
     if variant not in builder:
         raise ValueError(f"Unsupported EfficientNet variant '{variant}'. Choose from {list(builder.keys())}")

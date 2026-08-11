@@ -22,7 +22,7 @@ PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from backend.routers import preprocessing, training, inference, project  # noqa: E402
+from backend.routers import preprocessing, training, tuning, inference, project  # noqa: E402
 
 
 def device_info() -> dict:
@@ -56,8 +56,11 @@ async def lifespan(app: FastAPI):
     # Cleanup: cancel any running tasks
     from backend.services.preprocess_service import cancel_all as preprocess_cancel
     from backend.services.training_service import cancel_all as training_cancel
+    from backend.services.tuning_service import cancel_all as tuning_cancel
     from backend.services.inference_service import cancel_all as inference_cancel
     preprocess_cancel()
+    # Sweeps first: each holds a live training subprocess of its own.
+    tuning_cancel()
     training_cancel()
     inference_cancel()
 
@@ -76,6 +79,7 @@ app.add_middleware(
 # Mount routers
 app.include_router(preprocessing.router, prefix="/api/preprocess", tags=["preprocessing"])
 app.include_router(training.router, prefix="/api/training", tags=["training"])
+app.include_router(tuning.router, prefix="/api/tuning", tags=["tuning"])
 app.include_router(inference.router, prefix="/api/inference", tags=["inference"])
 app.include_router(project.router, prefix="/api/project", tags=["project"])
 

@@ -52,3 +52,6 @@ Thumbs.db
 *.log
 *.bak
 *.rlt
+
+# CodeGraph local index (per-machine, user-managed)
+.codegraph/

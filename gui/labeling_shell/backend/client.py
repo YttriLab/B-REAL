@@ -168,9 +168,35 @@ class BackendClient:
             "output_name": output_name, "tsm_stages": tsm_stages,
         })
 
+    def export_optimized(self, checkpoint_path: str, output_dir: str,
+                         output_name: str = "tsm_model", fmt: str = "onnx",
+                         tsm_stages: Optional[list] = None,
+                         num_frames: Optional[int] = None, image_size: int = 224,
+                         batch_size: int = 1, precision: str = "fp32") -> dict:
+        """Export to a deployment format (onnx | openvino | tensorrt)."""
+        return self._post("/api/training/export-optimized", {
+            "checkpoint_path": checkpoint_path, "output_dir": output_dir,
+            "output_name": output_name, "format": fmt, "tsm_stages": tsm_stages,
+            "num_frames": num_frames, "image_size": image_size,
+            "batch_size": batch_size, "precision": precision,
+        })
+
     def benchmark_inference(self, **kw) -> dict:
-        """Kwargs mirror BenchmarkRequest (variant, num_frames, tsm_stages, …)."""
+        """Kwargs mirror BenchmarkRequest (variant, num_frames, tsm_stages, …,
+        target: auto | openvino | tensorrt | torchscript)."""
         return self._post("/api/training/benchmark-inference", kw)
+
+    # --------------------------------------------------------------- tuning
+    def start_tuning(self, request: dict) -> dict:
+        """`request` is the TuningRequest dict: {base, n_trials, objective_metric,
+        per-parameter specs, latency}."""
+        return self._post("/api/tuning/start", request)
+
+    def tuning_status(self, task_id: str) -> Iterator[dict]:
+        return self._stream("GET", f"/api/tuning/status/{task_id}")
+
+    def stop_tuning(self, task_id: str) -> dict:
+        return self._post(f"/api/tuning/stop/{task_id}")
 
     # ------------------------------------------------------------ inference
     def run_inference(self, checkpoint_path: str, frame_dir: Optional[str] = None,

@@ -185,10 +185,19 @@ def main():
     class_ids, counts = torch.unique(torch.tensor(train_data[1]), return_counts=True)
     weights = counts.sum() / counts
 
+    dl_cfg = (OmegaConf.to_container(config.data_loader, resolve=True)
+              if "data_loader" in config else {})
+    num_frames = config.model.get("num_frames", 3)
+
     info(f"Building model (variant {config.model.get('variant', 'b0')}, "
          f"max {config.max_epochs} epochs)...")
+    info(f"Data loader: batch_size={dl_cfg.get('batch_size', 64)}, "
+         f"image_size={dl_cfg.get('image_size', 224)}, num_frames={num_frames} "
+         f"(effective batch {dl_cfg.get('batch_size', 64) * num_frames} images/step).")
 
-    data_module = MultiImageDataModule(train_data, valid_data, test_data)
+    data_module = MultiImageDataModule(
+        train_data, valid_data, test_data, num_frames=num_frames, **dl_cfg
+    )
 
     boundary_smoothing = (
         OmegaConf.to_container(config.boundary_smoothing, resolve=True)

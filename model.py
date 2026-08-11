@@ -256,29 +256,25 @@ class MultiImageDataset(Dataset):
         return len(self.image_paths)
 
     def __getitem__(self, idx):
-        img1_path, img2_path, img3_path = self.image_paths[idx]
+        # A clip is however many frames load_data grouped (frames_per_group), not
+        # necessarily 3 — the transform's additional_targets are built to match.
+        paths = self.image_paths[idx]
         label = self.labels[idx]
         boundary_dist = self.boundary_dists[idx]
 
         # Load images with OpenCV and convert BGR to RGB
-        img1 = cv2.cvtColor(cv2.imread(img1_path), cv2.COLOR_BGR2RGB)
-        img2 = cv2.cvtColor(cv2.imread(img2_path), cv2.COLOR_BGR2RGB)
-        img3 = cv2.cvtColor(cv2.imread(img3_path), cv2.COLOR_BGR2RGB)
+        imgs = [cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB) for p in paths]
 
-        # Apply transforms
+        # Apply transforms. The first frame is the primary 'image' target; the rest
+        # ride along as image1..imageN-1 so they share one sampled set of params.
         if self.transform:
-            transformed = self.transform(
-                image=img1,
-                image1=img2,
-                image2=img3
-            )
-            img1 = transformed['image']
-            img2 = transformed['image1']
-            img3 = transformed['image2']
+            keys = ['image'] + [f'image{i}' for i in range(1, len(imgs))]
+            transformed = self.transform(**dict(zip(keys, imgs)))
+            imgs = [transformed[k] for k in keys]
 
-        triplet = torch.stack([img1, img2, img3])
+        clip = torch.stack(imgs)
 
-        return triplet, label, boundary_dist
+        return clip, label, boundary_dist
 
 # DataModule
 class MultiImageDataModule(L.LightningDataModule):
@@ -290,6 +286,7 @@ class MultiImageDataModule(L.LightningDataModule):
         batch_size=64,
         num_workers=4,
         image_size=224,
+        num_frames=3,
     ):
         super().__init__()
         self.train_data = train_data
@@ -298,7 +295,12 @@ class MultiImageDataModule(L.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.image_size = image_size
-        
+        self.num_frames = num_frames
+
+        # One extra target per frame after the first, so a clip of any length goes
+        # through the augmentation pipeline with a single sampled set of params.
+        extra_targets = {f'image{i}': 'image' for i in range(1, num_frames)}
+
         # Training transforms with augmentation
         self.train_transform = A.Compose([
             A.Resize(image_size, image_size),
@@ -312,8 +314,8 @@ class MultiImageDataModule(L.LightningDataModule):
                 max_pixel_value=255.0
             ),
             A.pytorch.ToTensorV2(),
-        ], additional_targets={'image1': 'image', 'image2': 'image'},
-           # A clip's 3 consecutive crops can differ in pixel size (e.g. frames
+        ], additional_targets=extra_targets,
+           # A clip's consecutive crops can differ in pixel size (e.g. frames
            # near a frame edge, or a mix of preprocessing runs). Resize is the
            # first op and, via additional_targets, normalizes all three to the
            # same square with identical params — so the pre-transform equal-size
@@ -329,7 +331,7 @@ class MultiImageDataModule(L.LightningDataModule):
                 max_pixel_value=255.0
             ),
             A.pytorch.ToTensorV2(),
-        ], additional_targets={'image1': 'image', 'image2': 'image'},
+        ], additional_targets=extra_targets,
            is_check_shapes=False)  # see train_transform: Resize normalizes sizes
 
     def setup(self, stage=None):

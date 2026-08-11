@@ -49,6 +49,11 @@ class TrainingConfig(BaseModel):
     weight_decay: float = 1e-3
     temporal_pool: str = "last"
 
+    # Data loader
+    batch_size: int = 64
+    num_workers: int = 4
+    image_size: int = 224
+
     # Training
     max_epochs: int = 100
     early_stopping_patience: int = 20
@@ -85,6 +90,19 @@ class ExportTorchscriptRequest(BaseModel):
     tsm_stages: Optional[list[int]] = None
 
 
+class ExportOptimizedRequest(BaseModel):
+    """Export a checkpoint to a deployment format (what the rig actually runs)."""
+    checkpoint_path: str
+    output_dir: str
+    output_name: str = "tsm_model"
+    format: str = "onnx"        # onnx | openvino | tensorrt
+    tsm_stages: Optional[list[int]] = None
+    num_frames: Optional[int] = None
+    image_size: int = 224
+    batch_size: int = 1
+    precision: str = "fp32"     # fp32 | fp16
+
+
 class BenchmarkRequest(BaseModel):
     """Architecture to time the optimized inference path for (pre-training)."""
     variant: str = "b0"
@@ -97,6 +115,9 @@ class BenchmarkRequest(BaseModel):
     precision: str = "fp32"  # fp32 | fp16
     iters: int = 100
     warmup: int = 20
+    # Deployment runtime to measure in. "auto" picks TensorRT on a CUDA box and
+    # OpenVINO otherwise; "torchscript" is kept for comparison, not deployment.
+    target: str = "auto"     # auto | openvino | tensorrt | torchscript
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────
@@ -130,6 +151,13 @@ async def api_start_training(req: TrainingConfig):
             "lr": req.lr,
             "weight_decay": req.weight_decay,
             "temporal_pool": req.temporal_pool,
+        },
+        # Separate from "model" on purpose: the trainer splats config.model into
+        # TSMClassifier(**...), which would reject these.
+        "data_loader": {
+            "batch_size": req.batch_size,
+            "num_workers": req.num_workers,
+            "image_size": req.image_size,
         },
         "max_epochs": req.max_epochs,
         "callbacks": {
@@ -241,13 +269,40 @@ async def api_export_torchscript(req: ExportTorchscriptRequest):
         raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
 
 
+@router.post("/export-optimized")
+async def api_export_optimized(req: ExportOptimizedRequest):
+    """Export a .ckpt to ONNX / OpenVINO IR / a TensorRT engine — the same
+    formats the latency gate measures, so the rig runs what was benchmarked."""
+    import os
+
+    if not os.path.exists(req.checkpoint_path):
+        raise HTTPException(status_code=404, detail=f"Checkpoint not found: {req.checkpoint_path}")
+
+    def _run():
+        from optimized_runtime import export_optimized
+        return export_optimized(
+            req.checkpoint_path, req.output_dir, req.output_name,
+            fmt=req.format, tsm_stages=req.tsm_stages, num_frames=req.num_frames,
+            image_size=req.image_size, batch_size=req.batch_size,
+            precision=req.precision,
+        )
+
+    try:
+        return await asyncio.to_thread(_run)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+
+
 @router.post("/benchmark-inference")
 async def api_benchmark_inference(req: BenchmarkRequest):
-    """Time the optimized (TorchScript) inference latency for an architecture
-    before training it — so a user can size their real-time compute budget."""
+    """Time inference for an architecture in its deployment runtime before
+    training it — so a user can size their real-time compute budget."""
     def _run():
-        from convert_torchscript_tsm import benchmark_model
-        return benchmark_model(
+        from optimized_runtime import benchmark_optimized
+        return benchmark_optimized(
+            target=req.target,
             variant=req.variant,
             num_frames=req.num_frames,
             tsm_stages=req.tsm_stages,
@@ -262,5 +317,10 @@ async def api_benchmark_inference(req: BenchmarkRequest):
 
     try:
         return await asyncio.to_thread(_run)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+        # A missing runtime is a 503: the request is fine, this box can't serve it.
+        from optimized_runtime import RuntimeUnavailable
+        status = 503 if isinstance(e, RuntimeUnavailable) else 500
+        raise HTTPException(status_code=status, detail=f"{type(e).__name__}: {e}")

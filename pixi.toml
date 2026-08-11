@@ -54,6 +54,13 @@ omegaconf = "*"
 pyyaml = "*"
 optuna = "*"
 wandb = "*"
+# Deployment-format export + latency measurement (see optimized_runtime.py).
+# ONNX is the shared intermediate; OpenVINO serves the CPU target. The GPU
+# target uses tensorrt-cu12, declared under [pypi-dependencies] below (it is not
+# on conda-forge). A missing runtime fails loudly rather than falling back to
+# TorchScript numbers that don't predict the frame budget.
+onnx = "*"
+openvino = "*"
 # Tests
 pytest = "*"
 pytest-asyncio = "*"
@@ -67,3 +74,9 @@ httpx = "*"
 # sourcing it from PyPI (where the wheel build is intact) sidesteps the bug.
 [pypi-dependencies]
 simsimd = "*"
+# TensorRT: the GPU deployment runtime the tuning latency gate measures against
+# (optimized_runtime.py). NVIDIA publishes it only to PyPI, not conda-forge, and
+# the env has no pip — so it goes here, where pixi resolves it. The -cu12 variant
+# matches the CUDA 12 runtime pytorch-gpu brings in; tensorrt-cu13 would load a
+# second, conflicting CUDA into the same process.
+tensorrt-cu12 = "*"

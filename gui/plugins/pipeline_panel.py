@@ -15,16 +15,19 @@ BackendClient, streaming SSE progress on background threads (backend_worker).
 
 from __future__ import annotations
 
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from labeling_shell.backend_worker import CallWorker, StreamWorker
 from labeling_shell.frame_ranges import compute_labeled_frame_ranges
 from labeling_shell.theme import mark_accent
 
-from .pipeline_config import CROP_DEFAULTS, build_train_config, parse_stages
-
-VARIANTS = ["b0", "b1", "b2", "b3"]
-POOLS = ["last", "mean", "max"]
+from .pipeline_config import (
+    BATCH_CHOICES, CROP_DEFAULTS, EXPORT_FORMATS, FRAMES_CHOICES,
+    IMAGE_SIZE_CHOICES, OBJECTIVES, POOLS, PRECISIONS, TARGET_LABELS, TARGETS,
+    VARIANT_NATIVE_SIZE, VARIANTS,
+    build_train_config, build_tuning_request, choice_spec, latency_spec,
+    parse_stages, range_spec,
+)
 
 
 class _Base(QtWidgets.QWidget):
@@ -177,15 +180,28 @@ class TrainTab(_Base):
         self.dropout = self._dspin(0.2, 0.0, 0.9, 0.05)
         self.lr = self._dspin(1e-4, 1e-6, 1.0, 1e-4, decimals=6)
         self.weight_decay = self._dspin(1e-3, 0.0, 1.0, 1e-4, decimals=6)
+        self.batch_size = self._ispin(64, 1, 1024)
+        self.image_size = self._ispin(224, 32, 800)
         self.max_epochs = self._ispin(100, 1, 100000)
         self.patience = self._ispin(20, 1, 100000)
         self.binarize = QtWidgets.QComboBox()
+
+        # A clip is num_frames images, so the backbone sees batch_size × frames
+        # per step — the number that decides whether a big variant fits in VRAM.
+        self.batch_hint = QtWidgets.QLabel()
+        self.batch_hint.setWordWrap(True)
+        for w in (self.batch_size, self.frames_per_group, self.image_size):
+            w.valueChanged.connect(self._update_batch_hint)
+        self.variant.currentTextChanged.connect(self._update_batch_hint)
+        self._update_batch_hint()
 
         for label, w in [
             ("frames/group", self.frames_per_group), ("variant", self.variant),
             ("tsm_stages", self.tsm_stages), ("temporal_pool", self.temporal_pool),
             ("", self.unidirectional), ("", self.pretrained), ("dropout", self.dropout),
             ("lr", self.lr), ("weight_decay", self.weight_decay),
+            ("batch_size", self.batch_size), ("image_size", self.image_size),
+            ("", self.batch_hint),
             ("max_epochs", self.max_epochs), ("early stop patience", self.patience),
             ("binarize (positive class)", self.binarize),
         ]:
@@ -224,6 +240,15 @@ class TrainTab(_Base):
         w.setValue(val)
         return w
 
+    def _update_batch_hint(self) -> None:
+        effective = self.batch_size.value() * self.frames_per_group.value()
+        native = VARIANT_NATIVE_SIZE.get(self.variant.currentText(), 224)
+        msg = f"effective batch: {effective} images/step"
+        if self.image_size.value() < native:
+            msg += (f" — {self.variant.currentText()} is trained at {native}px; "
+                    f"at {self.image_size.value()}px you pay its full size for little gain")
+        self.batch_hint.setText(msg)
+
     def refresh(self) -> None:
         current = self.binarize.currentText()
         self.binarize.clear()
@@ -246,6 +271,8 @@ class TrainTab(_Base):
             pretrained=self.pretrained.isChecked(),
             dropout=self.dropout.value(), lr=self.lr.value(),
             weight_decay=self.weight_decay.value(),
+            batch_size=self.batch_size.value(),
+            image_size=self.image_size.value(),
             max_epochs=self.max_epochs.value(),
             early_stopping_patience=self.patience.value(),
             binarize=None if binarize in ("", "(none)") else binarize,
@@ -297,6 +324,457 @@ class TrainTab(_Base):
                              lambda _res: self.ctx.status("Stop requested."))
 
 
+class _ChoiceList(QtWidgets.QListWidget):
+    """A compact multi-select over a fixed set of values, used for the sweep's
+    categorical dimensions. Keeps the value alongside the label so `tsm_stages`
+    can display "5,6,7" while frames_per_group holds an int."""
+
+    def __init__(self, values, labels=None, checked=(), parent=None):
+        super().__init__(parent)
+        self.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        labels = labels or [str(v) for v in values]
+        for value, label in zip(values, labels):
+            item = QtWidgets.QListWidgetItem(label)
+            item.setData(QtCore.Qt.UserRole, value)
+            item.setCheckState(
+                QtCore.Qt.Checked if value in checked else QtCore.Qt.Unchecked)
+            self.addItem(item)
+        # Show every choice: a scrollbar inside the panel's own scroll area
+        # makes the options hard to reach.
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setFixedHeight(len(values) * 22 + 8)
+
+    def checked_values(self) -> list:
+        return [self.item(i).data(QtCore.Qt.UserRole)
+                for i in range(self.count())
+                if self.item(i).checkState() == QtCore.Qt.Checked]
+
+
+class _SweepRow:
+    """One dimension of the search space: an enable checkbox plus its inputs.
+
+    Holds no Qt parent of its own — the widgets are laid out by TuneTab. `spec()`
+    returns the wire-format dict, or None when the row is disabled.
+    """
+
+    def __init__(self, name: str, checkbox, widgets: list, spec_fn):
+        self.name = name
+        self.checkbox = checkbox
+        self.widgets = widgets
+        self._spec_fn = spec_fn
+        checkbox.toggled.connect(self._set_enabled)
+        self._set_enabled(checkbox.isChecked())
+
+    def _set_enabled(self, on: bool) -> None:
+        for w in self.widgets:
+            w.setEnabled(on)
+
+    def enabled(self) -> bool:
+        return self.checkbox.isChecked()
+
+    def spec(self):
+        return self._spec_fn() if self.enabled() else None
+
+
+class TuneTab(_Base):
+    """Optuna sweep over the Train tab's configuration.
+
+    The baseline (data sources, splits, binarize, epochs) comes from TrainTab so
+    there is exactly one config builder; this tab only describes what varies.
+    """
+
+    # Leaderboard columns
+    COL_TRIAL, COL_STATE, COL_VALUE, COL_PARAMS = range(4)
+
+    def __init__(self, ctx, train_tab=None, parent=None):
+        super().__init__(ctx, parent)
+        self.train_tab = train_tab
+        layout = QtWidgets.QVBoxLayout(self)
+
+        layout.addWidget(QtWidgets.QLabel(
+            "Sweeps the parameters ticked below. Everything else — data sources, "
+            "splits, positive class, max_epochs — is taken from the Train tab."))
+
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        inner = QtWidgets.QWidget()
+        scroll.setWidget(inner)
+        vbox = QtWidgets.QVBoxLayout(inner)
+
+        space_box = QtWidgets.QGroupBox("Search space")
+        grid = QtWidgets.QGridLayout(space_box)
+        self.rows: list[_SweepRow] = []
+        self._grid_row = 0
+
+        self.lr_lo, self.lr_hi, self.lr_log = self._add_range_row(
+            grid, "lr", 1e-5, 1e-2, log=True, checked=True)
+        self.wd_lo, self.wd_hi, self.wd_log = self._add_range_row(
+            grid, "weight_decay", 1e-6, 1e-2, log=True)
+        self.do_lo, self.do_hi, self.do_log = self._add_range_row(
+            grid, "dropout", 0.0, 0.6, log=False)
+
+        self.variant_list = self._add_choice_row(
+            grid, "variant", VARIANTS,
+            labels=[f"{v}  ({VARIANT_NATIVE_SIZE[v]}px native)" for v in VARIANTS],
+            checked=("b0",))
+        self.batch_list = self._add_choice_row(grid, "batch_size", BATCH_CHOICES)
+        self.image_list = self._add_choice_row(grid, "image_size", IMAGE_SIZE_CHOICES)
+        self.pool_list = self._add_choice_row(grid, "temporal_pool", POOLS)
+        self.frames_list = self._add_choice_row(
+            grid, "frames_per_group", FRAMES_CHOICES,
+            hint="changes the data window — clips are re-grouped per trial")
+
+        # tsm_stages is free text: too many useful combinations to enumerate.
+        self.stages_edit = QtWidgets.QLineEdit("5,6,7;3,4,5,6,7;1,2,3,4,5,6,7")
+        self._add_widget_row(
+            grid, "tsm_stages", [self.stages_edit],
+            lambda: choice_spec([s.strip() for s in self.stages_edit.text().split(";")
+                                 if s.strip()]),
+            hint="semicolon-separated stage lists")
+
+        vbox.addWidget(space_box)
+
+        # ---- latency constraint -------------------------------------------
+        lat_box = QtWidgets.QGroupBox("Frame budget (reject slow architectures)")
+        lat_form = QtWidgets.QFormLayout(lat_box)
+        self.lat_enabled = QtWidgets.QCheckBox("Constrain p99 inference latency")
+        self.lat_p99 = QtWidgets.QDoubleSpinBox()
+        self.lat_p99.setDecimals(2)
+        self.lat_p99.setRange(0.01, 10000.0)
+        self.lat_p99.setValue(33.0)  # ~30 fps
+        self.lat_p99.setSuffix(" ms")
+        self.lat_batch = QtWidgets.QSpinBox()
+        self.lat_batch.setRange(1, 256)
+        self.lat_batch.setValue(1)
+        self.lat_precision = QtWidgets.QComboBox()
+        self.lat_precision.addItems(PRECISIONS)
+        self.lat_target = QtWidgets.QComboBox()
+        for t in TARGETS:
+            self.lat_target.addItem(TARGET_LABELS[t], t)
+        lat_form.addRow(self.lat_enabled)
+        lat_form.addRow("deployment target", self.lat_target)
+        lat_form.addRow("max p99", self.lat_p99)
+        lat_form.addRow("batch size", self.lat_batch)
+        lat_form.addRow("precision", self.lat_precision)
+        lat_form.addRow(QtWidgets.QLabel(
+            "Each sampled architecture is exported to the deployment format "
+            "(OpenVINO for a CPU rig, TensorRT for a GPU one) and timed before "
+            "it trains; anything over budget is rejected without spending a "
+            "training run. Engine builds are cached per architecture. If the "
+            "runtime isn't installed the sweep refuses to start, rather than "
+            "reporting numbers from a format you don't deploy."))
+        for w in (self.lat_p99, self.lat_batch, self.lat_precision, self.lat_target):
+            w.setEnabled(False)
+            self.lat_enabled.toggled.connect(w.setEnabled)
+        vbox.addWidget(lat_box)
+
+        # ---- sweep settings -----------------------------------------------
+        settings = QtWidgets.QGroupBox("Sweep")
+        sf = QtWidgets.QFormLayout(settings)
+        self.n_trials = QtWidgets.QSpinBox()
+        self.n_trials.setRange(1, 1000)
+        self.n_trials.setValue(20)
+        self.objective = QtWidgets.QComboBox()
+        self.objective.addItems(OBJECTIVES)
+        sf.addRow("trials", self.n_trials)
+        sf.addRow("objective", self.objective)
+        vbox.addWidget(settings)
+        vbox.addStretch(1)
+        # The controls are what the user works in; the leaderboard and log only
+        # matter once a sweep is running, so give the form the bulk of the panel.
+        scroll.setMinimumHeight(320)
+        layout.addWidget(scroll, 4)
+
+        btns = QtWidgets.QHBoxLayout()
+        self.start_btn = QtWidgets.QPushButton("Start sweep")
+        mark_accent(self.start_btn)
+        self.stop_btn = QtWidgets.QPushButton("Stop")
+        self.stop_btn.setEnabled(False)
+        self.apply_btn = QtWidgets.QPushButton("Apply best to Train tab")
+        self.apply_btn.setEnabled(False)
+        self.start_btn.clicked.connect(self._start)
+        self.stop_btn.clicked.connect(self._stop)
+        self.apply_btn.clicked.connect(self._apply_best)
+        for b in (self.start_btn, self.stop_btn, self.apply_btn):
+            btns.addWidget(b)
+        layout.addLayout(btns)
+
+        self.table = QtWidgets.QTableWidget(0, 4)
+        self.table.setHorizontalHeaderLabels(["trial", "state", "objective", "params"])
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.table.verticalHeader().setVisible(False)
+        layout.addWidget(self.table, 2)
+
+        self.log = QtWidgets.QPlainTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setMaximumHeight(140)
+        layout.addWidget(self.log, 1)
+
+        self._task_id = None
+        self._rows_by_trial: dict[int, int] = {}   # trial number -> table row
+        self._best_params: dict | None = None
+
+    # ---- search-space row builders ----------------------------------------
+
+    def _add_widget_row(self, grid, name, widgets, spec_fn, checked=False, hint=None):
+        cb = QtWidgets.QCheckBox(name)
+        cb.setChecked(checked)
+        grid.addWidget(cb, self._grid_row, 0)
+        holder = QtWidgets.QWidget()
+        hb = QtWidgets.QHBoxLayout(holder)
+        hb.setContentsMargins(0, 0, 0, 0)
+        for w in widgets:
+            hb.addWidget(w)
+        if hint:
+            label = QtWidgets.QLabel(hint)
+            label.setWordWrap(True)
+            hb.addWidget(label, 1)
+        else:
+            hb.addStretch(1)
+        grid.addWidget(holder, self._grid_row, 1)
+        self._grid_row += 1
+        self.rows.append(_SweepRow(name, cb, widgets, spec_fn))
+        return widgets
+
+    def _add_range_row(self, grid, name, low, high, log=False, checked=False):
+        lo = self._range_spin(low)
+        hi = self._range_spin(high)
+        log_cb = QtWidgets.QCheckBox("log scale")
+        log_cb.setChecked(log)
+        self._add_widget_row(
+            grid, name, [lo, hi, log_cb],
+            lambda: range_spec(lo.value(), hi.value(), log_cb.isChecked()),
+            checked=checked)
+        return lo, hi, log_cb
+
+    def _add_choice_row(self, grid, name, values, labels=None, checked=(), hint=None):
+        lst = _ChoiceList(values, labels=labels, checked=checked)
+        self._add_widget_row(grid, name, [lst],
+                             lambda: choice_spec(lst.checked_values()), hint=hint)
+        return lst
+
+    @staticmethod
+    def _range_spin(value):
+        w = QtWidgets.QDoubleSpinBox()
+        w.setDecimals(6)
+        w.setRange(0.0, 1000.0)
+        w.setSingleStep(1e-4)
+        w.setValue(value)
+        return w
+
+    # ---- request assembly --------------------------------------------------
+
+    def build_space(self) -> dict:
+        """{param: spec} for every ticked row (empty rows included, so validation
+        can report them)."""
+        return {row.name: row.spec() for row in self.rows if row.enabled()}
+
+    def build_latency(self):
+        if not self.lat_enabled.isChecked():
+            return None
+        return latency_spec(self.lat_p99.value(),
+                            batch_size=self.lat_batch.value(),
+                            precision=self.lat_precision.currentText(),
+                            target=self.lat_target.currentData())
+
+    def build_request(self, base: dict) -> dict:
+        return build_tuning_request(
+            base, space=self.build_space(), n_trials=self.n_trials.value(),
+            objective=self.objective.currentText(), latency=self.build_latency())
+
+    def validate(self) -> str | None:
+        """Mirror the server's 422s so the user gets an inline message."""
+        space = self.build_space()
+        if not space:
+            return "Tick at least one hyperparameter to sweep."
+        for name, spec in space.items():
+            if "choices" in spec and not spec["choices"]:
+                return f"'{name}' is ticked but has no choices selected."
+            if "low" in spec and spec["low"] > spec["high"]:
+                return f"'{name}': low is greater than high."
+        return None
+
+    def refresh(self) -> None:
+        pass
+
+    # ---- run ---------------------------------------------------------------
+
+    def _start(self) -> None:
+        client = self._client()
+        if not client:
+            return
+        problem = self.validate()
+        if problem:
+            self.ctx.status(problem)
+            self.log.appendPlainText(f"[tune] {problem}")
+            return
+        try:
+            base = self._train_tab().build_config()
+        except Exception as e:
+            self.ctx.status(f"Could not build the baseline config: {e}")
+            return
+        if not base.get("label_paths") or not base.get("frame_dirs"):
+            self.ctx.status("Need labels + extracted frames (preprocess first).")
+            return
+
+        self.table.setRowCount(0)
+        self._rows_by_trial.clear()
+        self._best_params = None
+        self.apply_btn.setEnabled(False)
+        self.log.appendPlainText("[tune] starting…")
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+
+        def on_done():
+            self.start_btn.setEnabled(True)
+            self.stop_btn.setEnabled(False)
+            self.ctx.status("Sweep stream ended.")
+
+        def start(res: dict):
+            self._task_id = res.get("task_id")
+            if self._task_id:
+                self._spawn_stream(
+                    lambda: client.tuning_status(self._task_id), self._on_event, on_done)
+            else:
+                on_done()
+
+        self._spawn_call(lambda: client.start_tuning(self.build_request(base)), start)
+
+    def _stop(self) -> None:
+        client = self._client()
+        if client and self._task_id:
+            self._spawn_call(lambda: client.stop_tuning(self._task_id),
+                             lambda _res: self.ctx.status("Stop requested."))
+
+    # ---- event stream ------------------------------------------------------
+
+    def _row_for(self, trial: int) -> int:
+        if trial not in self._rows_by_trial:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            self.table.setItem(row, self.COL_TRIAL, QtWidgets.QTableWidgetItem(str(trial)))
+            for col in (self.COL_STATE, self.COL_VALUE, self.COL_PARAMS):
+                self.table.setItem(row, col, QtWidgets.QTableWidgetItem(""))
+            self._rows_by_trial[trial] = row
+        return self._rows_by_trial[trial]
+
+    def _set(self, trial: int, col: int, text: str) -> None:
+        self.table.item(self._row_for(trial), col).setText(text)
+
+    @staticmethod
+    def _fmt_params(params: dict) -> str:
+        def one(v):
+            return f"{v:.3g}" if isinstance(v, float) else str(v)
+        return ", ".join(f"{k}={one(v)}" for k, v in (params or {}).items())
+
+    def _on_event(self, ev: dict) -> None:
+        kind = ev.get("event")
+        trial = ev.get("trial")
+
+        if kind == "start":
+            self.log.appendPlainText(
+                f"[tune] {ev.get('n_trials')} trials, optimizing "
+                f"{ev.get('objective')} ({ev.get('direction')})")
+        elif kind == "trial_start":
+            self._set(trial, self.COL_STATE, "running")
+            self._set(trial, self.COL_PARAMS, self._fmt_params(ev.get("params")))
+            self.log.appendPlainText(
+                f"[trial {trial}] {self._fmt_params(ev.get('params'))}")
+        elif kind == "latency":
+            p99, budget = ev.get("p99_ms"), ev.get("budget_ms")
+            if p99 is not None:
+                self.log.appendPlainText(
+                    f"[trial {trial}] p99 {p99:.2f} ms (budget {budget:.2f} ms) "
+                    f"on {ev.get('device')} {ev.get('precision')}")
+        elif kind == "latency_error":
+            self.log.appendPlainText(
+                f"[trial {trial}] latency check failed, constraint not applied: "
+                f"{ev.get('error')}")
+        elif kind == "trial_rejected":
+            self._set(trial, self.COL_STATE, "rejected (slow)")
+            self._set(trial, self.COL_VALUE, f"p99 {ev.get('p99_ms', 0):.1f} ms")
+            self._grey(trial)
+            self.log.appendPlainText(
+                f"[trial {trial}] rejected: p99 {ev.get('p99_ms'):.2f} ms exceeds "
+                f"{ev.get('budget_ms'):.2f} ms")
+        elif kind == "epoch":
+            metric = next((k for k in ev if k not in ("event", "trial", "epoch")), None)
+            if metric:
+                self._set(trial, self.COL_VALUE, f"{ev[metric]:.4f}")
+                self._set(trial, self.COL_STATE, f"epoch {ev.get('epoch')}")
+        elif kind == "trial_done":
+            value = ev.get("value")
+            self._set(trial, self.COL_STATE, "done")
+            self._set(trial, self.COL_VALUE, "—" if value is None else f"{value:.4f}")
+            self.log.appendPlainText(f"[trial {trial}] done: {value}")
+        elif kind == "trial_pruned":
+            self._set(trial, self.COL_STATE, "pruned")
+            self._grey(trial)
+        elif kind == "trial_failed":
+            self._set(trial, self.COL_STATE,
+                      "OOM" if ev.get("reason") == "oom" else "failed")
+            self._grey(trial)
+            self.log.appendPlainText(f"[trial {trial}] failed: {ev.get('error')}")
+        elif kind == "done":
+            best = ev.get("best_trial")
+            self._best_params = ev.get("best_params") or None
+            if best is not None:
+                self._set(best, self.COL_STATE, "BEST")
+                self.log.appendPlainText(
+                    f"[tune] best trial {best}: {ev.get('best_value')} "
+                    f"({self._fmt_params(self._best_params)})")
+            else:
+                self.log.appendPlainText("[tune] no trial produced a usable result.")
+            self.apply_btn.setEnabled(self._best_params is not None)
+        elif kind == "cancelled":
+            self.log.appendPlainText("[tune] cancelled.")
+        elif kind == "error":
+            self.log.appendPlainText(f"[tune] error: {ev.get('error')}")
+
+    def _grey(self, trial: int) -> None:
+        row = self._row_for(trial)
+        for col in range(self.table.columnCount()):
+            item = self.table.item(row, col)
+            if item:
+                item.setForeground(QtGui.QBrush(QtGui.QColor(128, 128, 128)))
+
+    # ---- apply -------------------------------------------------------------
+
+    def _train_tab(self):
+        """The sibling TrainTab, wired by PipelinePanel. Set explicitly rather
+        than walked up the parent chain — QTabWidget reparents its pages into an
+        internal stack, so the chain is an implementation detail."""
+        if self.train_tab is None:
+            raise RuntimeError("TuneTab has no Train tab to take its baseline from.")
+        return self.train_tab
+
+    def _apply_best(self) -> None:
+        train = self.train_tab
+        if train is None or not self._best_params:
+            return
+        p = self._best_params
+        setters = {
+            "lr": train.lr.setValue,
+            "weight_decay": train.weight_decay.setValue,
+            "dropout": train.dropout.setValue,
+            "batch_size": lambda v: train.batch_size.setValue(int(v)),
+            "image_size": lambda v: train.image_size.setValue(int(v)),
+            "frames_per_group": lambda v: train.frames_per_group.setValue(int(v)),
+            "variant": train.variant.setCurrentText,
+            "temporal_pool": train.temporal_pool.setCurrentText,
+            "tsm_stages": lambda v: train.tsm_stages.setText(str(v)),
+        }
+        applied = []
+        for name, value in p.items():
+            setter = setters.get(name)
+            if setter:
+                setter(value)
+                applied.append(name)
+        self.ctx.status(f"Applied to Train tab: {', '.join(applied)}")
+        self.log.appendPlainText(f"[tune] applied best params: {self._fmt_params(p)}")
+
+
 class ExportTab(_Base):
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -314,12 +792,20 @@ class ExportTab(_Base):
         self.b_pool.addItems(POOLS)
         self.b_uni = QtWidgets.QCheckBox("Unidirectional")
         self.b_prec = QtWidgets.QComboBox()
-        self.b_prec.addItems(["fp32", "fp16"])
+        self.b_prec.addItems(PRECISIONS)
+        self.b_target = QtWidgets.QComboBox()
+        for t in TARGETS:
+            self.b_target.addItem(TARGET_LABELS[t], t)
+        self.b_size = QtWidgets.QSpinBox()
+        self.b_size.setRange(32, 800)
+        self.b_size.setValue(224)
+        bf.addRow("runtime", self.b_target)
         bf.addRow("variant", self.b_variant)
         bf.addRow("num_frames", self.b_frames)
         bf.addRow("tsm_stages", self.b_stages)
         bf.addRow("temporal_pool", self.b_pool)
         bf.addRow("", self.b_uni)
+        bf.addRow("image_size", self.b_size)
         bf.addRow("precision", self.b_prec)
         bench_btn = QtWidgets.QPushButton("Run benchmark")
         mark_accent(bench_btn)
@@ -330,8 +816,19 @@ class ExportTab(_Base):
         bf.addRow(self.bench_result)
         layout.addWidget(bench)
 
-        export = QtWidgets.QGroupBox("Export TorchScript")
+        export = QtWidgets.QGroupBox("Export for deployment")
         ef = QtWidgets.QFormLayout(export)
+        self.fmt = QtWidgets.QComboBox()
+        self.fmt.addItems(EXPORT_FORMATS)
+        self.fmt.setCurrentText("onnx")
+        self.e_size = QtWidgets.QSpinBox()
+        self.e_size.setRange(32, 800)
+        self.e_size.setValue(224)
+        self.e_prec = QtWidgets.QComboBox()
+        self.e_prec.addItems(PRECISIONS)
+        # Must match how the checkpoint was trained: the load is strict=False,
+        # so a mismatch produces a silently wrong model rather than an error.
+        self.e_stages = QtWidgets.QLineEdit("5,6,7")
         self.ckpt = QtWidgets.QLineEdit()
         ckpt_btn = QtWidgets.QPushButton("Browse…")
         ckpt_btn.clicked.connect(self._pick_ckpt)
@@ -340,9 +837,17 @@ class ExportTab(_Base):
         crow.addWidget(ckpt_btn)
         self.out_dir = QtWidgets.QLineEdit()
         self.out_name = QtWidgets.QLineEdit("tsm_model")
+        ef.addRow("format", self.fmt)
         ef.addRow("checkpoint", crow)
         ef.addRow("output dir", self.out_dir)
         ef.addRow("output name", self.out_name)
+        ef.addRow("tsm_stages (as trained)", self.e_stages)
+        ef.addRow("image_size", self.e_size)
+        ef.addRow("precision", self.e_prec)
+        # Only the deployment formats care about input shape / precision —
+        # TorchScript is traced at the checkpoint's own shape.
+        self.fmt.currentTextChanged.connect(self._sync_export_fields)
+        self._sync_export_fields(self.fmt.currentText())
         export_btn = QtWidgets.QPushButton("Export")
         mark_accent(export_btn)
         export_btn.clicked.connect(self._export)
@@ -360,20 +865,32 @@ class ExportTab(_Base):
             "tsm_stages": parse_stages(self.b_stages.text()),
             "temporal_pool": self.b_pool.currentText(),
             "unidirectional": self.b_uni.isChecked(),
+            "image_size": self.b_size.value(),
             "precision": self.b_prec.currentText(),
+            "target": self.b_target.currentData(),
         }
 
     def _benchmark(self) -> None:
         client = self._client()
         if not client:
             return
-        self.bench_result.setText("Running…")
+        # An engine build (TensorRT especially) is slow enough that silence
+        # reads as a hang.
+        self.bench_result.setText("Exporting and building the engine — this can "
+                                  "take a few minutes the first time…")
+
+        def show(res: dict):
+            def ms(key):
+                v = res.get(key)
+                return f"{v:.2f}" if isinstance(v, (int, float)) else "?"
+            self.bench_result.setText(
+                f"[{res.get('runtime', '?')}] p50 {ms('ms_per_batch_p50')} ms · "
+                f"p95 {ms('ms_per_batch_p95')} ms · p99 {ms('ms_per_batch_p99')} ms "
+                f"({ms('ms_per_clip')} ms/clip) on {res.get('device_name', '?')} "
+                f"{res.get('precision', '')}")
+
         self._spawn_call(
-            lambda: client.benchmark_inference(**self.build_benchmark_kwargs()),
-            lambda res: self.bench_result.setText(
-                f"{res.get('ms_per_clip', '?')} ms/clip, "
-                f"{res.get('clips_per_sec', '?')} clips/s on {res.get('device_name', '?')}"),
-        )
+            lambda: client.benchmark_inference(**self.build_benchmark_kwargs()), show)
 
     def _pick_ckpt(self) -> None:
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -381,16 +898,32 @@ class ExportTab(_Base):
         if path:
             self.ckpt.setText(path)
 
+    def _sync_export_fields(self, fmt: str) -> None:
+        deployment = fmt != "torchscript"
+        self.e_size.setEnabled(deployment)
+        self.e_prec.setEnabled(deployment)
+
     def _export(self) -> None:
         client = self._client()
         if not client or not self.ckpt.text() or not self.out_dir.text():
             self.ctx.status("Need a checkpoint and output dir.")
             return
+        fmt = self.fmt.currentText()
+        name = self.out_name.text() or "tsm_model"
+        stages = parse_stages(self.e_stages.text()) or None
+
+        if fmt == "torchscript":
+            call = lambda: client.export_torchscript(  # noqa: E731
+                self.ckpt.text(), self.out_dir.text(), name, tsm_stages=stages)
+        else:
+            call = lambda: client.export_optimized(  # noqa: E731
+                self.ckpt.text(), self.out_dir.text(), name, fmt=fmt,
+                tsm_stages=stages, image_size=self.e_size.value(),
+                precision=self.e_prec.currentText())
+
+        self.ctx.status(f"Exporting {fmt}…")
         self._spawn_call(
-            lambda: client.export_torchscript(
-                self.ckpt.text(), self.out_dir.text(), self.out_name.text() or "tsm_model"),
-            lambda res: self.ctx.status(f"Exported: {res.get('output_path')}"),
-        )
+            call, lambda res: self.ctx.status(f"Exported: {res.get('output_path')}"))
 
 
 class PipelinePanel(QtWidgets.QTabWidget):
@@ -399,15 +932,18 @@ class PipelinePanel(QtWidgets.QTabWidget):
         from .active_learning_panel import ActiveLearningPanel  # lazy: avoids import cycle
         self.preprocess = PreprocessTab(ctx)
         self.train = TrainTab(ctx)
+        self.tune = TuneTab(ctx, train_tab=self.train)
         self.export = ExportTab(ctx)
         self.active_learning = ActiveLearningPanel(ctx)
         self.addTab(self.preprocess, "Preprocess")
         self.addTab(self.train, "Train")
+        self.addTab(self.tune, "Tune")
         self.addTab(self.export, "Export")
         self.addTab(self.active_learning, "Active Learning")
 
     def refresh(self) -> None:
         self.preprocess.refresh()
         self.train.refresh()
+        self.tune.refresh()
         self.export.refresh()
         self.active_learning.refresh()

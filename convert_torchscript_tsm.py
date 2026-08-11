@@ -147,6 +147,7 @@ def benchmark_model(
 
     Returns a dict of timings and the resolved environment.
     """
+    import math
     import time
 
     if device is None:
@@ -192,17 +193,35 @@ def benchmark_model(
         if device == "cuda":
             torch.cuda.synchronize()
 
-        t0 = time.perf_counter()
+        # Time each iteration separately (syncing per iteration on CUDA) so we can
+        # report tail latency, not just the mean. A real-time rig misses frames on
+        # the slow iterations, so p99 is the number that decides whether an
+        # architecture fits the frame budget. The per-iteration sync costs tens of
+        # microseconds — negligible next to a millisecond-scale forward pass.
+        samples = []
         for _ in range(max(1, iters)):
+            t0 = time.perf_counter()
             traced(x)
-        if device == "cuda":
-            torch.cuda.synchronize()
-        total = time.perf_counter() - t0
+            if device == "cuda":
+                torch.cuda.synchronize()
+            samples.append((time.perf_counter() - t0) * 1000.0)
 
+    total = sum(samples) / 1000.0
     clips = max(1, iters) * batch_size
     clips_per_sec = clips / total
     ms_per_clip = 1000.0 / clips_per_sec
-    ms_per_batch = (total / max(1, iters)) * 1000.0
+    ms_per_batch = total / len(samples) * 1000.0
+
+    ordered = sorted(samples)
+
+    def _pct(p):
+        """Nearest-rank percentile (no interpolation) — with 100 iters the p99 is
+        the 99th slowest sample, which is what a frame-budget check wants."""
+        k = min(len(ordered) - 1, max(0, math.ceil(p / 100.0 * len(ordered)) - 1))
+        return ordered[k]
+
+    ms_per_batch_p50, ms_per_batch_p95, ms_per_batch_p99 = _pct(50), _pct(95), _pct(99)
+    per_clip = float(max(1, batch_size))
 
     result = {
         "device": device,
@@ -219,6 +238,14 @@ def benchmark_model(
         "ms_per_clip": ms_per_clip,
         "ms_per_batch": ms_per_batch,
         "clips_per_sec": clips_per_sec,
+        # Tail latency. The *_p99 pair is what the tuning sweep's latency
+        # constraint is checked against.
+        "ms_per_batch_p50": ms_per_batch_p50,
+        "ms_per_batch_p95": ms_per_batch_p95,
+        "ms_per_batch_p99": ms_per_batch_p99,
+        "ms_per_clip_p50": ms_per_batch_p50 / per_clip,
+        "ms_per_clip_p95": ms_per_batch_p95 / per_clip,
+        "ms_per_clip_p99": ms_per_batch_p99 / per_clip,
     }
     if note:
         result["note"] = note

@@ -210,6 +210,7 @@ class TestTrainingRouter:
             "tsm_stages": [5, 6, 7],
             "iters": 2,
             "warmup": 1,  # keep the test fast (CPU on CI)
+            "target": "torchscript",
         })
         assert resp.status_code == 200
         data = resp.json()
@@ -218,6 +219,9 @@ class TestTrainingRouter:
         assert data["variant"] == "b0"
         assert data["num_frames"] == 3
         assert data["precision"] == "fp32"
+        # every result names the runtime it came from, so a number can't be
+        # mistaken for a deployment measurement
+        assert data["runtime"] == "torchscript"
 
     @pytest.mark.asyncio
     async def test_benchmark_inference_fp16_on_cpu_downgrades(self, ac):
@@ -227,11 +231,49 @@ class TestTrainingRouter:
             pytest.skip("CUDA present; downgrade path not exercised")
         resp = await ac.post("/api/training/benchmark-inference", json={
             "variant": "b0", "iters": 2, "warmup": 1, "precision": "fp16",
+            "target": "torchscript",
         })
         assert resp.status_code == 200
         data = resp.json()
         assert data["precision"] == "fp32"
         assert "note" in data
+
+    @pytest.mark.asyncio
+    async def test_benchmark_unknown_target_rejected(self, ac):
+        resp = await ac.post("/api/training/benchmark-inference", json={
+            "variant": "b0", "iters": 1, "warmup": 1, "target": "coreml",
+        })
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_benchmark_openvino(self, ac):
+        """The CPU deployment path: ONNX -> OpenVINO, timed through the runtime."""
+        pytest.importorskip("openvino")
+        pytest.importorskip("onnx")
+        resp = await ac.post("/api/training/benchmark-inference", json={
+            "variant": "b0", "num_frames": 3, "tsm_stages": [5, 6, 7],
+            "iters": 2, "warmup": 1, "target": "openvino",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["runtime"] == "openvino"
+        assert data["device"] == "cpu"
+        assert data["ms_per_batch_p99"] > 0
+
+    @pytest.mark.asyncio
+    async def test_benchmark_missing_runtime_returns_503(self, ac, monkeypatch):
+        """A runtime this box can't provide is 503, not 500 — the request is fine."""
+        import optimized_runtime
+
+        def missing(module):
+            raise optimized_runtime.RuntimeUnavailable(f"{module} is not installed")
+        monkeypatch.setattr(optimized_runtime, "_require", missing)
+
+        resp = await ac.post("/api/training/benchmark-inference", json={
+            "variant": "b0", "iters": 1, "warmup": 1, "target": "openvino",
+        })
+        assert resp.status_code == 503
+        assert "not installed" in resp.json()["detail"]
 
     @pytest.mark.asyncio
     async def test_config_defaults(self, ac, tmp_path):
@@ -257,6 +299,124 @@ class TestTrainingRouter:
         })
         assert resp.status_code == 200
         assert "task_id" in resp.json()
+
+    @pytest.mark.asyncio
+    async def test_data_loader_fields_accepted(self, ac):
+        """batch_size / num_workers / image_size reach the trainer."""
+        resp = await ac.post("/api/training/start", json={
+            "label_paths": ["/fake/labels.csv"],
+            "frame_dirs": ["/fake/frames"],
+            "batch_size": 16,
+            "num_workers": 2,
+            "image_size": 380,
+        })
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_benchmark_reports_tail_latency(self, ac):
+        """p99 is what the tuning latency gate is checked against."""
+        resp = await ac.post("/api/training/benchmark-inference", json={
+            "variant": "b0", "iters": 3, "warmup": 1, "target": "torchscript",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        for key in ("ms_per_batch_p50", "ms_per_batch_p95", "ms_per_batch_p99",
+                    "ms_per_clip_p99"):
+            assert key in data
+        assert data["ms_per_batch_p50"] <= data["ms_per_batch_p99"]
+
+
+# ── Tuning router ─────────────────────────────────────────────────────────
+
+class TestTuningRouter:
+    BASE = {"label_paths": ["/fake/labels.csv"], "frame_dirs": ["/fake/frames"],
+            "max_epochs": 1}
+
+    @pytest.mark.asyncio
+    async def test_start_returns_task_id(self, ac):
+        resp = await ac.post("/api/tuning/start", json={
+            "base": self.BASE,
+            "n_trials": 1,
+            "lr": {"low": 1e-5, "high": 1e-2, "log": True},
+        })
+        assert resp.status_code == 200
+        assert "task_id" in resp.json()
+
+    @pytest.mark.asyncio
+    async def test_empty_search_space_rejected(self, ac):
+        resp = await ac.post("/api/tuning/start", json={"base": self.BASE})
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_empty_choice_list_rejected(self, ac):
+        resp = await ac.post("/api/tuning/start", json={
+            "base": self.BASE, "variant": {"choices": []},
+        })
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_zero_trials_rejected(self, ac):
+        resp = await ac.post("/api/tuning/start", json={
+            "base": self.BASE, "n_trials": 0,
+            "dropout": {"low": 0.0, "high": 0.6},
+        })
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_nonpositive_latency_budget_rejected(self, ac):
+        resp = await ac.post("/api/tuning/start", json={
+            "base": self.BASE, "dropout": {"low": 0.0, "high": 0.6},
+            "latency": {"max_p99_ms": 0},
+        })
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_unknown_latency_target_rejected(self, ac):
+        resp = await ac.post("/api/tuning/start", json={
+            "base": self.BASE, "dropout": {"low": 0.0, "high": 0.6},
+            "latency": {"max_p99_ms": 33.0, "target": "coreml"},
+        })
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_missing_runtime_refuses_to_start(self, ac, monkeypatch):
+        """The sweep is preflighted: a budget that can't be measured stops here,
+        not after burning a trial."""
+        import optimized_runtime
+
+        def missing(module):
+            raise optimized_runtime.RuntimeUnavailable(f"{module} is not installed")
+        monkeypatch.setattr(optimized_runtime, "_require", missing)
+
+        resp = await ac.post("/api/tuning/start", json={
+            "base": self.BASE, "dropout": {"low": 0.0, "high": 0.6},
+            "latency": {"max_p99_ms": 33.0, "target": "openvino"},
+        })
+        assert resp.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_categorical_space_accepted(self, ac):
+        pytest.importorskip("openvino")
+        resp = await ac.post("/api/tuning/start", json={
+            "base": self.BASE, "n_trials": 1,
+            "variant": {"choices": ["b0", "b4"]},
+            "batch_size": {"choices": [8, 16]},
+            "tsm_stages": {"choices": ["5,6,7"]},
+            "frames_per_group": {"choices": [2, 3]},
+            "latency": {"max_p99_ms": 33.0, "precision": "fp16",
+                        "target": "openvino"},
+        })
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_status_404_for_unknown_task(self, ac):
+        resp = await ac.get("/api/tuning/status/does-not-exist")
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_stop_404_for_unknown_task(self, ac):
+        resp = await ac.post("/api/tuning/stop/does-not-exist")
+        assert resp.status_code == 404
 
 
 # ── Inference router ──────────────────────────────────────────────────────

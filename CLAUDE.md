@@ -249,6 +249,6 @@ npm run dist:linux  # Linux (AppImage + deb)
 
 (`pixi.toml` is the authoritative list — conda-forge env with a `pixi.lock`; `backend/requirements.txt` is a pip fallback.)
 
-- **Python** (via pixi/conda-forge): FastAPI, Uvicorn, PyTorch (`pytorch-gpu` CUDA build, swap to `pytorch-cpu` on CPU machines), torchvision, Lightning, torchmetrics, timm, OpenCV, Albumentations, OmegaConf, numpy, pandas, h5py (`.rlt` files), wandb (optional training logging), matplotlib, pyyaml, scipy, optuna, **ffmpeg** (re-encode / labeled-video, now provided by the env)
+- **Python** (via pixi/conda-forge): FastAPI, Uvicorn, PyTorch (`pytorch-gpu` CUDA build, swap to `pytorch-cpu` on CPU machines), torchvision, Lightning, torchmetrics, timm, OpenCV, Albumentations, OmegaConf, numpy, pandas, h5py (`.rlt` files), wandb (optional training logging), matplotlib, pyyaml, scipy, optuna (hyperparameter sweeps), onnx + openvino (deployment-format export and latency measurement — see `optimized_runtime.py`), tensorrt-cu12 (PyPI, under `[pypi-dependencies]` — the GPU deployment runtime; needs a GPU of compute capability 7.5+, i.e. Turing or newer, so it will not run on Pascal cards like a GTX 10xx), **ffmpeg** (re-encode / labeled-video, now provided by the env)
 - **Node**: Electron 31, electron-builder, mp4box, xlsx
 - **Test**: pytest, pytest-asyncio, httpx

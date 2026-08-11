@@ -15,6 +15,12 @@ timm
 matplotlib
 pyyaml
 scipy
+optuna
+# Deployment-format export / latency measurement (optimized_runtime.py).
+# tensorrt is intentionally not pinned here: it only applies to GPU rigs and
+# ships as an NVIDIA wheel — `pip install tensorrt` where it's needed.
+onnx
+openvino
 
 # Dev / test dependencies
 pytest

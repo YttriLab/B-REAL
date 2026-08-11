@@ -246,7 +246,10 @@ def clear_task_registries():
     """Clear all service task registries before each test."""
     yield
     # Cleanup after test
-    from backend.services import preprocess_service, training_service, inference_service
+    from backend.services import (
+        preprocess_service, training_service, tuning_service, inference_service,
+    )
     preprocess_service._tasks.clear()
     training_service._tasks.clear()
+    tuning_service._tasks.clear()
     inference_service._tasks.clear()
