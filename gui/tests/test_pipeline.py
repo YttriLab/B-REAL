@@ -22,7 +22,7 @@ from labeling_shell.backend_worker import CallWorker, StreamWorker  # noqa: E402
 from labeling_shell.bouts import LabelModel  # noqa: E402
 from plugins.pipeline_config import (  # noqa: E402
     CROP_DEFAULTS, TARGETS, VARIANTS, build_train_config, build_tuning_request,
-    choice_spec, latency_spec, parse_stages, range_spec,
+    choice_spec, latency_spec, parse_stages, range_spec, resolve_binarize,
 )
 from plugins.pipeline_panel import (  # noqa: E402
     ExportTab, PipelinePanel, PreprocessTab, TrainTab, TuneTab,
@@ -38,6 +38,7 @@ class FakeCtx:
         self._client = None
         self.model = LabelModel()
         self.msgs = []
+        self.registered = []
 
     def client(self):
         return self._client
@@ -71,6 +72,9 @@ class FakeCtx:
 
     def checkpoint_dir(self):
         return "/p/checkpoints"
+
+    def register_model(self, entry):
+        self.registered.append(entry)
 
     def status(self, m):
         self.msgs.append(m)
@@ -115,7 +119,7 @@ def test_train_build_config_from_widgets():
     assert cfg["variant"] == "b1"
     assert cfg["tsm_stages"] == [5, 6, 7]
     assert cfg["unidirectional"] is True
-    assert "binarize" not in cfg  # "(none)" selected
+    assert "binarize" not in cfg  # nothing ticked
 
 
 def test_pipeline_panel_refresh_populates_binarize():
@@ -125,8 +129,123 @@ def test_pipeline_panel_refresh_populates_binarize():
     ctx.model.add_behavior("rear")
     panel = PipelinePanel(ctx)
     panel.refresh()
-    items = [panel.train.binarize.itemText(i) for i in range(panel.train.binarize.count())]
-    assert items == ["(none)", "groom", "rear"]
+    lst = panel.train.binarize
+    items = [lst.item(i).text() for i in range(lst.count())]
+    assert items == ["groom", "rear"]
+    # nothing ticked by default -> multi-class
+    assert panel.train.positive_behaviors() == []
+
+
+def test_resolve_binarize():
+    assert resolve_binarize([]) == (None, None)                    # multi-class
+    assert resolve_binarize(["groom"]) == ("groom", None)          # plain binary
+    # two or more merge into one synthetic positive class
+    b, u = resolve_binarize(["groom", "rear"], ["groom", "rear", "walk"])
+    assert b == "positive" and u == {"positive": ["groom", "rear"]}
+    # ...whose name must not collide with a real behavior, or load_data would
+    # merge the wrong rows
+    b, u = resolve_binarize(["groom", "rear"], ["groom", "rear", "positive"])
+    assert b == "positive_" and u == {"positive_": ["groom", "rear"]}
+
+
+def test_train_tab_binarize_checklist_drives_the_config():
+    _app()
+    ctx = FakeCtx()
+    for n in ("groom", "rear", "walk"):
+        ctx.model.add_behavior(n)
+    tab = TrainTab(ctx)
+    tab.refresh()
+
+    def tick(*names):
+        for i in range(tab.binarize.count()):
+            item = tab.binarize.item(i)
+            item.setCheckState(QtCore.Qt.Checked if item.text() in names
+                               else QtCore.Qt.Unchecked)
+
+    assert "binarize" not in tab.build_config()
+
+    tick("rear")
+    cfg = tab.build_config()
+    assert cfg["binarize"] == "rear" and "label_union" not in cfg
+
+    tick("groom", "walk")
+    cfg = tab.build_config()
+    assert cfg["binarize"] == "positive"
+    assert cfg["label_union"] == {"positive": ["groom", "walk"]}
+
+
+def test_train_tab_refresh_keeps_ticks():
+    _app()
+    ctx = FakeCtx()
+    ctx.model.add_behavior("groom")
+    tab = TrainTab(ctx)
+    tab.refresh()
+    tab.binarize.item(0).setCheckState(QtCore.Qt.Checked)
+    ctx.model.add_behavior("rear")
+    tab.refresh()  # a new behavior must not silently clear the selection
+    assert tab.positive_behaviors() == ["groom"]
+
+
+def test_train_tab_boundary_smoothing_and_wandb():
+    _app()
+    tab = TrainTab(FakeCtx())
+    cfg = tab.build_config()
+    # boundary smoothing defaults on, matching config_tsm.yaml
+    assert cfg["boundary_smoothing_enabled"] is True
+    assert cfg["boundary_smoothing_epsilon"] == 0.3
+    assert cfg["boundary_smoothing_window"] == 5
+    assert cfg["use_wandb"] is False
+    assert "wandb_api_key" not in cfg  # never sent when W&B is off
+
+    tab.bs_enabled.setChecked(False)
+    tab.wandb_enabled.setChecked(True)
+    tab.wandb_project.setText("my-project")
+    tab.wandb_run.setText("run-001")
+    tab.wandb_key.setText("secret")
+    cfg = tab.build_config()
+    assert cfg["boundary_smoothing_enabled"] is False
+    assert cfg["use_wandb"] is True
+    assert cfg["project_name"] == "my-project"
+    assert cfg["run_name"] == "run-001"
+    assert cfg["wandb_api_key"] == "secret"
+
+
+def test_train_tab_registers_the_trained_model():
+    _app()
+    ctx = FakeCtx()
+    ctx.model.add_behavior("groom")
+    tab = TrainTab(ctx)
+    tab.refresh()
+    tab.binarize.item(0).setCheckState(QtCore.Qt.Checked)
+    config = tab.build_config()
+
+    tab._register_model(config, {
+        "status": "completed",
+        "best_checkpoint": r"/p/models/checkpoints/groom-epoch=07-val_mcc=0.812.ckpt",
+        "best_val_mcc": 0.812, "best_val_loss": 0.31,
+    })
+    assert len(ctx.registered) == 1
+    entry = ctx.registered[0]
+    assert entry["name"] == "groom-epoch=07-val_mcc=0.812.ckpt"
+    assert entry["val_mcc"] == 0.812 and entry["val_loss"] == 0.31
+    # binarize/label_union must survive: Active Learning needs them to map a
+    # behavior name into the model's collapsed label space
+    assert entry["config"]["binarize"] == "groom"
+    assert "label_union" in entry["config"]
+
+
+def test_register_model_survives_a_manifest_failure():
+    """A failed manifest write must not read as a failed training run."""
+    _app()
+    ctx = FakeCtx()
+
+    def boom(entry):
+        raise OSError("disk full")
+    ctx.register_model = boom
+
+    tab = TrainTab(ctx)
+    tab._register_model({}, {"best_checkpoint": "/p/x.ckpt"})
+    assert "could not record the model" in tab.log.toPlainText()
 
 
 def test_build_train_config_carries_data_loader_knobs():

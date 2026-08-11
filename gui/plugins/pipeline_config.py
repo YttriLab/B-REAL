@@ -65,6 +65,30 @@ def parse_stages(text: str) -> list[int]:
     return out
 
 
+def resolve_binarize(positive: list, existing_names=()) -> tuple:
+    """Turn the ticked positive behaviors into (binarize, label_union).
+
+    Mirrors the Electron plugin's rule:
+      0 ticked -> multi-class (None, None)
+      1 ticked -> binarize on that behavior
+      2+       -> union them under one synthetic positive label, then binarize
+                  on it. The synthetic name must not collide with a real
+                  behavior or load_data would merge the wrong rows, so it gains
+                  trailing underscores until it is unique.
+    """
+    positive = [p for p in positive if p]
+    if not positive:
+        return None, None
+    if len(positive) == 1:
+        return positive[0], None
+
+    taken = set(existing_names)
+    union_name = "positive"
+    while union_name in taken:
+        union_name += "_"
+    return union_name, {union_name: list(positive)}
+
+
 def build_train_config(
     label_paths: list[str],
     frame_dirs: list[str],
@@ -84,9 +108,16 @@ def build_train_config(
     max_epochs: int = 100,
     early_stopping_patience: int = 20,
     binarize: Optional[str] = None,
+    label_union: Optional[dict] = None,
     train_percent: float = 0.7,
     val_percent: float = 0.15,
     test_percent: float = 0.15,
+    boundary_smoothing_enabled: bool = False,
+    boundary_smoothing_epsilon: float = 0.3,
+    boundary_smoothing_window: int = 5,
+    use_wandb: bool = False,
+    project_name: str = "realtime-asoid",
+    wandb_api_key: Optional[str] = None,
     checkpoint_dir: Optional[str] = None,
     run_name: Optional[str] = None,
 ) -> dict:
@@ -116,9 +147,18 @@ def build_train_config(
         "train_percent": train_percent,
         "val_percent": val_percent,
         "test_percent": test_percent,
+        "boundary_smoothing_enabled": boundary_smoothing_enabled,
+        "boundary_smoothing_epsilon": boundary_smoothing_epsilon,
+        "boundary_smoothing_window": boundary_smoothing_window,
+        "use_wandb": use_wandb,
+        "project_name": project_name,
     }
     if binarize:
         cfg["binarize"] = binarize
+    if label_union:
+        cfg["label_union"] = label_union
+    if use_wandb and wandb_api_key:
+        cfg["wandb_api_key"] = wandb_api_key
     if checkpoint_dir:
         cfg["checkpoint_dir"] = checkpoint_dir
     if run_name:

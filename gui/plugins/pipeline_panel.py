@@ -11,9 +11,13 @@ BackendClient, streaming SSE progress on background threads (backend_worker).
     label_paths() -> list[str]            frame_dirs() -> list[str]
     current_frames_dir() -> str | None    current_bg_path() -> str | None
     checkpoint_dir() -> str | None        status(msg: str) -> None
+    register_model(entry: dict) -> None   (optional; records a trained checkpoint)
 """
 
 from __future__ import annotations
+
+import datetime
+import os
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -26,7 +30,7 @@ from .pipeline_config import (
     IMAGE_SIZE_CHOICES, OBJECTIVES, POOLS, PRECISIONS, TARGET_LABELS, TARGETS,
     VARIANT_NATIVE_SIZE, VARIANTS,
     build_train_config, build_tuning_request, choice_spec, latency_spec,
-    parse_stages, range_spec,
+    parse_stages, range_spec, resolve_binarize,
 )
 
 
@@ -163,7 +167,16 @@ class PreprocessTab(_Base):
 class TrainTab(_Base):
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
-        layout = QtWidgets.QVBoxLayout(self)
+        # The form outgrew a typical window once boundary smoothing, W&B and the
+        # positive-class checklist landed, so it scrolls; the action buttons and
+        # log stay pinned below it.
+        outer = QtWidgets.QVBoxLayout(self)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        inner = QtWidgets.QWidget()
+        scroll.setWidget(inner)
+        layout = QtWidgets.QVBoxLayout(inner)
         form = QtWidgets.QFormLayout()
 
         self.frames_per_group = QtWidgets.QSpinBox()
@@ -184,7 +197,15 @@ class TrainTab(_Base):
         self.image_size = self._ispin(224, 32, 800)
         self.max_epochs = self._ispin(100, 1, 100000)
         self.patience = self._ispin(20, 1, 100000)
-        self.binarize = QtWidgets.QComboBox()
+
+        # Positive class: a checklist, not a single pick. Ticking two or more
+        # behaviors unions them into one positive label (see resolve_binarize).
+        self.binarize = QtWidgets.QListWidget()
+        self.binarize.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.binarize.setMaximumHeight(110)
+        self.binarize_hint = QtWidgets.QLabel()
+        self.binarize_hint.setWordWrap(True)
+        self.binarize.itemChanged.connect(lambda _i: self._update_binarize_hint())
 
         # A clip is num_frames images, so the backbone sees batch_size × frames
         # per step — the number that decides whether a big variant fits in VRAM.
@@ -203,10 +224,45 @@ class TrainTab(_Base):
             ("batch_size", self.batch_size), ("image_size", self.image_size),
             ("", self.batch_hint),
             ("max_epochs", self.max_epochs), ("early stop patience", self.patience),
-            ("binarize (positive class)", self.binarize),
+            ("positive class (binarize)", self.binarize), ("", self.binarize_hint),
         ]:
             form.addRow(label, w)
         layout.addLayout(form)
+
+        # ---- boundary smoothing ------------------------------------------
+        bs_box = QtWidgets.QGroupBox("Boundary smoothing")
+        bs_form = QtWidgets.QFormLayout(bs_box)
+        self.bs_enabled = QtWidgets.QCheckBox("Soften labels near bout edges")
+        self.bs_enabled.setChecked(True)  # matches config_tsm.yaml
+        self.bs_epsilon = self._dspin(0.3, 0.0, 1.0, 0.05, decimals=2)
+        self.bs_window = self._ispin(5, 1, 20)
+        bs_form.addRow(self.bs_enabled)
+        bs_form.addRow("epsilon", self.bs_epsilon)
+        bs_form.addRow("window", self.bs_window)
+        for w in (self.bs_epsilon, self.bs_window):
+            self.bs_enabled.toggled.connect(w.setEnabled)
+        layout.addWidget(bs_box)
+
+        # ---- Weights & Biases --------------------------------------------
+        wb_box = QtWidgets.QGroupBox("Weights && Biases")
+        wb_form = QtWidgets.QFormLayout(wb_box)
+        self.wandb_enabled = QtWidgets.QCheckBox("Log this run to W&&B")
+        self.wandb_project = QtWidgets.QLineEdit("realtime-asoid")
+        self.wandb_run = QtWidgets.QLineEdit()
+        self.wandb_run.setPlaceholderText("auto-generated if empty")
+        self.wandb_key = QtWidgets.QLineEdit()
+        self.wandb_key.setEchoMode(QtWidgets.QLineEdit.Password)
+        self.wandb_key.setPlaceholderText("leave empty if already logged in")
+        wb_form.addRow(self.wandb_enabled)
+        wb_form.addRow("project", self.wandb_project)
+        wb_form.addRow("run name", self.wandb_run)
+        wb_form.addRow("API key", self.wandb_key)
+        for w in (self.wandb_project, self.wandb_run, self.wandb_key):
+            w.setEnabled(False)
+            self.wandb_enabled.toggled.connect(w.setEnabled)
+        layout.addWidget(wb_box)
+        layout.addStretch(1)
+        outer.addWidget(scroll, 1)
 
         btns = QtWidgets.QHBoxLayout()
         self.coverage_btn = QtWidgets.QPushButton("Check coverage")
@@ -219,11 +275,12 @@ class TrainTab(_Base):
         self.stop_btn.clicked.connect(self._stop)
         for b in (self.coverage_btn, self.start_btn, self.stop_btn):
             btns.addWidget(b)
-        layout.addLayout(btns)
+        outer.addLayout(btns)
 
         self.log = QtWidgets.QPlainTextEdit()
         self.log.setReadOnly(True)
-        layout.addWidget(self.log, 1)
+        self.log.setMaximumHeight(160)  # the form is the working surface, not this
+        outer.addWidget(self.log)
         self._task_id = None
 
     def _dspin(self, val, lo, hi, step, decimals=4):
@@ -250,17 +307,41 @@ class TrainTab(_Base):
         self.batch_hint.setText(msg)
 
     def refresh(self) -> None:
-        current = self.binarize.currentText()
+        """Rebuild the positive-class checklist, keeping whatever is still ticked."""
+        checked = set(self.positive_behaviors())
+        self.binarize.blockSignals(True)
         self.binarize.clear()
-        self.binarize.addItem("(none)")
         for b in self.ctx.behaviors():
-            self.binarize.addItem(b.name)
-        i = self.binarize.findText(current)
-        if i >= 0:
-            self.binarize.setCurrentIndex(i)
+            item = QtWidgets.QListWidgetItem(b.name)
+            item.setCheckState(QtCore.Qt.Checked if b.name in checked
+                               else QtCore.Qt.Unchecked)
+            self.binarize.addItem(item)
+        self.binarize.blockSignals(False)
+        self._update_binarize_hint()
+
+    def positive_behaviors(self) -> list:
+        return [self.binarize.item(i).text()
+                for i in range(self.binarize.count())
+                if self.binarize.item(i).checkState() == QtCore.Qt.Checked]
+
+    def _update_binarize_hint(self) -> None:
+        n = len(self.positive_behaviors())
+        if n == 0:
+            self.binarize_hint.setText(
+                "nothing ticked → multi-class over every behavior")
+        elif n == 1:
+            self.binarize_hint.setText(
+                "binary: the ticked behavior vs everything else")
+        else:
+            binarize, _ = resolve_binarize(self.positive_behaviors(),
+                                           [b.name for b in self.ctx.behaviors()])
+            self.binarize_hint.setText(
+                f"binary: the {n} ticked behaviors merged into \"{binarize}\" "
+                f"vs everything else")
 
     def build_config(self) -> dict:
-        binarize = self.binarize.currentText()
+        binarize, label_union = resolve_binarize(
+            self.positive_behaviors(), [b.name for b in self.ctx.behaviors()])
         return build_train_config(
             self.ctx.label_paths(), self.ctx.frame_dirs(),
             frames_per_group=self.frames_per_group.value(),
@@ -275,7 +356,14 @@ class TrainTab(_Base):
             image_size=self.image_size.value(),
             max_epochs=self.max_epochs.value(),
             early_stopping_patience=self.patience.value(),
-            binarize=None if binarize in ("", "(none)") else binarize,
+            binarize=binarize, label_union=label_union,
+            boundary_smoothing_enabled=self.bs_enabled.isChecked(),
+            boundary_smoothing_epsilon=self.bs_epsilon.value(),
+            boundary_smoothing_window=self.bs_window.value(),
+            use_wandb=self.wandb_enabled.isChecked(),
+            project_name=self.wandb_project.text().strip() or "realtime-asoid",
+            run_name=self.wandb_run.text().strip() or None,
+            wandb_api_key=self.wandb_key.text().strip() or None,
             checkpoint_dir=self.ctx.checkpoint_dir(),
         )
 
@@ -297,12 +385,15 @@ class TrainTab(_Base):
         if not self.ctx.label_paths() or not self.ctx.frame_dirs():
             self.ctx.status("Need labels + extracted frames (preprocess first).")
             return
+        config = self.build_config()
         self.log.appendPlainText("[train] starting…")
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
 
         def on_event(ev: dict):
             self.log.appendPlainText(str(ev))
+            if ev.get("status") == "completed" and ev.get("best_checkpoint"):
+                self._register_model(config, ev)
 
         def on_done():
             self.start_btn.setEnabled(True)
@@ -315,7 +406,41 @@ class TrainTab(_Base):
                 self._spawn_stream(
                     lambda: client.training_status(self._task_id), on_event, on_done)
 
-        self._spawn_call(lambda: client.start_training(self.build_config()), start)
+        self._spawn_call(lambda: client.start_training(config), start)
+
+    def _register_model(self, config: dict, ev: dict) -> None:
+        """Record the trained checkpoint in the project manifest.
+
+        Stores the parts of the config needed to interpret the model later —
+        binarize/label_union in particular, without which Active Learning can't
+        map a behavior name into a binarized model's collapsed label space.
+        """
+        register = getattr(self.ctx, "register_model", None)
+        if register is None:
+            return
+        path = ev["best_checkpoint"]
+        entry = {
+            "name": os.path.basename(path),
+            "path": path,
+            "created": datetime.date.today().isoformat(),
+            "val_mcc": ev.get("best_val_mcc"),
+            "val_loss": ev.get("best_val_loss"),
+            "config": {
+                "variant": config.get("variant"),
+                "binarize": config.get("binarize"),
+                "label_union": config.get("label_union"),
+                "num_frames": config.get("num_frames"),
+                "tsm_stages": config.get("tsm_stages"),
+                "unidirectional": config.get("unidirectional"),
+                "image_size": config.get("image_size"),
+            },
+        }
+        try:
+            register(entry)
+            self.ctx.status(f"Recorded model in the project: {entry['name']}")
+        except Exception as e:
+            # A manifest write failing must not look like a training failure.
+            self.log.appendPlainText(f"[train] could not record the model: {e}")
 
     def _stop(self) -> None:
         client = self._client()

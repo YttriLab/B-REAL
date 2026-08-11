@@ -326,6 +326,59 @@ class TestTrainingRouter:
         assert data["ms_per_batch_p50"] <= data["ms_per_batch_p99"]
 
 
+# ── Frontend/backend config contract ──────────────────────────────────────
+
+class TestGuiConfigContract:
+    """The GUI builds the training payload itself, so drift between
+    build_train_config and TrainingConfig is silent — a dropped field just
+    reverts to a server default mid-experiment. Check the seam directly."""
+
+    @staticmethod
+    def _gui_config():
+        """Import the frontend's pure config module (no Qt) from gui/."""
+        import sys
+        gui = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "gui")
+        if gui not in sys.path:
+            sys.path.insert(0, gui)
+        from plugins import pipeline_config
+        return pipeline_config
+
+    def _build(self, **kw):
+        return self._gui_config().build_train_config(["l.csv"], ["f"], **kw)
+
+    def test_every_field_survives_validation(self):
+        from backend.routers.training import TrainingConfig
+
+        binarize, union = self._gui_config().resolve_binarize(
+            ["groom", "rear"], ["groom", "rear", "walk"])
+        cfg = self._build(
+            binarize=binarize, label_union=union,
+            boundary_smoothing_enabled=True, boundary_smoothing_epsilon=0.25,
+            boundary_smoothing_window=7, use_wandb=True, project_name="p",
+            run_name="r", wandb_api_key="k", batch_size=16, image_size=380)
+        tc = TrainingConfig(**cfg)
+
+        assert tc.binarize == "positive"
+        assert tc.label_union == {"positive": ["groom", "rear"]}
+        assert (tc.boundary_smoothing_enabled, tc.boundary_smoothing_epsilon,
+                tc.boundary_smoothing_window) == (True, 0.25, 7)
+        assert tc.use_wandb and tc.project_name == "p" and tc.run_name == "r"
+        assert tc.wandb_api_key == "k"
+        assert tc.batch_size == 16 and tc.image_size == 380
+
+    def test_api_key_is_not_sent_when_wandb_is_off(self):
+        cfg = self._build(use_wandb=False, wandb_api_key="secret")
+        assert "wandb_api_key" not in cfg
+
+    @pytest.mark.asyncio
+    async def test_gui_config_is_accepted_by_the_endpoint(self, ac):
+        cfg = self._build(binarize="groom", boundary_smoothing_enabled=True)
+        cfg["label_paths"] = ["/fake/labels.csv"]
+        cfg["frame_dirs"] = ["/fake/frames"]
+        resp = await ac.post("/api/training/start", json=cfg)
+        assert resp.status_code == 200
+
+
 # ── Tuning router ─────────────────────────────────────────────────────────
 
 class TestTuningRouter:

@@ -83,8 +83,38 @@ class ProjectStore:
     def background_path(self, video_id) -> Path:
         return self.root / "backgrounds" / f"{video_id}.png"
 
+    def models_dir(self) -> Path:
+        return self.root / "models"
+
     def checkpoint_dir(self) -> Path:
-        return self.root / "checkpoints"
+        # models/checkpoints, not checkpoints/: rlt_service packages
+        # models/checkpoints and models/exports, so anything written elsewhere
+        # never travels with the .rlt.
+        return self.models_dir() / "checkpoints"
+
+    def exports_dir(self) -> Path:
+        return self.models_dir() / "exports"
+
+    def add_model(self, entry: dict) -> None:
+        """Record a trained checkpoint in the manifest, deduped by path.
+
+        Keeps enough of the training config to interpret the model later — in
+        particular `binarize`/`label_union`, without which Active Learning can't
+        map a behavior name into a binarized model's collapsed label space.
+        """
+        manifest = self.load_manifest()
+        models = manifest.setdefault("models", [])
+        path = entry.get("path")
+        existing = next((i for i, m in enumerate(models)
+                         if path and m.get("path") == path), None)
+        if existing is not None:
+            models[existing] = entry
+        else:
+            models.append(entry)
+        self._write_manifest(manifest)
+
+    def list_models(self) -> list:
+        return self.load_manifest().get("models", []) or []
 
     def save_video_labels(self, video_id, model: LabelModel) -> None:
         """Persist this video's bouts (+ the training CSV) and the global behaviors."""

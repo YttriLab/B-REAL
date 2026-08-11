@@ -65,6 +65,45 @@ def test_per_video_bouts_global_behaviors():
         assert [b.name for b in v1.behaviors] == [b.name for b in v2.behaviors] == ["groom"]
 
 
+def test_model_dirs_match_what_rlt_packages():
+    """rlt_service packages models/checkpoints and models/exports — anything
+    written elsewhere never travels with the .rlt."""
+    with tempfile.TemporaryDirectory() as d:
+        store = ProjectStore(d)
+        assert store.checkpoint_dir() == store.root / "models" / "checkpoints"
+        assert store.exports_dir() == store.root / "models" / "exports"
+
+
+def test_add_model_records_and_dedupes():
+    with tempfile.TemporaryDirectory() as d:
+        store = ProjectStore(d)
+        store.create("demo")
+        assert store.list_models() == []
+
+        store.add_model({"name": "a.ckpt", "path": "/p/a.ckpt", "val_mcc": 0.5})
+        store.add_model({"name": "b.ckpt", "path": "/p/b.ckpt", "val_mcc": 0.7})
+        assert [m["name"] for m in store.list_models()] == ["a.ckpt", "b.ckpt"]
+
+        # retraining to the same path replaces the entry rather than appending
+        store.add_model({"name": "a.ckpt", "path": "/p/a.ckpt", "val_mcc": 0.9})
+        models = store.list_models()
+        assert len(models) == 2
+        assert next(m for m in models if m["path"] == "/p/a.ckpt")["val_mcc"] == 0.9
+
+
+def test_add_model_survives_a_manifest_without_models():
+    """Projects created before the registry existed have no "models" key."""
+    with tempfile.TemporaryDirectory() as d:
+        store = ProjectStore(d)
+        store.create("demo")
+        man = store.load_manifest()
+        man.pop("models", None)
+        store._write_manifest(man)
+
+        store.add_model({"name": "a.ckpt", "path": "/p/a.ckpt"})
+        assert len(store.list_models()) == 1
+
+
 def _main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failures = []

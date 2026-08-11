@@ -84,18 +84,14 @@ paths are covered at the contract level (stub server, config building).
 - Phase 5 — packaging (PyInstaller spec + docs). ✅
 - Promoted to `main`; the Electron app was removed and tagged `electron-final`.
 
-### Not yet ported from the Electron UI
+### Parity with the removed Electron UI
 
-These reached the backend from the old `plugins/pipeline.js` and have no control
-here yet. The backend still accepts every one of them — only the UI is missing,
-so each is a form field plus a `build_train_config` kwarg:
+Everything the old `plugins/pipeline.js` could configure is now here: boundary
+smoothing, W&B logging, `label_union` (tick two or more behaviors in the Train
+tab's positive-class list and they merge into one positive class), and
+registration of each trained checkpoint into the project manifest. The Tune tab
+has no Electron predecessor.
 
-- **Boundary smoothing** — `boundary_smoothing_enabled/epsilon/window`
-  (backend defaults apply: disabled).
-- **Weights & Biases** — `use_wandb`, `project_name`, `run_name`,
-  `wandb_api_key`.
-- **`label_union`** — binarizing on *several* behaviors merged into one positive
-  class. The Train tab's binarize combo picks a single behavior only.
-- **Model registration** — the Electron app recorded each trained checkpoint
-  (path, val_mcc, config) into the project manifest so it travelled with the
-  `.rlt`. `ProjectStore` has no equivalent call site yet.
+One fix came out of that port: `ProjectStore.checkpoint_dir()` pointed at
+`<project>/checkpoints`, but `rlt_service` packages `models/checkpoints`, so
+trained checkpoints never travelled with a `.rlt`. It now matches.

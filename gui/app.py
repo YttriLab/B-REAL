@@ -187,6 +187,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def checkpoint_dir(self):
         return str(self.project.checkpoint_dir()) if self.project else None
 
+    def register_model(self, entry: dict) -> None:
+        """Record a trained checkpoint in the project manifest so it travels
+        with the .rlt. A no-op without an open project (checkpoints then land
+        in the backend's temp dir and there is nothing to record them against)."""
+        if self.project:
+            self.project.add_model(entry)
+
     def status(self, msg):
         self._status(msg)
 
