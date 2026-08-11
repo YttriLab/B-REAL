@@ -73,6 +73,9 @@ class FakeCtx:
     def checkpoint_dir(self):
         return "/p/checkpoints"
 
+    def current_frame(self):
+        return 42
+
     def register_model(self, entry):
         self.registered.append(entry)
 
@@ -104,6 +107,113 @@ def test_preprocess_build_crop_params_defaults():
     _app()
     tab = PreprocessTab(FakeCtx())
     assert tab.build_crop_params() == CROP_DEFAULTS
+
+
+def test_preprocess_raw_mode_disables_crop_controls():
+    """Raw mode writes whole frames: background and the detection knobs are
+    meaningless, but resize_factor still resizes what gets written."""
+    _app()
+    tab = PreprocessTab(FakeCtx())
+    assert tab.crop_enabled.isChecked()
+    assert tab.crop_widgets["box_size"].isEnabled()
+    assert tab.bg_edit.isEnabled()
+
+    tab.crop_enabled.setChecked(False)
+    assert not tab.crop_widgets["box_size"].isEnabled()
+    assert not tab.bg_edit.isEnabled()
+    assert not tab.preview_box.isEnabled()
+    assert tab.crop_widgets["resize_factor"].isEnabled()  # still applies
+
+    tab.crop_enabled.setChecked(True)
+    assert tab.crop_widgets["box_size"].isEnabled()
+    assert tab.preview_box.isEnabled()
+
+
+def test_preprocess_preview_renders_the_three_panes():
+    _app()
+    tab = PreprocessTab(FakeCtx())
+    # a 2x2 red JPEG, base64 — stands in for the backend's encoded preview
+    import base64
+    import io
+    from PySide6 import QtGui
+    img = QtGui.QImage(2, 2, QtGui.QImage.Format.Format_RGB888)
+    img.fill(QtGui.QColor("red"))
+    buf = QtCore.QBuffer()
+    buf.open(QtCore.QIODevice.OpenModeFlag.WriteOnly)
+    img.save(buf, "JPG")
+    encoded = base64.b64encode(bytes(buf.data())).decode("ascii")
+
+    tab._show_preview({
+        "original_bbox": encoded, "mask": encoded, "cropped": encoded,
+        "frame_width": 640, "frame_height": 480,
+        "resized_width": 320, "resized_height": 240,
+        "center": [10.0, 20.0],
+    })
+    for key, _cap in PreprocessTab.PREVIEW_PANES:
+        assert not tab.preview_labels[key].pixmap().isNull()
+    # the smoothed centre is kept so the next step continues the track
+    assert tab._preview_center == [10.0, 20.0]
+    # a differing processed size is worth surfacing — it's what gets trained on
+    assert "640×480" in tab.preview_info.text()
+    assert "320×240" in tab.preview_info.text()
+
+
+def test_preprocess_preview_stepping_chains_the_center():
+    _app()
+    ctx = FakeCtx()
+
+    calls = []
+
+    class StubClient:
+        def preview_frame(self, video, bg, frame, crop_params=None, prev_center=None):
+            calls.append({"frame": frame, "prev_center": prev_center})
+            return {}
+
+    ctx._client = StubClient()
+    tab = PreprocessTab(ctx)
+    tab.bg_edit.setText("/p/bg.png")
+    tab._preview_center = [1.0, 2.0]
+    tab.preview_frame_spin.setValue(5)
+
+    def wait_for(n):
+        """The request goes out on a worker thread."""
+        app = QtWidgets.QApplication.instance()
+        for _ in range(200):
+            if len(calls) >= n:
+                return
+            app.processEvents()
+            QtCore.QThread.msleep(10)
+        raise AssertionError(f"expected {n} preview call(s), got {len(calls)}")
+
+    # stepping forwards the smoothed centre, so the stabilization is visible
+    # instead of being re-seeded on every frame
+    tab._step_preview(+1)
+    assert tab.preview_frame_spin.value() == 6
+    wait_for(1)
+    assert calls[-1] == {"frame": 6, "prev_center": [1.0, 2.0]}
+
+    # an explicit Preview starts a fresh track
+    tab._preview(reset_center=True)
+    assert tab._preview_center is None
+    wait_for(2)
+    assert calls[-1]["prev_center"] is None
+
+    # and it can't step below the first frame
+    tab.preview_frame_spin.setValue(0)
+    tab._step_preview(-1)
+    assert tab.preview_frame_spin.value() == 0
+
+
+def test_preprocess_preview_needs_a_background():
+    """Without a background there is nothing to subtract — say so instead of
+    firing a request that will 500."""
+    _app()
+    ctx = FakeCtx()
+    ctx._client = object()  # never reached
+    tab = PreprocessTab(ctx)
+    tab.bg_edit.clear()
+    tab._preview()
+    assert "Compute background" in tab.preview_info.text()
 
 
 def test_train_build_config_from_widgets():

@@ -61,6 +61,10 @@ class RunRequest(BaseModel):
     bg_path: Optional[str] = None
     num_frames_bg: int = 500
     output_name: Optional[str] = None
+    # False writes whole frames and skips background subtraction entirely — for
+    # rigs with no static background, or when the animal already fills the
+    # frame. crop_params.resize_factor still applies.
+    crop: bool = True
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────
@@ -103,6 +107,7 @@ async def api_run_preprocessing(req: RunRequest):
             bg_path=req.bg_path,
             num_frames_bg=req.num_frames_bg,
             output_name=req.output_name,
+            crop=req.crop,
         )
         return {"task_id": task_id}
     except Exception as e:

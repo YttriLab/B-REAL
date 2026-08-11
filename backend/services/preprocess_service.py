@@ -146,10 +146,18 @@ def crop_video_flat(
     output_name: str | None = None,
     on_progress: Callable[[int, int], None] | None = None,
     cancel_flag: Callable[[], bool] | None = None,
+    crop: bool = True,
 ) -> str:
     """
-    Extract cropped frames from a video, each saved as a flat PNG named by its
+    Extract frames from a video, each saved as a flat PNG named by its
     native (0-based) video frame index: output_dir/video_name/{frame}.png.
+
+    With ``crop`` (the default) each frame is background-subtracted and cropped
+    around the animal. With ``crop=False`` the whole frame is written instead —
+    no background is read or computed at all, which is faster and is the only
+    thing that works when there is no static background to subtract (a moving
+    camera, or a rig where the animal fills the frame). ``resize_factor`` still
+    applies either way.
 
     If ``frame_ranges`` (a list of inclusive [start, end] native-index pairs) is
     given, only those frames are written — the label-aware "sparse" extraction
@@ -166,20 +174,24 @@ def crop_video_flat(
 
     crop_params, resize_factor = pop_resize_factor(crop_params)
 
-    # Background
-    if bg_path:
-        bg = cv2.imread(bg_path, cv2.IMREAD_GRAYSCALE).astype(np.float32)
-    else:
-        bg = get_background_avg(video_path, num_frames_bg)
-    bg = resize_frame(bg, resize_factor)
+    # Background + cropper are only needed when actually cropping. Skipping them
+    # in raw mode avoids decoding num_frames_bg frames to build a background
+    # that would then be thrown away.
+    bg = None
+    cropper = None
+    if crop:
+        if bg_path:
+            bg = cv2.imread(bg_path, cv2.IMREAD_GRAYSCALE).astype(np.float32)
+        else:
+            bg = get_background_avg(video_path, num_frames_bg)
+        bg = resize_frame(bg, resize_factor)
+        cropper = FindRatBoundingBox(bg, **crop_params)
 
     cap = cv2.VideoCapture(video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     wanted = _wanted_set(frame_ranges, total_frames)
     target_total = len(wanted) if wanted is not None else total_frames
-
-    cropper = FindRatBoundingBox(bg, **crop_params)
 
     frame_index = 0
     written = 0
@@ -194,10 +206,16 @@ def crop_video_flat(
 
         if wanted is None or frame_index in wanted:
             if resize_factor != 1.0:
-                frame = cv2.resize(frame, (bg.shape[1], bg.shape[0]), interpolation=cv2.INTER_AREA)
-            *_, cropped = cropper(frame)
+                if bg is not None:
+                    # Resize to the background's exact dims so detection and
+                    # crop operate on identically-sized images.
+                    frame = cv2.resize(frame, (bg.shape[1], bg.shape[0]),
+                                       interpolation=cv2.INTER_AREA)
+                else:
+                    frame = resize_frame(frame, resize_factor)
+            out = cropper(frame)[-1] if cropper is not None else frame
             out_path = os.path.join(out_sub_dir, f"{frame_index}.png")
-            cv2.imwrite(out_path, cropped)
+            cv2.imwrite(out_path, out)
             written += 1
             if on_progress:
                 on_progress(written, target_total)
@@ -216,6 +234,7 @@ def start_preprocessing(
     bg_path: str | None = None,
     num_frames_bg: int = 500,
     output_name: str | None = None,
+    crop: bool = True,
 ) -> str:
     """Launch preprocessing in a background thread. Returns task_id."""
     task_id = str(uuid.uuid4())
@@ -245,6 +264,7 @@ def start_preprocessing(
                 output_name=output_name,
                 on_progress=on_progress,
                 cancel_flag=lambda: task["cancel"],
+                crop=crop,
             )
             if task["cancel"]:
                 task["status"] = "cancelled"

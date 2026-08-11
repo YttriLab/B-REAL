@@ -16,6 +16,7 @@ BackendClient, streaming SSE progress on background threads (backend_worker).
 
 from __future__ import annotations
 
+import base64
 import datetime
 import os
 
@@ -70,22 +71,50 @@ class _Base(QtWidgets.QWidget):
 
 
 class PreprocessTab(_Base):
+    # Preview panes, in pipeline order: what was detected, the mask it came
+    # from, and the crop that actually gets written to disk.
+    PREVIEW_PANES = (
+        ("original_bbox", "frame + box"),
+        ("mask", "mask"),
+        ("cropped", "cropped (saved)"),
+    )
+
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
-        form = QtWidgets.QFormLayout(self)
+        outer = QtWidgets.QVBoxLayout(self)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        inner = QtWidgets.QWidget()
+        scroll.setWidget(inner)
+        body = QtWidgets.QVBoxLayout(inner)
+        form = QtWidgets.QFormLayout()
 
         self.video_label = QtWidgets.QLabel("—")
         form.addRow("Video", self.video_label)
 
+        # Cropping is the default, but a rig with no static background (moving
+        # camera, or the animal filling the frame) has nothing to subtract —
+        # then raw whole frames are the right input.
+        self.crop_enabled = QtWidgets.QCheckBox("Crop to the animal")
+        self.crop_enabled.setChecked(True)
+        self.crop_enabled.setToolTip(
+            "Off: write whole frames and skip background subtraction entirely. "
+            "resize_factor still applies.")
+        self.crop_enabled.toggled.connect(self._on_crop_toggled)
+        form.addRow(self.crop_enabled)
+
         self.bg_edit = QtWidgets.QLineEdit()
-        bg_btn = QtWidgets.QPushButton("Compute background")
-        bg_btn.clicked.connect(self._compute_background)
+        self.bg_btn = QtWidgets.QPushButton("Compute background")
+        self.bg_btn.clicked.connect(self._compute_background)
         bg_row = QtWidgets.QHBoxLayout()
         bg_row.addWidget(self.bg_edit, 1)
-        bg_row.addWidget(bg_btn)
-        form.addRow("Background", bg_row)
+        bg_row.addWidget(self.bg_btn)
+        self.bg_row_label = QtWidgets.QLabel("Background")
+        form.addRow(self.bg_row_label, self._wrap(bg_row))
 
         self.crop_widgets: dict[str, QtWidgets.QWidget] = {}
+        self.crop_labels: dict[str, QtWidgets.QLabel] = {}
         for key, default in CROP_DEFAULTS.items():
             if key == "difference_mode":
                 w = NoWheelComboBox()
@@ -100,14 +129,96 @@ class PreprocessTab(_Base):
                 w.setRange(0, 100000)
                 w.setValue(default)
             self.crop_widgets[key] = w
-            form.addRow(key, w)
+            label = QtWidgets.QLabel(key)
+            self.crop_labels[key] = label
+            form.addRow(label, w)
+        body.addLayout(form)
+
+        # ---- preview ------------------------------------------------------
+        self.preview_box = QtWidgets.QGroupBox("Preview")
+        pv = QtWidgets.QVBoxLayout(self.preview_box)
+
+        panes = QtWidgets.QHBoxLayout()
+        self.preview_labels: dict[str, QtWidgets.QLabel] = {}
+        for key, caption in self.PREVIEW_PANES:
+            col = QtWidgets.QVBoxLayout()
+            img = QtWidgets.QLabel("—")
+            img.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            img.setMinimumSize(150, 150)
+            img.setStyleSheet("background:#1e1f22;border:1px solid #3c3f41;")
+            cap = QtWidgets.QLabel(caption)
+            cap.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            col.addWidget(img, 1)
+            col.addWidget(cap)
+            panes.addLayout(col, 1)
+            self.preview_labels[key] = img
+        pv.addLayout(panes)
+
+        self.preview_info = QtWidgets.QLabel("Preview a frame to check the crop "
+                                             "before extracting thousands of them.")
+        self.preview_info.setWordWrap(True)
+        pv.addWidget(self.preview_info)
+
+        prow = QtWidgets.QHBoxLayout()
+        self.preview_frame_spin = NoWheelSpinBox()
+        self.preview_frame_spin.setRange(0, 10_000_000)
+        self.preview_btn = QtWidgets.QPushButton("Preview")
+        self.preview_here_btn = QtWidgets.QPushButton("Use current frame")
+        self.preview_prev_btn = QtWidgets.QPushButton("◀")
+        self.preview_next_btn = QtWidgets.QPushButton("▶")
+        for b in (self.preview_prev_btn, self.preview_next_btn):
+            b.setFixedWidth(32)
+        self.preview_prev_btn.setToolTip("Previous frame")
+        self.preview_next_btn.setToolTip(
+            "Next frame — stepping carries the smoothed crop centre forward, so "
+            "the temporal stabilization is visible")
+        self.preview_btn.clicked.connect(lambda: self._preview(reset_center=True))
+        self.preview_here_btn.clicked.connect(self._preview_current_frame)
+        self.preview_prev_btn.clicked.connect(lambda: self._step_preview(-1))
+        self.preview_next_btn.clicked.connect(lambda: self._step_preview(+1))
+        prow.addWidget(QtWidgets.QLabel("frame"))
+        prow.addWidget(self.preview_frame_spin)
+        prow.addWidget(self.preview_prev_btn)
+        prow.addWidget(self.preview_next_btn)
+        prow.addWidget(self.preview_btn)
+        prow.addWidget(self.preview_here_btn)
+        prow.addStretch(1)
+        pv.addLayout(prow)
+        body.addWidget(self.preview_box)
+        body.addStretch(1)
+        outer.addWidget(scroll, 1)
 
         self.progress = QtWidgets.QProgressBar()
         run_btn = QtWidgets.QPushButton("Run preprocessing")
         mark_accent(run_btn)
         run_btn.clicked.connect(self._run)
-        form.addRow(run_btn)
-        form.addRow(self.progress)
+        outer.addWidget(run_btn)
+        outer.addWidget(self.progress)
+
+        # Smoothed crop centre carried between previewed frames.
+        self._preview_center = None
+        self._on_crop_toggled(True)
+
+    @staticmethod
+    def _wrap(layout) -> QtWidgets.QWidget:
+        w = QtWidgets.QWidget()
+        w.setLayout(layout)
+        return w
+
+    def _on_crop_toggled(self, on: bool) -> None:
+        """Everything background/crop-related is meaningless in raw mode —
+        except resize_factor, which still resizes the written frames."""
+        for key, w in self.crop_widgets.items():
+            enabled = on or key == "resize_factor"
+            w.setEnabled(enabled)
+            self.crop_labels[key].setEnabled(enabled)
+        for w in (self.bg_edit, self.bg_btn, self.bg_row_label):
+            w.setEnabled(on)
+        self.preview_box.setEnabled(on)
+        if not on:
+            self.preview_info.setText(
+                "Raw mode: whole frames are written, no background subtraction. "
+                "Nothing to preview.")
 
     def refresh(self) -> None:
         self.video_label.setText(self.ctx.video_path() or "—")
@@ -135,6 +246,71 @@ class PreprocessTab(_Base):
                          self.ctx.status("Background computed.")),
         )
 
+    # ----------------------------------------------------------------- preview
+    def _preview_current_frame(self) -> None:
+        """Preview whatever frame the player is showing."""
+        self.preview_frame_spin.setValue(int(self.ctx.current_frame()))
+        self._preview(reset_center=True)
+
+    def _step_preview(self, delta: int) -> None:
+        """Step one frame, keeping the smoothed centre so the stabilization
+        (smoothing / deadband) is visible rather than re-seeded every time."""
+        self.preview_frame_spin.setValue(
+            max(0, self.preview_frame_spin.value() + delta))
+        self._preview(reset_center=False)
+
+    def _preview(self, reset_center: bool = True) -> None:
+        client = self._client()
+        video = self.ctx.video_path()
+        if not client or not video:
+            self.ctx.status("Load a video first.")
+            return
+        bg = self.bg_edit.text().strip() or self.ctx.current_bg_path()
+        if not bg:
+            self.preview_info.setText(
+                "No background yet — click Compute background first.")
+            return
+        if reset_center:
+            self._preview_center = None
+
+        frame = self.preview_frame_spin.value()
+        # Snapshot the centre and params here rather than reading them inside
+        # the lambda: that body runs on a worker thread, and a second preview
+        # started meanwhile would otherwise change what this request sends.
+        center = self._preview_center
+        params = self.build_crop_params()
+        self.preview_info.setText(f"Previewing frame {frame}…")
+        self._spawn_call(
+            lambda: client.preview_frame(
+                video, bg, frame, crop_params=params, prev_center=center),
+            self._show_preview,
+        )
+
+    def _show_preview(self, res: dict) -> None:
+        for key, _caption in self.PREVIEW_PANES:
+            label = self.preview_labels[key]
+            data = res.get(key)
+            if not data:
+                label.setText("—")
+                continue
+            pix = QtGui.QPixmap()
+            if pix.loadFromData(base64.b64decode(data), "JPG"):
+                label.setPixmap(pix.scaled(
+                    label.size(), QtCore.Qt.AspectRatioMode.KeepAspectRatio,
+                    QtCore.Qt.TransformationMode.SmoothTransformation))
+            else:
+                label.setText("(decode failed)")
+
+        self._preview_center = res.get("center")
+        src = f"{res.get('frame_width')}×{res.get('frame_height')}"
+        proc = f"{res.get('resized_width')}×{res.get('resized_height')}"
+        box = self.crop_widgets["box_size"].value()
+        note = f"frame {self.preview_frame_spin.value()} · source {src}"
+        if proc != src:
+            note += f" · processed {proc}"
+        note += f" · crop {box}×{box} px"
+        self.preview_info.setText(note)
+
     def _run(self) -> None:
         client = self._client()
         video = self.ctx.video_path()
@@ -158,11 +334,15 @@ class PreprocessTab(_Base):
             if task_id:
                 self._spawn_stream(lambda: client.preprocess_status(task_id), on_event)
 
-        self.ctx.status("Preprocessing…")
+        crop = self.crop_enabled.isChecked()
+        self.ctx.status("Extracting frames…" if not crop else "Preprocessing…")
         self._spawn_call(
             lambda: client.run_preprocessing(
                 video, out_dir, crop_params=self.build_crop_params(),
-                frame_ranges=ranges, bg_path=self.bg_edit.text() or None),
+                frame_ranges=ranges,
+                # No background is read in raw mode, so don't send a stale one.
+                bg_path=(self.bg_edit.text() or None) if crop else None,
+                crop=crop),
             start,
         )
 

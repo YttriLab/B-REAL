@@ -125,10 +125,13 @@ class BackendClient:
                           crop_params: Optional[dict] = None,
                           frame_ranges: Optional[list] = None,
                           bg_path: Optional[str] = None, num_frames_bg: int = 500,
-                          output_name: Optional[str] = None) -> dict:
+                          output_name: Optional[str] = None,
+                          crop: bool = True) -> dict:
+        """`crop=False` extracts whole frames and skips background subtraction."""
         body = {"video_path": video_path, "output_dir": output_dir,
                 "frame_ranges": frame_ranges, "bg_path": bg_path,
-                "num_frames_bg": num_frames_bg, "output_name": output_name}
+                "num_frames_bg": num_frames_bg, "output_name": output_name,
+                "crop": crop}
         if crop_params is not None:
             body["crop_params"] = crop_params
         return self._post("/api/preprocess/run", body)

@@ -173,6 +173,57 @@ class TestCropVideoFlat:
         assert full_img.shape[0] == 64 and full_img.shape[1] == 64
         assert half_img.shape[0] == 32 and half_img.shape[1] == 32
 
+    def test_raw_mode_writes_whole_frames(self, synthetic_video, tmp_path):
+        """crop=False writes the full frame, not a box_size crop."""
+        import cv2
+        video_path, _ = synthetic_video
+        out_dir = str(tmp_path / "raw")
+        os.makedirs(out_dir, exist_ok=True)
+        result = crop_video_flat(
+            video_path=video_path,
+            output_dir=out_dir,
+            crop_params={"box_size": 16, "difference_threshold": 5},
+            frame_ranges=[[5, 5]],
+            crop=False,
+        )
+        img = cv2.imread(os.path.join(result, "5.png"))
+        # the synthetic video is 64x64; a cropped run would give 16x16
+        assert img.shape[:2] == (64, 64)
+
+    def test_raw_mode_never_touches_the_background(self, synthetic_video, tmp_path,
+                                                   monkeypatch):
+        """Skipping the crop must also skip building a background — decoding
+        hundreds of frames for one that gets discarded is the whole cost."""
+        from backend.services import preprocess_service
+
+        def boom(*a, **kw):
+            raise AssertionError("background computed in raw mode")
+
+        monkeypatch.setattr(preprocess_service, "get_background_avg", boom)
+
+        video_path, _ = synthetic_video
+        out_dir = str(tmp_path / "raw_nobg")
+        os.makedirs(out_dir, exist_ok=True)
+        result = crop_video_flat(
+            video_path=video_path, output_dir=out_dir,
+            crop_params={"box_size": 32, "difference_threshold": 5},
+            frame_ranges=[[2, 3]], crop=False,
+        )
+        assert sorted(os.listdir(result)) == ["2.png", "3.png"]
+
+    def test_raw_mode_still_applies_resize_factor(self, synthetic_video, tmp_path):
+        import cv2
+        video_path, _ = synthetic_video
+        out_dir = str(tmp_path / "raw_half")
+        os.makedirs(out_dir, exist_ok=True)
+        result = crop_video_flat(
+            video_path=video_path, output_dir=out_dir,
+            crop_params={"box_size": 200, "resize_factor": 0.5},
+            frame_ranges=[[5, 5]], crop=False,
+        )
+        img = cv2.imread(os.path.join(result, "5.png"))
+        assert img.shape[:2] == (32, 32)
+
     def test_sparse_extraction_only_writes_requested_frames(self, synthetic_video, tmp_path):
         video_path, _ = synthetic_video
         out_dir = str(tmp_path / "cropped_sparse")
