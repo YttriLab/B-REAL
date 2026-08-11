@@ -158,6 +158,43 @@ def test_preprocess_preview_renders_the_three_panes():
     assert "320×240" in tab.preview_info.text()
 
 
+def test_preview_panes_do_not_resize_themselves():
+    """Regression: scaling a pixmap to its own QLabel's size is a feedback loop
+    (the pixmap is the label's size hint), so stepping frames made the panes
+    oscillate and creep — 150 -> 164 -> 152 -> 166 on a fixed image."""
+    _app()
+    tab = PreprocessTab(FakeCtx())
+    tab.resize(900, 850)
+    tab.show()
+    QtWidgets.QApplication.instance().processEvents()
+
+    import base64
+    from PySide6 import QtGui
+    img = QtGui.QImage(64, 64, QtGui.QImage.Format.Format_RGB888)
+    img.fill(QtGui.QColor("red"))
+    buf = QtCore.QBuffer()
+    buf.open(QtCore.QIODevice.OpenModeFlag.WriteOnly)
+    img.save(buf, "JPG")
+    payload = {k: base64.b64encode(bytes(buf.data())).decode("ascii")
+               for k, _ in PreprocessTab.PREVIEW_PANES}
+
+    # Prime once so the layout settles (the placeholder and the first image
+    # legitimately differ); the bug was that it never settled after that.
+    tab._show_preview(dict(payload))
+    QtWidgets.QApplication.instance().processEvents()
+
+    seen = []
+    for _ in range(6):
+        tab._show_preview(dict(payload))
+        QtWidgets.QApplication.instance().processEvents()
+        pane = tab.preview_labels["cropped"]
+        seen.append((pane.width(), pane.height()))
+
+    # the same image must render at the same size every time
+    assert len(set(seen)) == 1, f"preview pane size drifted: {seen}"
+    tab.hide()
+
+
 def test_preprocess_preview_stepping_chains_the_center():
     _app()
     ctx = FakeCtx()

@@ -24,6 +24,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from labeling_shell.backend_worker import CallWorker, StreamWorker
 from labeling_shell.frame_ranges import compute_labeled_frame_ranges
+from labeling_shell.image_pane import ImagePane
 from labeling_shell.no_wheel import (
     NoWheelComboBox, NoWheelDoubleSpinBox, NoWheelSpinBox,
 )
@@ -139,12 +140,10 @@ class PreprocessTab(_Base):
         pv = QtWidgets.QVBoxLayout(self.preview_box)
 
         panes = QtWidgets.QHBoxLayout()
-        self.preview_labels: dict[str, QtWidgets.QLabel] = {}
+        self.preview_labels: dict[str, ImagePane] = {}
         for key, caption in self.PREVIEW_PANES:
             col = QtWidgets.QVBoxLayout()
-            img = QtWidgets.QLabel("—")
-            img.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-            img.setMinimumSize(150, 150)
+            img = ImagePane()
             img.setStyleSheet("background:#1e1f22;border:1px solid #3c3f41;")
             cap = QtWidgets.QLabel(caption)
             cap.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
@@ -288,18 +287,18 @@ class PreprocessTab(_Base):
 
     def _show_preview(self, res: dict) -> None:
         for key, _caption in self.PREVIEW_PANES:
-            label = self.preview_labels[key]
+            pane = self.preview_labels[key]
             data = res.get(key)
             if not data:
-                label.setText("—")
+                pane.set_image(None)
                 continue
             pix = QtGui.QPixmap()
             if pix.loadFromData(base64.b64decode(data), "JPG"):
-                label.setPixmap(pix.scaled(
-                    label.size(), QtCore.Qt.AspectRatioMode.KeepAspectRatio,
-                    QtCore.Qt.TransformationMode.SmoothTransformation))
+                # ImagePane keeps the source and scales to its own geometry, so
+                # stepping frames can't ratchet the pane size up or down.
+                pane.set_image(pix)
             else:
-                label.setText("(decode failed)")
+                pane.set_message("(decode failed)")
 
         self._preview_center = res.get("center")
         src = f"{res.get('frame_width')}×{res.get('frame_height')}"
