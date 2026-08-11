@@ -2,18 +2,21 @@
 
 A desktop application for building **real-time, clip-based animal behavior classifiers** — from hand-labeling video through training to active-learning refinement.
 
-It pairs an Electron labeling UI with a Python (FastAPI + PyTorch Lightning) backend that handles video preprocessing, TSM model training, and per-frame inference. Trained models export to TorchScript for real-time deployment (e.g. Bonsai.ML rigs).
+It pairs a PySide6 labeling UI with a Python (FastAPI + PyTorch Lightning) backend that handles video preprocessing, TSM model training, hyperparameter sweeps, and per-frame inference. Trained models export to ONNX, OpenVINO or TensorRT for real-time deployment (e.g. Bonsai.ML rigs).
+
+> The original Electron frontend was removed once the all-Python UI replaced it. It is preserved at the `electron-final` tag.
 
 ---
 
 ## What it does
 
-A complete pipeline in one app, organized as four tabs:
+A complete pipeline in one app:
 
 1. **Label** — Load videos, define behaviors, and mark temporal *bouts* (start/end intervals) frame-by-frame.
 2. **Preprocess** — Background subtraction + animal-centered cropping → flat frame images for training.
-3. **Train** — Train a Temporal Shift Module (TSM) classifier on an EfficientNet backbone, with live metrics and optional Weights & Biases logging.
-4. **Active Learning** — Run inference, see an uncertainty heatmap and misclassification markers on the timeline, and jump to the frames most worth relabeling.
+3. **Train** — Train a Temporal Shift Module (TSM) classifier on an EfficientNet backbone (b0–b7), with live metrics.
+4. **Tune** — Optuna hyperparameter sweeps, optionally constrained to architectures that meet a p99 inference-latency budget in the deployment runtime.
+5. **Active Learning** — Run inference, see an uncertainty heatmap and misclassification markers on the timeline, and jump to the frames most worth relabeling.
 
 ---
 
@@ -22,7 +25,6 @@ A complete pipeline in one app, organized as four tabs:
 - **[pixi](https://pixi.sh)** — manages the entire Python side (PyTorch+CUDA, ffmpeg, and the native stack) from a single lockfile. Install once:
   - Windows (PowerShell): `iwr -useb https://pixi.sh/install.ps1 | iex`
   - macOS/Linux: `curl -fsSL https://pixi.sh/install.sh | bash`
-- **Node.js** 18+ (with `npm`) — for the Electron GUI.
 - A **CUDA GPU** is recommended for training/inference but not required (see CPU note below).
 
 > You no longer install Python, PyTorch, CUDA, or ffmpeg yourself — `pixi` provisions a pinned, project-local environment from `pixi.toml`/`pixi.lock`, and the app discovers it automatically. (No more `conda create` / `RTASOID_PYTHON`.)
@@ -36,9 +38,9 @@ A complete pipeline in one app, organized as four tabs:
 #    pulling CUDA PyTorch + ffmpeg + deps from conda-forge). Run from repo root.
 pixi install
 
-# 2. Electron app dependencies
-cd LabelingApp
-npm install
+# 2. Frontend environment (kept separate so the UI never drags in CUDA/torch)
+python -m venv .venv-gui
+.venv-gui/Scripts/pip install -r gui/requirements.txt   # Windows (…/bin elsewhere)
 ```
 
 **CPU-only machine?** Edit `pixi.toml` and replace `pytorch-gpu` with `pytorch-cpu`, then re-run `pixi install`.
@@ -46,13 +48,10 @@ npm install
 ## Running
 
 ```bash
-# From LabelingApp/ — launches the desktop app and auto-starts the backend
-npm start
+.venv-gui/Scripts/python.exe gui/app.py
 ```
 
-The Electron main process spawns the FastAPI backend (`uvicorn backend.server:app --port 8742`) using the **pixi env it auto-discovers** at `.pixi/envs/default/` (no env var needed), and shuts it down on exit. The header shows a **Backend** status pill (green = connected); `GET /api/health` reports the interpreter + CUDA status.
-
-> **Interpreter resolution** (`main.js::resolveBackendPython`): `RTASOID_PYTHON`/`PYTHON` override → the project-local pixi env → bare `python` on PATH. The override is an advanced escape hatch; the normal path is the pixi env.
+Use the **Backend** menu to spawn a local backend (`uvicorn backend.server:app --port 8742`, run from the **pixi env** at `.pixi/envs/default/`) or to attach to a remote one. `GET /api/health` reports the interpreter + CUDA status.
 
 To run the backend on its own (e.g. for API testing) or the tests:
 
@@ -63,14 +62,9 @@ pixi run test        # pytest
 
 ## Building installers
 
-```bash
-cd LabelingApp
-npm run dist:win     # Windows (NSIS installer + portable)
-npm run dist:mac     # macOS (DMG)
-npm run dist:linux   # Linux (AppImage + deb)
-```
+PyInstaller spec and per-OS notes live in `gui/packaging/`.
 
-> **Distribution status:** the dev/lab workflow above (`pixi install` → `npm start`) is the supported install today and needs no manual Python/CUDA setup. A fully turnkey end-user installer — bundling the `pixi` binary + backend source and running `pixi install` once on first launch (thin installer, ~no manual steps) — is the remaining packaging work tracked in the plan; until then, distribute by sharing the repo and having the recipient run `pixi install`.
+> **Distribution status:** the dev/lab workflow above (`pixi install` → `python gui/app.py`) is the supported install today and needs no manual Python/CUDA setup. A fully turnkey end-user installer — bundling the `pixi` binary + backend source and running `pixi install` once on first launch (thin installer, ~no manual steps) — is the remaining packaging work tracked in the plan; until then, distribute by sharing the repo and having the recipient run `pixi install`.
 
 ---
 
@@ -82,7 +76,7 @@ A project is required. On launch a gate prompts you to **New Project** (choose a
 ### 2. Add videos
 Click **+** in the **Videos** sidebar to add one or more video files. They appear in the sidebar; click one to load it.
 
-> **Playback:** WebCodecs mode is on by default for true frame-accurate stepping and seeking. If a video's codec/container isn't supported (HEVC/H.265, AVI are common culprits), the app prompts you to either pick a different file or re-encode it to H.264 MP4.
+> **Playback:** decoding goes through PyAV (ffmpeg/libav), so stepping and seeking are frame-exact on every container ffmpeg can read — MP4 and MKV included, with no remux step.
 
 ### 3. Define behaviors
 In the **Label** tab, add behaviors (e.g. *grooming*, *walking*). Each is auto-assigned a number key (`1`–`9`, `0`).
@@ -186,10 +180,10 @@ The resulting `.pt` is compatible with `Bonsai.ML.Torch`'s `LoadScriptModule` fo
 
 | Symptom | Fix |
 |--------|-----|
-| **Backend pill stays red** | Make sure you ran `pixi install` at the repo root; check the terminal for `[backend]` errors. The startup log prints the interpreter + torch/CUDA status. |
-| **Video won't load / "unsupported format"** | Choose a different MP4 (H.264) or WebM file, or use the prompt's *Re-encode* option (ffmpeg is provided by the pixi env). |
-| **WebCodecs unavailable** | The checkbox disables itself and falls back to HTML5 playback automatically. |
+| **Backend won't connect** | Make sure you ran `pixi install` at the repo root; check the terminal for `[backend]` errors. The startup log prints the interpreter + torch/CUDA status. |
+| **Video won't load** | PyAV reads whatever ffmpeg supports; if a file still fails, re-encode it to H.264 MP4 (ffmpeg is provided by the pixi env). |
 | **Training is very slow** | Use a CUDA GPU; CPU works but is much slower. |
+| **Sweep refuses to start on a latency budget** | The deployment runtime is missing or unusable. TensorRT needs a GPU of compute capability 7.5+ (Turing or newer); pick the OpenVINO/CPU target otherwise. The error names the reason. |
 | **Training runs on CPU despite having a GPU** | The training log shows `Device: CPU — GPU unavailable (...)` with the reason. With the default `pixi.toml` (`pytorch-gpu`) the env is CUDA-enabled; check `GET /api/health` → `device` to confirm the app is using the pixi env. If you edited `pixi.toml` to `pytorch-cpu`, switch it back and re-run `pixi install`. |
 
 ### Selecting the backend Python interpreter (advanced)
@@ -198,11 +192,11 @@ Normally the app auto-discovers the pixi env (`.pixi/envs/default/`). To force a
 
 ```powershell
 # Windows (PowerShell)
-$env:RTASOID_PYTHON = "C:\path\to\python.exe"; cd LabelingApp; npm start
+$env:RTASOID_PYTHON = "C:\path\to\python.exe"; .venv-gui\Scripts\python.exe gui\app.py
 ```
 ```bash
 # macOS / Linux
-export RTASOID_PYTHON="/path/to/python"; cd LabelingApp && npm start
+export RTASOID_PYTHON="/path/to/python"; .venv-gui/bin/python gui/app.py
 ```
 
 The chosen interpreter is printed as `[backend] launching with interpreter: ...`, and `/api/health` reports its torch/CUDA status.
@@ -219,26 +213,29 @@ pixi run pytest -v                     # verbose
 pixi run pytest tests/test_rlt_service.py   # a single module
 ```
 
-The Electron renderer UI is not covered by automated tests.
+The frontend has its own headless suite (Qt offscreen, synthetic videos):
+
+```bash
+.venv-gui/Scripts/python.exe gui/run_all_tests.py
+```
 
 ---
 
 ## Repository layout
 
 ```
-├── LabelingApp/        # Electron app (UI)
-│   ├── main.js         # main process — spawns the backend, IPC handlers
-│   ├── renderer.js     # all UI logic
-│   ├── preload.js      # contextBridge IPC
-│   ├── project-manager.js
-│   └── index.html / styles.css
+├── gui/                # PySide6 desktop app (UI) — see gui/README.md
+│   ├── app.py          # MainWindow: player + Label/Pipeline tabs
+│   ├── labeling_shell/ # reusable, pipeline-agnostic labeler + backend seam
+│   └── plugins/        # this project's pipeline UI (preprocess/train/tune/export)
 ├── backend/            # FastAPI server (port 8742)
 │   ├── server.py
-│   ├── routers/        # preprocess, training, inference, project endpoints
+│   ├── routers/        # preprocess, training, tuning, inference, project endpoints
 │   └── services/       # core logic incl. rlt_service.py (.rlt files)
 ├── model.py            # EfficientNet classifier
 ├── model_tsm.py        # TSM (Temporal Shift Module) variant
 ├── convert_torchscript_tsm.py
+├── optimized_runtime.py  # ONNX -> OpenVINO / TensorRT export + latency benchmarking
 ├── tune_cropping.py    # cropping/background utilities
 ├── config_tsm.yaml     # training defaults
 └── tests/              # pytest suite

@@ -4,7 +4,7 @@ This is the Python replacement for the Electron app's frame-accurate video
 engine, which was a browser workaround: chunked disk reads -> `mp4box` demux ->
 a decode-order sample table with keyframe indices -> `VideoDecoder` -> canvas,
 plus a hand-rolled keyframe-aware seek/reset state machine
-(`LabelingApp/core/player.js:503-593`) and an MKV->MP4 remux path because
+(core/player.js at the electron-final tag) and an MKV->MP4 remux path because
 `mp4box` is MP4-only.
 
 libav gives us all of that natively:

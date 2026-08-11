@@ -25,15 +25,6 @@ wandb/
 frames_*/
 cropped_*/
 
-# Node / Electron
-node_modules/
-LabelingApp/dist/
-LabelingApp/out/
-LabelingApp/LabelingAppMac/
-LabelingApp/LabelingAppMac.zip
-LabelingApp/LabelingAppMacV2/
-LabelingApp/LabelingAppMacV2.zip
-
 # pytest
 .pytest_cache/
 
@@ -55,3 +46,7 @@ Thumbs.db
 
 # CodeGraph local index (per-machine, user-managed)
 .codegraph/
+
+# Leftovers on disk from the removed Electron frontend (node_modules, dist, the
+# Mac copies). The app itself is gone from the tree — see the electron-final tag.
+LabelingApp/

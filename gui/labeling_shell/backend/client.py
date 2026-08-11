@@ -1,7 +1,8 @@
 """HTTP client for the FastAPI backend.
 
-One method per endpoint the Electron renderer used (see LabelingApp/core/*.js and
-plugins/pipeline.js), matching the same request/response contract so the backend
+One method per endpoint the Electron renderer used (see core/*.js and
+plugins/pipeline.js at the electron-final tag), matching the same
+request/response contract so the backend
 needs no changes. Long-running jobs (preprocess/train/inference) return a
 task_id; progress is consumed by iterating the corresponding *_status generator,
 which parses the backend's Server-Sent Events into plain dicts.

@@ -4,33 +4,26 @@
 
 Real-time clip-based animal behavior classifier. A desktop app for labeling video with behavioral bouts, backed by a FastAPI server that handles video preprocessing, TSM model training (PyTorch Lightning), hyperparameter sweeps, and per-frame inference with active learning.
 
-There are **two frontends on `main`**, both driving the same backend over HTTP/SSE:
-
-- `gui/` — the all-Python PySide6 app (`gui/app.py`). The direction of travel; the `python-rewrite` branch was merged into `main`. New frontend work goes here — it is the only one with the Tune (hyperparameter sweep) tab.
-- `LabelingApp/` — the original Electron app, still present and still working. `electron-baseline` tags the last commit before the rewrite.
+The frontend is the all-Python PySide6 app in `gui/` (`gui/app.py`), talking to the backend over HTTP/SSE.
+The original Electron frontend (`LabelingApp/`) was removed once this replaced it. Two tags preserve it: `electron-baseline` (before the rewrite began) and `electron-final` (the last commit where it existed).
 
 ## Project Structure
 
 ```
-├── LabelingApp/           # Electron app. Four files are ours; the rest is the
-│   │                      # behavior-labeler package (see the section below).
-│   ├── app.js             # OURS — which application this is
-│   ├── app.config.json    # OURS — window title, project folder layout
-│   ├── plugins/pipeline.js# OURS — the whole TSM pipeline: Preprocess/Train
-│   ├── project-manager.js # OURS — project manifest (schema is pipeline-specific)
-│   ├── index.html         # shell — names no application and no pipeline
-│   ├── core/              # shell — 18 classic scripts, loaded in order
-│   ├── labeler-plugin.js  # shell — plugin registry: the shell/pipeline seam
-│   ├── main.js            # shell — main process; spawns the Python backend
-│   ├── preload.js         # shell — IPC bridge (contextBridge)
-│   └── tools/             # shell — `npm run check` invariants
+├── gui/                   # PySide6 desktop app (the only frontend)
+│   ├── app.py             # MainWindow: player + Label/Pipeline tabs, menus
+│   ├── labeling_shell/    # OURS but pipeline-agnostic: player, bouts, CSV,
+│   │                      # project store, backend seam. Names no pipeline.
+│   └── plugins/           # this pipeline's UI: preprocess / train / tune /
+│                          # export / active learning
 ├── backend/               # FastAPI REST server (port 8742)
 │   ├── server.py          # App init + CORS
-│   ├── routers/           # preprocessing, training, inference endpoints
+│   ├── routers/           # preprocessing, training, tuning, inference endpoints
 │   └── services/          # Core logic (async tasks with cancellation)
 ├── model.py               # EfficientNet-based classifier
 ├── model_tsm.py           # TSM (Temporal Shift Module) variant
 ├── convert_torchscript_tsm.py  # Export to TorchScript
+├── optimized_runtime.py   # ONNX -> OpenVINO / TensorRT export + p99 benchmarking
 ├── preprocess_video_train.py   # Video preprocessing CLI
 ├── tune_cropping.py       # Crop parameter tuning
 ├── config_tsm.yaml        # Training hyperparameters
@@ -43,13 +36,15 @@ There are **two frontends on `main`**, both driving the same backend over HTTP/S
 # Python env (pixi.toml + pixi.lock → .pixi/envs/default, with CUDA torch + ffmpeg)
 pixi install
 
-# Install Node deps + launch Electron (auto-starts backend in the pixi env)
-cd LabelingApp
-npm install
-npm start
+# Frontend env (kept separate so the UI never drags in CUDA/torch)
+python -m venv .venv-gui
+.venv-gui/Scripts/pip install -r gui/requirements.txt
+
+# Launch
+.venv-gui/Scripts/python.exe gui/app.py
 ```
 
-The Electron main process spawns `uvicorn backend.server:app --port 8742` automatically and tears it down on exit. `main.js::resolveBackendPython()` resolves the interpreter in order: **`RTASOID_PYTHON`/`PYTHON` override → the project-local pixi env (`.pixi/envs/default/python.exe`) → bare `python`**. The pixi env is the supported path (no env var needed); the override is an advanced escape hatch. The chosen interpreter is logged as `[backend] launching with interpreter: ...`, and `GET /api/health` reports its torch/CUDA status (`device` block). `pixi.toml` is the source of truth for Python deps (`backend/requirements.txt` is a pip fallback). Standalone: `pixi run backend`, tests: `pixi run test`.
+The Backend menu spawns `uvicorn backend.server:app --port 8742` and tears it down on exit, resolving the interpreter in order: **`RTASOID_PYTHON`/`PYTHON` override → the project-local pixi env (`.pixi/envs/default/python.exe`) → bare `python`**. The pixi env is the supported path (no env var needed); the override is an advanced escape hatch. The chosen interpreter is logged as `[backend] launching with interpreter: ...`, and `GET /api/health` reports its torch/CUDA status (`device` block). `pixi.toml` is the source of truth for Python deps (`backend/requirements.txt` is a pip fallback). Standalone: `pixi run backend`, tests: `pixi run test`.
 
 ## Running the Backend Standalone
 
@@ -83,9 +78,9 @@ my_experiment/
 ```
 
 - Video paths are **absolute** (stay where they are); all other paths are **relative** to project root
-- `project-manager.js` manages project state; `saveProgress()` dual-writes to both localStorage and project labels. The project label file is a **frame-indexed one-hot matrix** (`time` column = native frame index, one 0/1 column per behavior), generated by `generateTrainingLabelCsv()` — this is the exact format `model.py::load_data` consumes (it `argmax`es each row). Only in-bout frames get a row (sparse; lead-in/gap frames are context-only on disk, never labeled samples). The user-facing **Export bouts** button still writes the human-readable `start,end,behavior` timestamp CSV (`generateBoutsCsv`); import auto-detects either format and closes runs on frame-index gaps so the sparse matrix round-trips.
+- `gui/labeling_shell/project.py` manages project state. The project label file is a **frame-indexed one-hot matrix** (`time` column = native frame index, one 0/1 column per behavior), generated by `csv_io.py` — this is the exact format `model.py::load_data` consumes (it `argmax`es each row). Only in-bout frames get a row (sparse; lead-in/gap frames are context-only on disk, never labeled samples). The user-facing **Export bouts** button still writes the human-readable `start,end,behavior` timestamp CSV ; import auto-detects either format and closes runs on frame-index gaps so the sparse matrix round-trips.
 - Project actions live in the header **Project ▾** dropdown; last project auto-restored on startup
-- **A project is required.** On startup, if none is active, a blocking gate overlay (`#projectGate`, shown/hidden by `updateProjectGate()`) offers New / Open / Import .rlt — the workspace is unusable until a project exists. (`localStorage` is still used as a per-video progress cache, but the app no longer runs in a standalone no-project mode.)
+- **A project is required.** The File menu offers New / Open / Import .rlt; a project keeps videos, labels, configs, frames and models together and auto-restores on next launch.
 - **Artifacts route into the project automatically:** Compute Background writes to `backgrounds/bg_<name>.png` and records the path on the video's manifest entry (auto-loaded when you switch videos); Preprocess writes **only labeled** frames to `frames/<id>/` named by native index (no manual output-directory setting). Active Learning needs no frame dir — it infers on the fly from the video.
 - **Training data sources** are a checklist of the project's videos (frames + labels resolved from the manifest); "Add External Source" remains for custom/out-of-project dirs.
 
@@ -112,41 +107,23 @@ Projects export to a single HDF5 `.rlt` file in **two flavors** (mirroring SLEAP
 - Export/import goes through the backend (`/api/project/export-rlt` with `package` flag, `/api/project/import-rlt`, `/api/project/inspect-rlt`)
 - `rlt_service.py` handles all HDF5 read/write via `h5py`
 
-## The labeling shell is upstream — don't edit it here
+## The labeling shell is pipeline-agnostic — keep it that way
 
-`LabelingApp/` used to be a 5,500-line `renderer.js` maintained as a second copy
-of the one in **IntegratedASOiD** (https://github.com/adeneagle/IntegratedASOiD), which swaps this
-project's TSM classifier for A-SOID's RandomForest. They had drifted 1,948
-lines apart, but **91 of 125 divergent hunks sat in one region** — the tabs that
-configure and run a pipeline.
+`gui/labeling_shell/` is the reusable labeler: player, bout model, CSV I/O,
+project store, panels, and the backend seam. `gui/plugins/` is this project's
+TSM pipeline UI. The split is the same one the old Electron app maintained
+against the upstream `behavior-labeler` package, and it exists for the same
+reason: **IntegratedASOiD** (https://github.com/adeneagle/IntegratedASOiD) swaps
+this project's TSM classifier for A-SOID's RandomForest and shares everything
+else. Before the split the two projects kept 5,500-line copies of one renderer
+that had drifted 1,948 lines apart, with 91 of 125 divergent hunks sitting in
+one region — the tabs that configure and run a pipeline.
 
-That shell is now its own repo, `behavior-labeler`, which both projects
-consume and which also runs standalone as a bout labeler with no model behind
-it.
-
-**Only four files in `LabelingApp/` belong to this project**: `app.js`,
-`app.config.json`, `plugins/pipeline.js` (background subtraction, crop tuning,
-the TSM training loop, the TorchScript export), `project-manager.js`. Everything
-else — `index.html`, `styles.css`, `core/`, `main.js`, `preload.js`,
-`labeler-plugin.js`, `mp4box-worker.js`, `tools/` — is synced in and is
-byte-identical to IntegratedASOiD's copies. Editing a synced file here is the
-mistake to avoid; the next `npm run shell:sync` overwrites it silently. Fix it
-in the shell repo, then:
-
-```bash
-npm run verify        # sync from the package, then run the checks
-```
-
-### The rule that keeps this working
-
-**The shell must not name pipeline-specific code.** `core/` makes zero backend
-calls — labeling works with the backend down. This pipeline reaches the shell
-only through `window.labelerPlugins`: `onVideoSwitched` restores a video's
-background and crop, `inference.buildRequest` supplies `video_path` / `bg_path` /
-`crop_params` / `frames_per_group`, `settings.save|load` contribute the crop and
-training keys, `models` declares `.ckpt`/`.pt`, and the frames-per-group control
-mounts into the `#alPipelineOptions` slot. `npm run check` enforces the seam,
-the load order, and that `project-manager.js` defines every method `core/` calls.
+**The shell must not name pipeline-specific code.** `labeling_shell/` makes no
+pipeline-specific backend calls — labeling works with the backend down. The
+pipeline reaches the shell through the `ctx` duck-type documented at the top of
+`gui/plugins/pipeline_panel.py` (`client()`, `label_paths()`, `frame_dirs()`,
+`checkpoint_dir()`, `behaviors()`, `status()`, …), which `MainWindow` provides.
 
 **Don't change the inference payload shape.** Both apps return
 `{frames: [{index, predicted_class, uncertainty}], class_names}` indexed by
@@ -160,7 +137,7 @@ is shared code rather than two copies, and it is what the sharing rests on.
 - **Pydantic v2**: `model_config` is a reserved field name — use `extra_model_config` instead.
 - **CSV import**: `parseCsvAndImport(content, sourceName)` is the reusable core; `importCsv()` and Import Project both delegate to it.
 - **Misclassification detection**: `buildMisclassifiedArray()` cross-references model predictions against user-labeled bouts. Hooked into `saveProgress()` with try-catch for TDZ safety (defined after `alState`). Compares in the model's label space via `mapLabelToModelClass()` — a binarized model predicts `['other', <positive>]`, so raw behavior names must be mapped first (returns null = "not comparable", never flagged).
-- **MKV / non-MP4 containers**: the frame-accurate WebCodecs path demuxes with mp4box (ISO/MP4 only), so MKV/WebM/AVI/etc. are remuxed to MP4 first (`remux-video` IPC → stream-copy, else H.264 re-encode; audio dropped; faststart). `loadWebcodecsFile` keeps `currentVideoName`/`currentFile` as the **original** — backend ops (preprocess/AL/export) read it via ffmpeg and need no remux; only the in-renderer decoder does. Stream-copy preserves frame count so native indices stay aligned.
+- **MKV / non-MP4 containers**: decoding is PyAV (`gui/labeling_shell/video_reader.py`), which reads whatever ffmpeg reads, so there is no remux step and native frame indices are always the file's own. The Electron app needed mp4box (ISO/MP4 only) and remuxed everything else; that whole class of index-drift bug is gone.
 - **Model mocking in tests**: `monkeypatch.setattr(model_tsm.TSMClassifier, "load_from_checkpoint", ...)` with a `FakeModel` returning fixed logits.
 
 ## API Endpoints
@@ -189,8 +166,8 @@ is shared code rather than two copies, and it is what the sharing rests on.
 ## Workflow Pipeline
 
 1. **Label**: Load video in player, define behaviors (keys 1-9, 0), annotate temporal bouts.
-2. **Preprocess**: Video → optional **full-frame pre-resize** (`crop_params.resize_factor`, applied to the frame + background via `tune_cropping.pop_resize_factor`/`resize_frame`; the Preprocess panel shows the original vs processed frame size) → background subtraction (`crop_params.difference_mode`: "directional" = subject darker than bg, or "absolute" = |frame − bg|) → contour detection → center-of-mass crop, with temporal stabilization of the crop center (`crop_params.smoothing` EMA + `deadband` + `min_contour_area`/nearest-blob selection in `FindRatBoundingBox`) so the TSM classifier sees the animal's own motion rather than box jitter. The Preprocess panel can step frame-by-frame (Prev/Next), chaining the smoothed center so you can watch the box settle; `preview_frame` accepts/returns `center` for this. The same `resize_factor` is applied at inference (`run_inference_video`) so AL crops match training. Extracts **only labeled frames** (each bout expanded by `frames_per_group-1` lead-in for clip context), named by **native frame index**: `frames/<id>/<nativeIndex>.png`. The renderer computes the ranges from the video's bouts and sends `frame_ranges` to `/api/preprocess/run`.
-3. **Train**: Frame dirs + label CSVs → TSM classifier (EfficientNet backbone) → checkpoint in `lightning_logs/`. Optional W&B logging (project/run name, API key passed via env var to subprocess). **Binarize** is a checklist of behaviors: 0 checked = multi-class; 1 = binarize that behavior; ≥2 = combined into one positive class via `label_union` then binarized (renderer sends `binarize` + `label_union`). The subprocess emits **verbose startup lines** (device, data sources, sample/class counts, class distribution, train/val/test split) into the metrics JSONL; the SSE endpoint streams **every** line in order (`read_all_metrics`, not just the latest) so nothing is lost. The UI shows a scrollable `#trainLog`, plus **Best Val Loss** and **Stagnation** (`MetricsWriter` tracks `best_val_loss` and `stagnation_epochs` = epochs since improvement, shown as `n / patience` to mirror EarlyStopping).
+2. **Preprocess**: Video → optional **full-frame pre-resize** (`crop_params.resize_factor`, applied to the frame + background via `tune_cropping.pop_resize_factor`/`resize_frame`; the Preprocess panel shows the original vs processed frame size) → background subtraction (`crop_params.difference_mode`: "directional" = subject darker than bg, or "absolute" = |frame − bg|) → contour detection → center-of-mass crop, with temporal stabilization of the crop center (`crop_params.smoothing` EMA + `deadband` + `min_contour_area`/nearest-blob selection in `FindRatBoundingBox`) so the TSM classifier sees the animal's own motion rather than box jitter. The Preprocess panel can step frame-by-frame (Prev/Next), chaining the smoothed center so you can watch the box settle; `preview_frame` accepts/returns `center` for this. The same `resize_factor` is applied at inference (`run_inference_video`) so AL crops match training. Extracts **only labeled frames** (each bout expanded by `frames_per_group-1` lead-in for clip context), named by **native frame index**: `frames/<id>/<nativeIndex>.png`. The frontend computes the ranges from the video's bouts (`frame_ranges.py`) and sends `frame_ranges` to `/api/preprocess/run`.
+3. **Train**: Frame dirs + label CSVs → TSM classifier (EfficientNet backbone) → checkpoint in `lightning_logs/`. Optional W&B logging (project/run name, API key passed via env var to subprocess). **Binarize** is a checklist of behaviors: 0 checked = multi-class; 1 = binarize that behavior; ≥2 = combined into one positive class via `label_union` then binarized (the frontend sends `binarize` + `label_union`). The subprocess emits **verbose startup lines** (device, data sources, sample/class counts, class distribution, train/val/test split) into the metrics JSONL; the SSE endpoint streams **every** line in order (`read_all_metrics`, not just the latest) so nothing is lost. The UI shows a scrollable train log, plus **Best Val Loss** and **Stagnation** (`MetricsWriter` tracks `best_val_loss` and `stagnation_epochs` = epochs since improvement, shown as `n / patience` to mirror EarlyStopping).
 4. **Infer / Active Learning**: Checkpoint + **the video itself** → `inference_service.run_inference_video` decodes + crops frames on the fly (same `FindRatBoundingBox` + background as training) → per-frame predictions + normalized entropy, indexed by native frame number. No pre-extracted frame dir. Uncertainty heatmap (green→red) + misclassification ticks on the timeline; jump to next uncertain segment / misclassified frame for relabeling.
 
 **Frame-index invariant:** native video frame number is the single canonical index across labels (`time` column), extracted frame filenames, and inference output. There is no framerate downsampling.
@@ -217,11 +194,11 @@ time,grooming,walking,rearing
 
 ## Import Project
 
-"Import Project" button loads a video + label CSV from another project into the labeling UI. Two file dialogs (video then CSV), loads video, parses labels via `parseCsvAndImport()`. New behaviors are auto-created if they don't exist in the current session.
+"Import Project" button loads a video + label CSV from another project into the labeling UI. Two file dialogs (video then CSV), loads video, parses labels via `csv_io.py`. New behaviors are auto-created if they don't exist in the current session.
 
 ## Data Storage
 
-- **Labels/bouts**: `localStorage["bouts"]` and `localStorage["behaviors"]` in Electron renderer
+- **Labels/bouts**: the project store on disk — `project.json` plus per-video `labels/<id>.json` + CSV (`gui/labeling_shell/project.py`)
 - **Preprocessed frames**: Flat numbered PNGs (e.g., `frames_out/video_name/0.png`)
 - **Checkpoints**: `lightning_logs/version_N/checkpoints/*.ckpt`
 - **Backgrounds**: `backgrounds/bg_videoname.png`
@@ -243,17 +220,12 @@ Output `.pt` file is compatible with Bonsai.ML.Torch `LoadScriptModule` for real
 
 ## Build / Distribution
 
-```bash
-cd LabelingApp
-npm run dist:win    # Windows (NSIS + portable)
-npm run dist:mac    # macOS (DMG)
-npm run dist:linux  # Linux (AppImage + deb)
-```
+PyInstaller spec and per-OS notes: `gui/packaging/`.
 
 ## Dependencies
 
 (`pixi.toml` is the authoritative list — conda-forge env with a `pixi.lock`; `backend/requirements.txt` is a pip fallback.)
 
 - **Python** (via pixi/conda-forge): FastAPI, Uvicorn, PyTorch (`pytorch-gpu` CUDA build, swap to `pytorch-cpu` on CPU machines), torchvision, Lightning, torchmetrics, timm, OpenCV, Albumentations, OmegaConf, numpy, pandas, h5py (`.rlt` files), wandb (optional training logging), matplotlib, pyyaml, scipy, optuna (hyperparameter sweeps), onnx + openvino (deployment-format export and latency measurement — see `optimized_runtime.py`), tensorrt-cu12 (PyPI, under `[pypi-dependencies]` — the GPU deployment runtime; needs a GPU of compute capability 7.5+, i.e. Turing or newer, so it will not run on Pascal cards like a GTX 10xx), **ffmpeg** (re-encode / labeled-video, now provided by the env)
-- **Node**: Electron 31, electron-builder, mp4box, xlsx
+- **Frontend** (separate `.venv-gui`, `gui/requirements.txt`): PySide6-Essentials, PyAV, numpy, httpx
 - **Test**: pytest, pytest-asyncio, httpx

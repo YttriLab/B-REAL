@@ -1,11 +1,9 @@
 # gui/ — all-Python (PySide6) frontend
 
-The Python successor to the Electron/npm frontend under `LabelingApp/`. It was
-developed on the `python-rewrite` branch, which has now been merged into `main`
-— `main` carries both frontends, with this one as the direction of travel. The
-Electron app under `LabelingApp/` is still present and still runs. The last
-commit before the rewrite is tagged `electron-baseline` if you need to get back
-to an Electron-only tree.
+The project's frontend. It replaced the Electron/npm app that used to live in
+`LabelingApp/`, which has been removed from the tree — two tags preserve it:
+`electron-baseline` (before the rewrite began) and `electron-final` (the last
+commit where it existed).
 
 Stack: **PySide6** (Qt) + **PyAV** (ffmpeg/libav) + NumPy. The existing
 FastAPI/PyTorch backend is kept and reached over HTTP/SSE via a `BackendClient`
@@ -83,5 +81,21 @@ paths are covered at the contract level (stub server, config building).
 - Phase 2 — core labeler: model, CSV, Qt panels, project persistence. ✅
 - Phase 3 — pipeline UI: preprocess / train / export. ✅
 - Phase 4 — active learning + overlays (uncertainty timeline, HUD). ✅
-- Phase 5 — packaging (PyInstaller spec + docs). ✅ Promotion to `main` is
-  deferred until parity sign-off (then merge + tag `electron-final`).
+- Phase 5 — packaging (PyInstaller spec + docs). ✅
+- Promoted to `main`; the Electron app was removed and tagged `electron-final`.
+
+### Not yet ported from the Electron UI
+
+These reached the backend from the old `plugins/pipeline.js` and have no control
+here yet. The backend still accepts every one of them — only the UI is missing,
+so each is a form field plus a `build_train_config` kwarg:
+
+- **Boundary smoothing** — `boundary_smoothing_enabled/epsilon/window`
+  (backend defaults apply: disabled).
+- **Weights & Biases** — `use_wandb`, `project_name`, `run_name`,
+  `wandb_api_key`.
+- **`label_union`** — binarizing on *several* behaviors merged into one positive
+  class. The Train tab's binarize combo picks a single behavior only.
+- **Model registration** — the Electron app recorded each trained checkpoint
+  (path, val_mcc, config) into the project manifest so it travelled with the
+  `.rlt`. `ProjectStore` has no equivalent call site yet.
