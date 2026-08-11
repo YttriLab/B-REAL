@@ -209,6 +209,11 @@ class MainWindow(QtWidgets.QMainWindow):
         d = self.current_frames_dir()
         return [d] if d else []
 
+    def backgrounds_dir(self):
+        """Where a computed background should be written. None without a
+        project — the backend then falls back to a folder beside the video."""
+        return str(self.project.backgrounds_dir()) if self.project else None
+
     def checkpoint_dir(self):
         return str(self.project.checkpoint_dir()) if self.project else None
 

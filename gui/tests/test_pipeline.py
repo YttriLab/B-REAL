@@ -76,6 +76,9 @@ class FakeCtx:
     def current_frame(self):
         return 42
 
+    def backgrounds_dir(self):
+        return "/p/backgrounds"
+
     def register_model(self, entry):
         self.registered.append(entry)
 
@@ -107,6 +110,37 @@ def test_preprocess_build_crop_params_defaults():
     _app()
     tab = PreprocessTab(FakeCtx())
     assert tab.build_crop_params() == CROP_DEFAULTS
+
+
+def test_compute_background_sends_frame_count_and_project_dir():
+    """The frame count is a real knob (Electron had it), and the background has
+    to land in the project or it is never found again."""
+    _app()
+    ctx = FakeCtx()
+    calls = []
+
+    class StubClient:
+        def compute_background(self, video, num_frames=500, output_dir=None):
+            calls.append({"video": video, "num_frames": num_frames,
+                          "output_dir": output_dir})
+            return {"path": "/p/backgrounds/bg_v.png"}
+
+    ctx._client = StubClient()
+    tab = PreprocessTab(ctx)
+    assert tab.bg_frames.value() == 500  # backend default, surfaced not hidden
+
+    tab.bg_frames.setValue(120)
+    tab._compute_background()
+
+    app = QtWidgets.QApplication.instance()
+    for _ in range(200):
+        if calls:
+            break
+        app.processEvents()
+        QtCore.QThread.msleep(10)
+    assert calls, "compute_background was never called"
+    assert calls[-1]["num_frames"] == 120
+    assert calls[-1]["output_dir"] == ctx.backgrounds_dir()
 
 
 def test_preprocess_raw_mode_disables_crop_controls():

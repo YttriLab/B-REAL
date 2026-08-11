@@ -65,6 +65,37 @@ def test_per_video_bouts_global_behaviors():
         assert [b.name for b in v1.behaviors] == [b.name for b in v2.behaviors] == ["groom"]
 
 
+def test_background_path_matches_what_the_backend_writes():
+    """compute_background saves bg_<stem>.png. If the project looks somewhere
+    else the background is never found again — it won't auto-load on a video
+    switch and won't travel with the .rlt."""
+    with tempfile.TemporaryDirectory() as d:
+        store = ProjectStore(d)
+        store.create("demo")
+        vid = safe_id("clip.mp4")
+
+        expected = store.backgrounds_dir() / "bg_clip.png"
+        assert store.background_path(vid) == expected
+
+        # and it resolves once the file is actually there
+        store.backgrounds_dir().mkdir(parents=True, exist_ok=True)
+        expected.write_bytes(b"\x89PNG")
+        assert store.background_path(vid) == expected
+        assert store.background_path(vid).exists()
+
+
+def test_background_path_falls_back_to_the_legacy_name():
+    """Projects written before the naming was reconciled keep working."""
+    with tempfile.TemporaryDirectory() as d:
+        store = ProjectStore(d)
+        store.create("demo")
+        vid = safe_id("clip.mp4")
+        store.backgrounds_dir().mkdir(parents=True, exist_ok=True)
+        legacy = store.backgrounds_dir() / f"{vid}.png"
+        legacy.write_bytes(b"\x89PNG")
+        assert store.background_path(vid) == legacy
+
+
 def test_model_dirs_match_what_rlt_packages():
     """rlt_service packages models/checkpoints and models/exports — anything
     written elsewhere never travels with the .rlt."""

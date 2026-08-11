@@ -106,10 +106,19 @@ class PreprocessTab(_Base):
         form.addRow(self.crop_enabled)
 
         self.bg_edit = QtWidgets.QLineEdit()
+        self.bg_frames = NoWheelSpinBox()
+        self.bg_frames.setRange(1, 1_000_000)
+        self.bg_frames.setValue(500)
+        self.bg_frames.setToolTip(
+            "How many frames to average into the background. More is a cleaner "
+            "background but a slower computation; they are sampled across the "
+            "whole video, so this is not a time limit.")
         self.bg_btn = QtWidgets.QPushButton("Compute background")
         self.bg_btn.clicked.connect(self._compute_background)
         bg_row = QtWidgets.QHBoxLayout()
         bg_row.addWidget(self.bg_edit, 1)
+        bg_row.addWidget(QtWidgets.QLabel("frames"))
+        bg_row.addWidget(self.bg_frames)
         bg_row.addWidget(self.bg_btn)
         self.bg_row_label = QtWidgets.QLabel("Background")
         form.addRow(self.bg_row_label, self._wrap(bg_row))
@@ -211,7 +220,7 @@ class PreprocessTab(_Base):
             enabled = on or key == "resize_factor"
             w.setEnabled(enabled)
             self.crop_labels[key].setEnabled(enabled)
-        for w in (self.bg_edit, self.bg_btn, self.bg_row_label):
+        for w in (self.bg_edit, self.bg_btn, self.bg_frames, self.bg_row_label):
             w.setEnabled(on)
         self.preview_box.setEnabled(on)
         if not on:
@@ -238,9 +247,15 @@ class PreprocessTab(_Base):
         video = self.ctx.video_path()
         if not client or not video:
             return
-        self.ctx.status("Computing background…")
+        frames = self.bg_frames.value()
+        # Into the project, so it is found again on the next video switch and
+        # travels with the .rlt. Without a project the backend falls back to a
+        # folder beside the video.
+        out_dir = getattr(self.ctx, "backgrounds_dir", lambda: None)()
+        self.ctx.status(f"Computing background from {frames} frames…")
         self._spawn_call(
-            lambda: client.compute_background(video),
+            lambda: client.compute_background(video, num_frames=frames,
+                                              output_dir=out_dir),
             lambda res: (self.bg_edit.setText(res.get("path", "")),
                          self.ctx.status("Background computed.")),
         )
@@ -341,6 +356,9 @@ class PreprocessTab(_Base):
                 frame_ranges=ranges,
                 # No background is read in raw mode, so don't send a stale one.
                 bg_path=(self.bg_edit.text() or None) if crop else None,
+                # Only used when no bg_path is given and the backend has to
+                # build one itself — same frame count either way.
+                num_frames_bg=self.bg_frames.value(),
                 crop=crop),
             start,
         )

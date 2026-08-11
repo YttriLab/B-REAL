@@ -14,6 +14,7 @@ this module handles the plain on-disk layout.
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -80,8 +81,23 @@ class ProjectStore:
         """Where preprocessing extracts this video's frames (the trainer's frame_dir)."""
         return self.root / "frames" / str(video_id)
 
+    def backgrounds_dir(self) -> Path:
+        return self.root / "backgrounds"
+
     def background_path(self, video_id) -> Path:
-        return self.root / "backgrounds" / f"{video_id}.png"
+        """Where this video's background lives.
+
+        The backend names it ``bg_<stem>.png`` (compute_background), so match
+        that rather than inventing a second convention — otherwise a computed
+        background is never found again and never travels with the .rlt.
+        """
+        stem = os.path.splitext(str(video_id))[0]
+        current = self.backgrounds_dir() / f"bg_{stem}.png"
+        if current.exists():
+            return current
+        # Projects written before the naming was reconciled.
+        legacy = self.backgrounds_dir() / f"{video_id}.png"
+        return legacy if legacy.exists() else current
 
     def models_dir(self) -> Path:
         return self.root / "models"
