@@ -64,7 +64,7 @@ def main() -> None:
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     apply_theme(app)
 
-    win = MainWindow()
+    win = MainWindow(autostart_backend=False)
     win.resize(1320, 820)
 
     sample = os.path.join(tempfile.gettempdir(), "screenshot_sample.mp4")

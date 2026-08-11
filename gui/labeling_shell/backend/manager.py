@@ -21,6 +21,18 @@ class Backend:
         self.client = BackendClient(self.config.base_url, timeout=self.config.request_timeout)
         self.process = BackendProcess(self.config) if self.config.spawn_local else None
 
+    def already_running(self) -> bool:
+        """Is something already serving on this port?
+
+        Checked before spawning so a backend started by hand (`pixi run
+        backend`), or left over from a previous GUI session, is adopted rather
+        than duplicated — a second uvicorn would just fail to bind the port.
+        """
+        try:
+            return self.client.health().get("status") == "ok"
+        except Exception:
+            return False
+
     def start(self, wait: bool = True, timeout: float = 30.0,
               on_log: Optional[Callable[[str], None]] = None) -> bool:
         """Spawn the local backend (if configured) and optionally wait for health.
@@ -28,7 +40,7 @@ class Backend:
         Returns True if the backend is reachable (or wait=False). For a remote
         backend nothing is spawned; we just health-check.
         """
-        if self.process is not None:
+        if self.process is not None and not self.already_running():
             self.process.start(on_log=on_log)
         return self.client.wait_healthy(timeout=timeout) if wait else True
 

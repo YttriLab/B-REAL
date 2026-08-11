@@ -67,7 +67,7 @@ def test_bouts_panel_populate_delete_and_seek():
 def test_mainwindow_key_toggle_creates_bout():
     _app()
     from app import MainWindow
-    win = MainWindow()
+    win = MainWindow(autostart_backend=False)
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
         path = os.path.join(d, "clip.mp4")
         write_index_video(path, 60, fps=30, gop=12)
@@ -90,7 +90,7 @@ def test_mainwindow_key_toggle_creates_bout():
 def test_mainwindow_project_autosave_roundtrip():
     _app()
     from app import MainWindow
-    win = MainWindow()
+    win = MainWindow(autostart_backend=False)
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
         proj = os.path.join(d, "proj")
         win.project = ProjectStore(proj)
@@ -118,7 +118,7 @@ def test_mainwindow_al_results_drive_timeline_and_hud():
     from app import MainWindow
     from labeling_shell.active_learning import AlState
     from labeling_shell.bouts import Bout
-    win = MainWindow()
+    win = MainWindow(autostart_backend=False)
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
         path = os.path.join(d, "clip.mp4")
         write_index_video(path, 60, fps=30, gop=12)
@@ -146,6 +146,76 @@ def test_mainwindow_al_results_drive_timeline_and_hud():
 
         if win.player.reader is not None:
             win.player.reader.close()
+
+
+def test_snap_back_seeks_to_the_last_bout_end():
+    _app()
+    from app import MainWindow
+    win = MainWindow(autostart_backend=False)
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        path = os.path.join(d, "clip.mp4")
+        write_index_video(path, 60, fps=30, gop=12)
+        win.load_video(path)
+        a = win.model.add_behavior("groom")
+
+        # no bouts yet -> back to the start
+        win._seek(40)
+        win.snap_back()
+        assert win.player.index == 0
+
+        # "latest" is by end frame, not list order: bouts sort by start, so a
+        # long early bout can outlast a later short one
+        win.model.insert_bout_sorted(Bout(a.id, a.name, 5, 50))
+        win.model.insert_bout_sorted(Bout(a.id, a.name, 20, 25))
+        win._seek(3)
+        win.snap_back()
+        assert win.player.index == 50
+
+        if win.player.reader is not None:
+            win.player.reader.close()
+
+
+def test_snap_back_without_a_video_is_harmless():
+    _app()
+    from app import MainWindow
+    win = MainWindow(autostart_backend=False)
+    win.snap_back()  # must not raise
+
+
+def test_player_has_no_fps_lock_control():
+    """The FPS lock UI was removed; the reader-level override stays."""
+    _app()
+    from labeling_shell.video_widget import PlayerWidget
+    p = PlayerWidget()
+    assert not hasattr(p, "lock_chk")
+    assert not hasattr(p, "fps_spin")
+    assert hasattr(p, "snap_btn")
+    p.set_fps_override(60)  # no reader loaded -> no-op, must not raise
+
+
+def test_bout_behavior_combo_ignores_the_wheel():
+    """Scrolling the bouts table must not reassign the bout under the cursor."""
+    _app()
+    from PySide6 import QtCore, QtGui
+    m = LabelModel()
+    a = m.add_behavior("groom")
+    m.add_behavior("rear")
+    m.insert_bout_sorted(Bout(a.id, a.name, 0, 10))
+    panel = BoutsPanel(m, lambda: 30.0)
+    panel.refresh()
+
+    combo = panel.table.cellWidget(0, 2)
+    assert combo.currentText() == "groom"
+
+    event = QtGui.QWheelEvent(
+        QtCore.QPointF(0, 0), QtCore.QPointF(0, 0),
+        QtCore.QPoint(0, 0), QtCore.QPoint(0, -120),
+        QtCore.Qt.MouseButton.NoButton, QtCore.Qt.KeyboardModifier.NoModifier,
+        QtCore.Qt.ScrollPhase.NoScrollPhase, False)
+    combo.wheelEvent(event)
+
+    assert combo.currentText() == "groom"      # unchanged
+    assert m.bouts[0].behavior_name == "groom"  # and not reassigned
 
 
 def _main() -> int:

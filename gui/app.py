@@ -40,7 +40,7 @@ EDITABLE = (QtWidgets.QLineEdit, QtWidgets.QAbstractSpinBox, QtWidgets.QComboBox
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self):
+    def __init__(self, autostart_backend: bool = True):
         super().__init__()
         self.setWindowTitle("RealtimeASOID — Labeler")
         self.model = LabelModel()
@@ -54,6 +54,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.player = PlayerWidget()
         self.player.frameChanged.connect(self._on_frame)
+        self.player.snapBackRequested.connect(self.snap_back)
         self.behaviors_panel = BehaviorsPanel(self.model)
         self.bouts_panel = BoutsPanel(self.model, self._fps)
         self.behaviors_panel.changed.connect(self._on_model_changed)
@@ -94,6 +95,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.resize(1320, 820)
         QtWidgets.QApplication.instance().installEventFilter(self)
 
+        # The pipeline tabs are useless without a backend and every session
+        # began by opening the Backend menu, so just start one. Deferred to the
+        # event loop so the window paints first rather than appearing to hang
+        # while uvicorn boots; the spawn itself is on a worker thread.
+        # Tests and the screenshot tool pass False — they pump events, and
+        # spawning uvicorn is not something a screenshot should do.
+        if autostart_backend:
+            QtCore.QTimer.singleShot(0, self.connect_local)
+
     # ------------------------------------------------------------------ menu
     def _build_menu(self) -> None:
         m = self.menuBar()
@@ -127,6 +137,21 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _seek(self, frame: int) -> None:
         self.player._show(frame)
+
+    def snap_back(self) -> None:
+        """Jump to where labeling left off: the end of the latest bout.
+
+        Ported from the Electron trackbar's Snap Back button — "latest" is by
+        end frame, not list order, since bouts are sorted by start and a long
+        early bout can outlast a later short one. No bouts means frame 0.
+        """
+        if self.player.reader is None:
+            self._status("Load a video first.")
+            return
+        target = max((b.end_frame for b in self.model.bouts), default=0)
+        self.player.pause()
+        self._seek(target)
+        self._status(f"Snapped to frame {target}.")
 
     def _on_frame(self, idx: int) -> None:
         self.timeline.set_current(idx)
@@ -394,10 +419,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self.disconnect_backend()
         self.backend = Backend(BackendConfig())
         self._status("Starting local backend…")
-        self._spawn_bg(
-            lambda: self.backend.start(wait=True, timeout=40),
-            lambda ok: self._status("Backend ready." if ok else "Backend failed to start."),
-        )
+
+        def done(ok: bool) -> None:
+            if ok:
+                self._status("Backend ready.")
+            else:
+                # Don't leave a dead Backend attached: the pipeline tabs check
+                # ctx.client() for None to decide whether to prompt.
+                self.disconnect_backend()
+                self._status(
+                    "Backend failed to start — run `pixi install`, or use "
+                    "Backend ▸ Connect Local to retry.")
+
+        self._spawn_bg(lambda: self.backend.start(wait=True, timeout=40), done)
 
     def connect_remote(self) -> None:
         host, ok = QtWidgets.QInputDialog.getText(

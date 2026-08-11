@@ -10,6 +10,7 @@ from __future__ import annotations
 from PySide6 import QtCore, QtWidgets
 
 from .bouts import LabelModel
+from .no_wheel import NoWheelComboBox
 from .theme import mark_compact
 from .timefmt import format_time, frame_to_ms, ms_to_frame, parse_time
 
@@ -52,7 +53,9 @@ class BoutsPanel(QtWidgets.QWidget):
             self.table.setItem(idx, 1, QtWidgets.QTableWidgetItem(
                 format_time(frame_to_ms(bout.end_frame, self.fps()))))
 
-            combo = QtWidgets.QComboBox()
+            # NoWheel: this combo sits in a scrolling table, and a plain
+            # QComboBox reassigns the bout under the cursor as you scroll past.
+            combo = NoWheelComboBox()
             current = 0
             for k, beh in enumerate(self.model.behaviors):
                 combo.addItem(beh.name, beh.id)

@@ -23,6 +23,9 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from labeling_shell.backend_worker import CallWorker, StreamWorker
 from labeling_shell.frame_ranges import compute_labeled_frame_ranges
+from labeling_shell.no_wheel import (
+    NoWheelComboBox, NoWheelDoubleSpinBox, NoWheelSpinBox,
+)
 from labeling_shell.theme import mark_accent
 
 from .pipeline_config import (
@@ -85,15 +88,15 @@ class PreprocessTab(_Base):
         self.crop_widgets: dict[str, QtWidgets.QWidget] = {}
         for key, default in CROP_DEFAULTS.items():
             if key == "difference_mode":
-                w = QtWidgets.QComboBox()
+                w = NoWheelComboBox()
                 w.addItems(["directional", "absolute"])
             elif isinstance(default, float):
-                w = QtWidgets.QDoubleSpinBox()
+                w = NoWheelDoubleSpinBox()
                 w.setRange(0.0, 100000.0)
                 w.setDecimals(3)
                 w.setValue(default)
             else:
-                w = QtWidgets.QSpinBox()
+                w = NoWheelSpinBox()
                 w.setRange(0, 100000)
                 w.setValue(default)
             self.crop_widgets[key] = w
@@ -179,13 +182,13 @@ class TrainTab(_Base):
         layout = QtWidgets.QVBoxLayout(inner)
         form = QtWidgets.QFormLayout()
 
-        self.frames_per_group = QtWidgets.QSpinBox()
+        self.frames_per_group = NoWheelSpinBox()
         self.frames_per_group.setRange(1, 32)
         self.frames_per_group.setValue(3)
-        self.variant = QtWidgets.QComboBox()
+        self.variant = NoWheelComboBox()
         self.variant.addItems(VARIANTS)
         self.tsm_stages = QtWidgets.QLineEdit("5,6,7")
-        self.temporal_pool = QtWidgets.QComboBox()
+        self.temporal_pool = NoWheelComboBox()
         self.temporal_pool.addItems(POOLS)
         self.unidirectional = QtWidgets.QCheckBox("Unidirectional (causal)")
         self.pretrained = QtWidgets.QCheckBox("Pretrained")
@@ -284,7 +287,7 @@ class TrainTab(_Base):
         self._task_id = None
 
     def _dspin(self, val, lo, hi, step, decimals=4):
-        w = QtWidgets.QDoubleSpinBox()
+        w = NoWheelDoubleSpinBox()
         w.setDecimals(decimals)
         w.setRange(lo, hi)
         w.setSingleStep(step)
@@ -292,7 +295,7 @@ class TrainTab(_Base):
         return w
 
     def _ispin(self, val, lo, hi):
-        w = QtWidgets.QSpinBox()
+        w = NoWheelSpinBox()
         w.setRange(lo, hi)
         w.setValue(val)
         return w
@@ -563,17 +566,17 @@ class TuneTab(_Base):
         lat_box = QtWidgets.QGroupBox("Frame budget (reject slow architectures)")
         lat_form = QtWidgets.QFormLayout(lat_box)
         self.lat_enabled = QtWidgets.QCheckBox("Constrain p99 inference latency")
-        self.lat_p99 = QtWidgets.QDoubleSpinBox()
+        self.lat_p99 = NoWheelDoubleSpinBox()
         self.lat_p99.setDecimals(2)
         self.lat_p99.setRange(0.01, 10000.0)
         self.lat_p99.setValue(33.0)  # ~30 fps
         self.lat_p99.setSuffix(" ms")
-        self.lat_batch = QtWidgets.QSpinBox()
+        self.lat_batch = NoWheelSpinBox()
         self.lat_batch.setRange(1, 256)
         self.lat_batch.setValue(1)
-        self.lat_precision = QtWidgets.QComboBox()
+        self.lat_precision = NoWheelComboBox()
         self.lat_precision.addItems(PRECISIONS)
-        self.lat_target = QtWidgets.QComboBox()
+        self.lat_target = NoWheelComboBox()
         for t in TARGETS:
             self.lat_target.addItem(TARGET_LABELS[t], t)
         lat_form.addRow(self.lat_enabled)
@@ -596,10 +599,10 @@ class TuneTab(_Base):
         # ---- sweep settings -----------------------------------------------
         settings = QtWidgets.QGroupBox("Sweep")
         sf = QtWidgets.QFormLayout(settings)
-        self.n_trials = QtWidgets.QSpinBox()
+        self.n_trials = NoWheelSpinBox()
         self.n_trials.setRange(1, 1000)
         self.n_trials.setValue(20)
-        self.objective = QtWidgets.QComboBox()
+        self.objective = NoWheelComboBox()
         self.objective.addItems(OBJECTIVES)
         sf.addRow("trials", self.n_trials)
         sf.addRow("objective", self.objective)
@@ -681,7 +684,7 @@ class TuneTab(_Base):
 
     @staticmethod
     def _range_spin(value):
-        w = QtWidgets.QDoubleSpinBox()
+        w = NoWheelDoubleSpinBox()
         w.setDecimals(6)
         w.setRange(0.0, 1000.0)
         w.setSingleStep(1e-4)
@@ -907,21 +910,21 @@ class ExportTab(_Base):
 
         bench = QtWidgets.QGroupBox("Benchmark inference (size your compute budget)")
         bf = QtWidgets.QFormLayout(bench)
-        self.b_variant = QtWidgets.QComboBox()
+        self.b_variant = NoWheelComboBox()
         self.b_variant.addItems(VARIANTS)
-        self.b_frames = QtWidgets.QSpinBox()
+        self.b_frames = NoWheelSpinBox()
         self.b_frames.setRange(1, 32)
         self.b_frames.setValue(3)
         self.b_stages = QtWidgets.QLineEdit("5,6,7")
-        self.b_pool = QtWidgets.QComboBox()
+        self.b_pool = NoWheelComboBox()
         self.b_pool.addItems(POOLS)
         self.b_uni = QtWidgets.QCheckBox("Unidirectional")
-        self.b_prec = QtWidgets.QComboBox()
+        self.b_prec = NoWheelComboBox()
         self.b_prec.addItems(PRECISIONS)
-        self.b_target = QtWidgets.QComboBox()
+        self.b_target = NoWheelComboBox()
         for t in TARGETS:
             self.b_target.addItem(TARGET_LABELS[t], t)
-        self.b_size = QtWidgets.QSpinBox()
+        self.b_size = NoWheelSpinBox()
         self.b_size.setRange(32, 800)
         self.b_size.setValue(224)
         bf.addRow("runtime", self.b_target)
@@ -943,13 +946,13 @@ class ExportTab(_Base):
 
         export = QtWidgets.QGroupBox("Export for deployment")
         ef = QtWidgets.QFormLayout(export)
-        self.fmt = QtWidgets.QComboBox()
+        self.fmt = NoWheelComboBox()
         self.fmt.addItems(EXPORT_FORMATS)
         self.fmt.setCurrentText("onnx")
-        self.e_size = QtWidgets.QSpinBox()
+        self.e_size = NoWheelSpinBox()
         self.e_size.setRange(32, 800)
         self.e_size.setValue(224)
-        self.e_prec = QtWidgets.QComboBox()
+        self.e_prec = NoWheelComboBox()
         self.e_prec.addItems(PRECISIONS)
         # Must match how the checkpoint was trained: the load is strict=False,
         # so a mismatch produces a silently wrong model rather than an error.

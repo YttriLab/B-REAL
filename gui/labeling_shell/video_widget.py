@@ -2,7 +2,7 @@
 
 `VideoView` draws one frame scaled-to-fit with letterboxing (the Qt equivalent
 of the Electron canvas `object-fit: contain`). `PlayerWidget` adds transport:
-play/pause via a QTimer, single-frame stepping, a scrubber, an FPS lock, and the
+play/pause via a QTimer, single-frame stepping, a scrubber, Snap Back, and the
 same keyboard shortcuts as the Electron app (Space, Left/Right).
 
 Overlays (HUD, uncertainty timeline, bout marks) are deliberately *not* baked
@@ -15,6 +15,7 @@ from __future__ import annotations
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from .qt_image import ndarray_to_qimage
+from .theme import mark_ghost
 from .timefmt import format_time
 from .video_reader import VideoReader
 
@@ -62,6 +63,9 @@ class PlayerWidget(QtWidgets.QWidget):
     """Video view + transport controls, backed by a VideoReader."""
 
     frameChanged = QtCore.Signal(int)
+    # The player has no view of the label model, so it asks the host to work out
+    # where "back" is (the end of the last bout) and seek there.
+    snapBackRequested = QtCore.Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -75,23 +79,20 @@ class PlayerWidget(QtWidgets.QWidget):
         self.play_btn = QtWidgets.QPushButton("Play")
         self.prev_btn = QtWidgets.QPushButton("◀ Prev")
         self.next_btn = QtWidgets.QPushButton("Next ▶")
+        self.snap_btn = QtWidgets.QPushButton("Snap Back")
+        self.snap_btn.setToolTip(
+            "Jump to the end of the last labeled bout (or the start of the "
+            "video if there are none) — where you left off labeling.")
+        mark_ghost(self.snap_btn)
         self.slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.slider.setEnabled(False)
         self.info = QtWidgets.QLabel("no video loaded")
         self.info.setMinimumWidth(260)
 
-        self.lock_chk = QtWidgets.QCheckBox("Lock FPS")
-        self.fps_spin = QtWidgets.QDoubleSpinBox()
-        self.fps_spin.setRange(1.0, 240.0)
-        self.fps_spin.setValue(30.0)
-        self.fps_spin.setEnabled(False)
-
         controls = QtWidgets.QHBoxLayout()
-        for w in (self.play_btn, self.prev_btn, self.next_btn):
+        for w in (self.play_btn, self.prev_btn, self.next_btn, self.snap_btn):
             controls.addWidget(w)
         controls.addWidget(self.slider, 1)
-        controls.addWidget(self.lock_chk)
-        controls.addWidget(self.fps_spin)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(self.view, 1)
@@ -101,9 +102,8 @@ class PlayerWidget(QtWidgets.QWidget):
         self.play_btn.clicked.connect(self.toggle_play)
         self.prev_btn.clicked.connect(lambda: self.step(-1))
         self.next_btn.clicked.connect(lambda: self.step(+1))
+        self.snap_btn.clicked.connect(self.snapBackRequested)
         self.slider.valueChanged.connect(self._on_slider)
-        self.lock_chk.toggled.connect(self._on_lock)
-        self.fps_spin.valueChanged.connect(self._on_lock)
 
         self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
 
@@ -116,7 +116,6 @@ class PlayerWidget(QtWidgets.QWidget):
         self.index = 0
         self.slider.setEnabled(True)
         self.slider.setRange(0, max(0, self.reader.num_frames - 1))
-        self.fps_spin.setValue(round(self.reader.detected_fps, 3))
         self._show(0)
 
     # -------------------------------------------------------------- transport
@@ -149,12 +148,16 @@ class PlayerWidget(QtWidgets.QWidget):
         if self.reader is not None and value != self.index:
             self._show(value)
 
-    def _on_lock(self, *_) -> None:
+    def set_fps_override(self, fps: float | None) -> None:
+        """Force a playback/timing FPS (None restores the detected rate).
+
+        The UI control for this was removed — the detected rate is right for
+        every file PyAV reads — but the capability stays for odd sources with a
+        wrong or missing header.
+        """
         if self.reader is None:
             return
-        locked = self.lock_chk.isChecked()
-        self.fps_spin.setEnabled(locked)
-        self.reader.set_fps_override(self.fps_spin.value() if locked else None)
+        self.reader.set_fps_override(fps)
         if self._timer.isActive():  # re-arm at the new rate
             self.play()
         self._update_info()
