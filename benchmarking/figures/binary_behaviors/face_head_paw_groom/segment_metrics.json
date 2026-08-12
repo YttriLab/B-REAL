@@ -1,0 +1,67 @@
+{
+  "behavior": "face_head_paw_groom",
+  "checkpoint": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\binary_behaviors\\face_head_paw_groom\\model.ckpt",
+  "n_test": 2994,
+  "bout_identification_latency": {
+    "mean_frames": 14.125,
+    "median_frames": 8.0,
+    "identified_bouts": 8,
+    "missed_bouts": 1,
+    "total_positive_bouts": 9,
+    "identified_fraction": 0.8888888888888888
+  },
+  "segmental_edit": {
+    "distance": 61,
+    "ground_truth_bouts": 20,
+    "normalized_score": 0.0,
+    "per_contiguous_sequence": [
+      6,
+      55
+    ],
+    "coalescing_semantics": true
+  },
+  "segmental_f1": {
+    "f1@10": {
+      "all_classes": {
+        "f1": 0.19753086419753085,
+        "tp": 16,
+        "fp": 126,
+        "fn": 4
+      },
+      "positive_class": {
+        "f1": 0.12658227848101267,
+        "tp": 5,
+        "fp": 65,
+        "fn": 4
+      }
+    },
+    "f1@25": {
+      "all_classes": {
+        "f1": 0.16049382716049382,
+        "tp": 13,
+        "fp": 129,
+        "fn": 7
+      },
+      "positive_class": {
+        "f1": 0.05063291139240506,
+        "tp": 2,
+        "fp": 68,
+        "fn": 7
+      }
+    },
+    "f1@50": {
+      "all_classes": {
+        "f1": 0.08641975308641975,
+        "tp": 7,
+        "fp": 135,
+        "fn": 13
+      },
+      "positive_class": {
+        "f1": 0.0,
+        "tp": 0,
+        "fp": 70,
+        "fn": 9
+      }
+    }
+  }
+}

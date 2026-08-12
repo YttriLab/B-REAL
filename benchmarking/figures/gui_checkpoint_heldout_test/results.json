@@ -1,0 +1,52 @@
+{
+  "checkpoint": "D:\\Realtime\\realtime_app_output\\models\\checkpoints\\face-head-paw-groom-epoch=05-val_mcc=0.839.ckpt",
+  "config": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\configs\\gui_session_parity.yaml",
+  "device": "cuda",
+  "split_order": [
+    "train",
+    "val",
+    "test"
+  ],
+  "n_train": 63743,
+  "n_val": 13660,
+  "n_test": 13661,
+  "train_distribution": {
+    "other": 60768,
+    "face / head / paw groom": 2975
+  },
+  "val_distribution": {
+    "other": 12422,
+    "face / head / paw groom": 1238
+  },
+  "test_distribution": {
+    "other": 11863,
+    "face / head / paw groom": 1798
+  },
+  "accuracy": 0.9420247419661811,
+  "macro_f1": 0.8540162034750785,
+  "mcc": 0.7236611843109131,
+  "per_class": {
+    "other": {
+      "precision": 0.9462313583232568,
+      "recall": 0.9894630363314507,
+      "f1": 0.9673644305257953,
+      "support": 11863
+    },
+    "face / head / paw groom": {
+      "precision": 0.9004777070063694,
+      "recall": 0.6290322580645161,
+      "f1": 0.7406679764243614,
+      "support": 1798
+    }
+  },
+  "confusion_matrix": [
+    [
+      11738,
+      125
+    ],
+    [
+      667,
+      1131
+    ]
+  ]
+}

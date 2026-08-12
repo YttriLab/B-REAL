@@ -208,6 +208,11 @@ class TSMClassifier(L.LightningModule):
         lr: float = 1e-4,
         weight_decay: float = 1e-3,
         max_epochs: int = 100,
+        lr_scheduler_t_max: int | None = None,
+        lr_scheduler: str = "cosine",
+        lr_plateau_factor: float = 0.5,
+        lr_plateau_patience: int = 2,
+        lr_min: float = 1e-6,
         temporal_pool: str = "last",  # "last", "avg", or "max"
         weights=None,
         class_names=None,
@@ -604,8 +609,37 @@ class TSMClassifier(L.LightningModule):
             lr=self.hparams.lr,
             weight_decay=self.hparams.weight_decay,
         )
+        if self.hparams.lr_scheduler == "plateau":
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer,
+                mode="max",
+                factor=float(self.hparams.lr_plateau_factor),
+                patience=int(self.hparams.lr_plateau_patience),
+                min_lr=float(self.hparams.lr_min),
+            )
+            return {
+                "optimizer": optimizer,
+                "lr_scheduler": {
+                    "scheduler": scheduler,
+                    "interval": "epoch",
+                    "monitor": "val_mcc",
+                },
+            }
+        if self.hparams.lr_scheduler != "cosine":
+            raise ValueError(f"Unknown lr_scheduler: {self.hparams.lr_scheduler!r}")
+
+        # Keep the LR schedule independent of a benchmark's training cap. Old
+        # configs/checkpoints omit lr_scheduler_t_max and retain the historical
+        # max_epochs behavior; new experiments can use a gentler horizon even
+        # when --max-epochs is overridden for a short run.
+        scheduler_t_max = self.hparams.lr_scheduler_t_max
+        if scheduler_t_max is None:
+            scheduler_t_max = self.hparams.max_epochs
+        scheduler_t_max = int(scheduler_t_max)
+        if scheduler_t_max <= 0:
+            raise ValueError("lr_scheduler_t_max must be a positive integer")
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=self.hparams.max_epochs, eta_min=1e-6
+            optimizer, T_max=scheduler_t_max, eta_min=float(self.hparams.lr_min)
         )
         return {
             "optimizer": optimizer,

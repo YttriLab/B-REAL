@@ -1,0 +1,50 @@
+[
+  {
+    "fraction": 80,
+    "repeat": 0,
+    "seed": 80000,
+    "n_frames_train": 62524,
+    "accuracy": 0.9227324296888995,
+    "macro_f1": 0.7646707682647198,
+    "mcc": 0.537742018699646,
+    "per_class": {
+      "other": {
+        "precision": 0.9434779796934618,
+        "recall": 0.9720167899260443,
+        "f1": 0.9575347860330795,
+        "support": 15009
+      },
+      "face/head/paw groom": {
+        "precision": 0.6728971962616822,
+        "recall": 0.49712313003452246,
+        "f1": 0.57180675049636,
+        "support": 1738
+      }
+    },
+    "confusion_matrix": [
+      [
+        14589,
+        420
+      ],
+      [
+        874,
+        864
+      ]
+    ],
+    "epochs_trained": 10,
+    "epoch_of_best": 7,
+    "best_val_mcc": 0.6161285042762756,
+    "class_weights": [
+      1.2265379428863525,
+      5.414270877838135
+    ],
+    "samples_per_dataset": {
+      "0": 46954,
+      "1": 15570
+    },
+    "epoch_metrics_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\scheduler_pilot_frac80_tmax30\\epoch_metrics\\frac80_rep0.jsonl",
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 2885.77779006958
+  }
+]

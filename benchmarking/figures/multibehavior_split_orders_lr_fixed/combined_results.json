@@ -1,0 +1,56 @@
+﻿[
+    {
+        "split_order":  "train-\u003eval-\u003etest",
+        "accuracy":  0.5006680026720107,
+        "mcc":  0.38828202773261095,
+        "macro_precision":  0.4096073167767974,
+        "macro_recall":  0.472430714126462,
+        "macro_f1":  0.4112089797650609,
+        "output_directory":  "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\multibehavior_split_orders_lr_fixed\\train_val_test\\multibehavioral"
+    },
+    {
+        "split_order":  "train-\u003etest-\u003eval",
+        "accuracy":  0.48663101604278075,
+        "mcc":  0.3959062470497667,
+        "macro_precision":  0.40368289008556624,
+        "macro_recall":  0.4739186956709893,
+        "macro_f1":  0.40270902969220446,
+        "output_directory":  "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\multibehavior_split_orders_lr_fixed\\train_test_val\\multibehavioral"
+    },
+    {
+        "split_order":  "val-\u003etrain-\u003etest",
+        "accuracy":  0.5227120908483633,
+        "mcc":  0.4254656216055778,
+        "macro_precision":  0.4100344467460215,
+        "macro_recall":  0.44344826250165337,
+        "macro_f1":  0.4079708343300078,
+        "output_directory":  "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\multibehavior_split_orders_lr_fixed\\val_train_test\\multibehavioral"
+    },
+    {
+        "split_order":  "val-\u003etest-\u003etrain",
+        "accuracy":  0.5802139037433155,
+        "mcc":  0.49486678420746755,
+        "macro_precision":  0.4802553313470698,
+        "macro_recall":  0.48646037361796246,
+        "macro_f1":  0.44778051000420505,
+        "output_directory":  "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\multibehavior_split_orders_lr_fixed\\val_test_train\\multibehavioral"
+    },
+    {
+        "split_order":  "test-\u003etrain-\u003eval",
+        "accuracy":  0.42089452603471295,
+        "mcc":  0.3384889819443167,
+        "macro_precision":  0.35244475537565995,
+        "macro_recall":  0.42540554928245783,
+        "macro_f1":  0.3475621390615452,
+        "output_directory":  "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\multibehavior_split_orders_lr_fixed\\test_train_val\\multibehavioral"
+    },
+    {
+        "split_order":  "test-\u003eval-\u003etrain",
+        "accuracy":  0.46194926568758343,
+        "mcc":  0.3518240595099737,
+        "macro_precision":  0.4376599217030275,
+        "macro_recall":  0.4445299933614951,
+        "macro_f1":  0.40425878223718537,
+        "output_directory":  "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\multibehavior_split_orders_lr_fixed\\test_val_train\\multibehavioral"
+    }
+]

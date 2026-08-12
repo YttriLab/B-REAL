@@ -1,0 +1,906 @@
+[
+  {
+    "fraction": 0,
+    "repeat": 0,
+    "seed": 1000000,
+    "n_frames_train": 0,
+    "accuracy": 0.9093040293040293,
+    "macro_f1": 0.4762489448238815,
+    "mcc": 0.024398386478424072,
+    "per_class": {
+      "other": {
+        "precision": 0.9093040293040293,
+        "recall": 1.0,
+        "f1": 0.952497889647763,
+        "support": 12412
+      },
+      "face / head / paw groom": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 1238
+      }
+    },
+    "confusion_matrix": [
+      [
+        12412,
+        0
+      ],
+      [
+        1238,
+        0
+      ]
+    ],
+    "epochs_trained": null,
+    "epoch_of_best": null,
+    "best_val_mcc": null,
+    "class_weights": null,
+    "samples_per_dataset": null,
+    "epoch_metrics_path": null,
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 0.0075531005859375
+  },
+  {
+    "fraction": 1,
+    "repeat": 0,
+    "seed": 1001000,
+    "n_frames_train": 636,
+    "accuracy": 0.8382417582417583,
+    "macro_f1": 0.6954860745136862,
+    "mcc": 0.4706405699253082,
+    "per_class": {
+      "other": {
+        "precision": 0.9820483749055178,
+        "recall": 0.8374154044473091,
+        "f1": 0.9039833014437293,
+        "support": 12412
+      },
+      "face / head / paw groom": {
+        "precision": 0.34181343770384864,
+        "recall": 0.8465266558966075,
+        "f1": 0.48698884758364314,
+        "support": 1238
+      }
+    },
+    "confusion_matrix": [
+      [
+        10394,
+        2018
+      ],
+      [
+        190,
+        1048
+      ]
+    ],
+    "epochs_trained": 20,
+    "epoch_of_best": 13,
+    "best_val_mcc": 0.3841497600078583,
+    "class_weights": [
+      1.0495049953460693,
+      21.200000762939453
+    ],
+    "samples_per_dataset": {
+      "0": 232,
+      "1": 128,
+      "2": 77,
+      "3": 77,
+      "4": 122
+    },
+    "epoch_metrics_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\gui_global_split_order_folds\\folds\\train_test_val\\epoch_metrics\\frac1_rep0.jsonl",
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 552.8599598407745
+  },
+  {
+    "fraction": 1,
+    "repeat": 1,
+    "seed": 1001001,
+    "n_frames_train": 636,
+    "accuracy": 0.7816117216117217,
+    "macro_f1": 0.649464329490548,
+    "mcc": 0.43529704213142395,
+    "per_class": {
+      "other": {
+        "precision": 0.9902276743944277,
+        "recall": 0.7674025136964228,
+        "f1": 0.8646906631564614,
+        "support": 12412
+      },
+      "face / head / paw groom": {
+        "precision": 0.28380054577028035,
+        "recall": 0.9240710823909531,
+        "f1": 0.4342379958246346,
+        "support": 1238
+      }
+    },
+    "confusion_matrix": [
+      [
+        9525,
+        2887
+      ],
+      [
+        94,
+        1144
+      ]
+    ],
+    "epochs_trained": 27,
+    "epoch_of_best": 20,
+    "best_val_mcc": 0.4492533504962921,
+    "class_weights": [
+      1.0495049953460693,
+      21.200000762939453
+    ],
+    "samples_per_dataset": {
+      "0": 232,
+      "1": 128,
+      "2": 77,
+      "3": 77,
+      "4": 122
+    },
+    "epoch_metrics_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\gui_global_split_order_folds\\folds\\train_test_val\\epoch_metrics\\frac1_rep1.jsonl",
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 718.0215270519257
+  },
+  {
+    "fraction": 5,
+    "repeat": 0,
+    "seed": 1005000,
+    "n_frames_train": 3188,
+    "accuracy": 0.8525274725274725,
+    "macro_f1": 0.7228501344185598,
+    "mcc": 0.5319390296936035,
+    "per_class": {
+      "other": {
+        "precision": 0.9916784869976359,
+        "recall": 0.8449081533999355,
+        "f1": 0.9124287640840475,
+        "support": 12412
+      },
+      "face / head / paw groom": {
+        "precision": 0.37398373983739835,
+        "recall": 0.9289176090468497,
+        "f1": 0.5332715047530722,
+        "support": 1238
+      }
+    },
+    "confusion_matrix": [
+      [
+        10487,
+        1925
+      ],
+      [
+        88,
+        1150
+      ]
+    ],
+    "epochs_trained": 22,
+    "epoch_of_best": 15,
+    "best_val_mcc": 0.5765894055366516,
+    "class_weights": [
+      1.0490292310714722,
+      21.395973205566406
+    ],
+    "samples_per_dataset": {
+      "0": 1165,
+      "1": 642,
+      "2": 387,
+      "3": 385,
+      "4": 609
+    },
+    "epoch_metrics_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\gui_global_split_order_folds\\folds\\train_test_val\\epoch_metrics\\frac5_rep0.jsonl",
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 820.3902246952057
+  },
+  {
+    "fraction": 5,
+    "repeat": 1,
+    "seed": 1005001,
+    "n_frames_train": 3188,
+    "accuracy": 0.8661538461538462,
+    "macro_f1": 0.729668979497105,
+    "mcc": 0.5215989947319031,
+    "per_class": {
+      "other": {
+        "precision": 0.9839078357867789,
+        "recall": 0.86698356429262,
+        "f1": 0.9217525375819093,
+        "support": 12412
+      },
+      "face / head / paw groom": {
+        "precision": 0.3914485809067453,
+        "recall": 0.8578352180936996,
+        "f1": 0.5375854214123007,
+        "support": 1238
+      }
+    },
+    "confusion_matrix": [
+      [
+        10761,
+        1651
+      ],
+      [
+        176,
+        1062
+      ]
+    ],
+    "epochs_trained": 12,
+    "epoch_of_best": 5,
+    "best_val_mcc": 0.5613257884979248,
+    "class_weights": [
+      1.0490292310714722,
+      21.395973205566406
+    ],
+    "samples_per_dataset": {
+      "0": 1165,
+      "1": 642,
+      "2": 387,
+      "3": 385,
+      "4": 609
+    },
+    "epoch_metrics_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\gui_global_split_order_folds\\folds\\train_test_val\\epoch_metrics\\frac5_rep1.jsonl",
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 492.96403408050537
+  },
+  {
+    "fraction": 10,
+    "repeat": 0,
+    "seed": 1010000,
+    "n_frames_train": 6373,
+    "accuracy": 0.9115018315018315,
+    "macro_f1": 0.7976930639192354,
+    "mcc": 0.6308003664016724,
+    "per_class": {
+      "other": {
+        "precision": 0.9881491808992681,
+        "recall": 0.9136319690621979,
+        "f1": 0.949430676490288,
+        "support": 12412
+      },
+      "face / head / paw groom": {
+        "precision": 0.5068997240110396,
+        "recall": 0.8901453957996769,
+        "f1": 0.6459554513481829,
+        "support": 1238
+      }
+    },
+    "confusion_matrix": [
+      [
+        11340,
+        1072
+      ],
+      [
+        136,
+        1102
+      ]
+    ],
+    "epochs_trained": 24,
+    "epoch_of_best": 17,
+    "best_val_mcc": 0.7048892378807068,
+    "class_weights": [
+      1.0488808155059814,
+      21.45791244506836
+    ],
+    "samples_per_dataset": {
+      "0": 2331,
+      "1": 1282,
+      "2": 773,
+      "3": 770,
+      "4": 1217
+    },
+    "epoch_metrics_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\gui_global_split_order_folds\\folds\\train_test_val\\epoch_metrics\\frac10_rep0.jsonl",
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 1188.548864364624
+  },
+  {
+    "fraction": 10,
+    "repeat": 1,
+    "seed": 1010001,
+    "n_frames_train": 6373,
+    "accuracy": 0.9145054945054945,
+    "macro_f1": 0.8033226957908423,
+    "mcc": 0.6409602761268616,
+    "per_class": {
+      "other": {
+        "precision": 0.9888705329971307,
+        "recall": 0.9162906864324847,
+        "f1": 0.9511980930874419,
+        "support": 12412
+      },
+      "face / head / paw groom": {
+        "precision": 0.5165193113075849,
+        "recall": 0.8966074313408724,
+        "f1": 0.6554472984942427,
+        "support": 1238
+      }
+    },
+    "confusion_matrix": [
+      [
+        11373,
+        1039
+      ],
+      [
+        128,
+        1110
+      ]
+    ],
+    "epochs_trained": 21,
+    "epoch_of_best": 14,
+    "best_val_mcc": 0.6858462691307068,
+    "class_weights": [
+      1.0488808155059814,
+      21.45791244506836
+    ],
+    "samples_per_dataset": {
+      "0": 2331,
+      "1": 1282,
+      "2": 773,
+      "3": 770,
+      "4": 1217
+    },
+    "epoch_metrics_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\gui_global_split_order_folds\\folds\\train_test_val\\epoch_metrics\\frac10_rep1.jsonl",
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 1108.4365882873535
+  },
+  {
+    "fraction": 15,
+    "repeat": 0,
+    "seed": 1015000,
+    "n_frames_train": 9561,
+    "accuracy": 0.9078388278388279,
+    "macro_f1": 0.7940578536279839,
+    "mcc": 0.6290308833122253,
+    "per_class": {
+      "other": {
+        "precision": 0.9898981026001406,
+        "recall": 0.9079116983564293,
+        "f1": 0.9471339720961506,
+        "support": 12412
+      },
+      "face / head / paw groom": {
+        "precision": 0.49558693733451015,
+        "recall": 0.907108239095315,
+        "f1": 0.6409817351598173,
+        "support": 1238
+      }
+    },
+    "confusion_matrix": [
+      [
+        11269,
+        1143
+      ],
+      [
+        115,
+        1123
+      ]
+    ],
+    "epochs_trained": 29,
+    "epoch_of_best": 22,
+    "best_val_mcc": 0.7224687337875366,
+    "class_weights": [
+      1.048930287361145,
+      21.437219619750977
+    ],
+    "samples_per_dataset": {
+      "0": 3496,
+      "1": 1924,
+      "2": 1160,
+      "3": 1155,
+      "4": 1826
+    },
+    "epoch_metrics_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\gui_global_split_order_folds\\folds\\train_test_val\\epoch_metrics\\frac15_rep0.jsonl",
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 1792.0802862644196
+  },
+  {
+    "fraction": 15,
+    "repeat": 1,
+    "seed": 1015001,
+    "n_frames_train": 9561,
+    "accuracy": 0.9405128205128205,
+    "macro_f1": 0.8467030661710326,
+    "mcc": 0.7068673968315125,
+    "per_class": {
+      "other": {
+        "precision": 0.9867405169519973,
+        "recall": 0.9473090557524976,
+        "f1": 0.9666228214403156,
+        "support": 12412
+      },
+      "face / head / paw groom": {
+        "precision": 0.6228373702422145,
+        "recall": 0.8723747980613893,
+        "f1": 0.7267833109017496,
+        "support": 1238
+      }
+    },
+    "confusion_matrix": [
+      [
+        11758,
+        654
+      ],
+      [
+        158,
+        1080
+      ]
+    ],
+    "epochs_trained": 35,
+    "epoch_of_best": 28,
+    "best_val_mcc": 0.8156418800354004,
+    "class_weights": [
+      1.048930287361145,
+      21.437219619750977
+    ],
+    "samples_per_dataset": {
+      "0": 3496,
+      "1": 1924,
+      "2": 1160,
+      "3": 1155,
+      "4": 1826
+    },
+    "epoch_metrics_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\gui_global_split_order_folds\\folds\\train_test_val\\epoch_metrics\\frac15_rep1.jsonl",
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 2135.882433652878
+  },
+  {
+    "fraction": 20,
+    "repeat": 0,
+    "seed": 1020000,
+    "n_frames_train": 12748,
+    "accuracy": 0.9358974358974359,
+    "macro_f1": 0.8237141568539073,
+    "mcc": 0.6521549224853516,
+    "per_class": {
+      "other": {
+        "precision": 0.9756741156097963,
+        "recall": 0.9532710280373832,
+        "f1": 0.9643424752434899,
+        "support": 12412
+      },
+      "face / head / paw groom": {
+        "precision": 0.6191726854891662,
+        "recall": 0.7617124394184168,
+        "f1": 0.6830858384643245,
+        "support": 1238
+      }
+    },
+    "confusion_matrix": [
+      [
+        11832,
+        580
+      ],
+      [
+        295,
+        943
+      ]
+    ],
+    "epochs_trained": 15,
+    "epoch_of_best": 8,
+    "best_val_mcc": 0.7300204634666443,
+    "class_weights": [
+      1.0489591360092163,
+      21.42521095275879
+    ],
+    "samples_per_dataset": {
+      "0": 4662,
+      "1": 2566,
+      "2": 1546,
+      "3": 1539,
+      "4": 2435
+    },
+    "epoch_metrics_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\gui_global_split_order_folds\\folds\\train_test_val\\epoch_metrics\\frac20_rep0.jsonl",
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 1158.297490119934
+  },
+  {
+    "fraction": 20,
+    "repeat": 1,
+    "seed": 1020001,
+    "n_frames_train": 12748,
+    "accuracy": 0.9012454212454213,
+    "macro_f1": 0.7818664103719688,
+    "mcc": 0.6065515875816345,
+    "per_class": {
+      "other": {
+        "precision": 0.9880028228652082,
+        "recall": 0.9023525620367386,
+        "f1": 0.9432373252484421,
+        "support": 12412
+      },
+      "face / head / paw groom": {
+        "precision": 0.4762316335350043,
+        "recall": 0.8901453957996769,
+        "f1": 0.6204954954954954,
+        "support": 1238
+      }
+    },
+    "confusion_matrix": [
+      [
+        11200,
+        1212
+      ],
+      [
+        136,
+        1102
+      ]
+    ],
+    "epochs_trained": 14,
+    "epoch_of_best": 7,
+    "best_val_mcc": 0.6789531707763672,
+    "class_weights": [
+      1.0489591360092163,
+      21.42521095275879
+    ],
+    "samples_per_dataset": {
+      "0": 4662,
+      "1": 2566,
+      "2": 1546,
+      "3": 1539,
+      "4": 2435
+    },
+    "epoch_metrics_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\gui_global_split_order_folds\\folds\\train_test_val\\epoch_metrics\\frac20_rep1.jsonl",
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 1096.302661895752
+  },
+  {
+    "fraction": 40,
+    "repeat": 0,
+    "seed": 1040000,
+    "n_frames_train": 25496,
+    "accuracy": 0.9117948717948718,
+    "macro_f1": 0.8026096658207802,
+    "mcc": 0.6465450525283813,
+    "per_class": {
+      "other": {
+        "precision": 0.9920105355575066,
+        "recall": 0.9103287141475991,
+        "f1": 0.9494160154608856,
+        "support": 12412
+      },
+      "face / head / paw groom": {
+        "precision": 0.5075221238938054,
+        "recall": 0.9264943457189014,
+        "f1": 0.6558033161806748,
+        "support": 1238
+      }
+    },
+    "confusion_matrix": [
+      [
+        11299,
+        1113
+      ],
+      [
+        91,
+        1147
+      ]
+    ],
+    "epochs_trained": 16,
+    "epoch_of_best": 9,
+    "best_val_mcc": 0.7627566456794739,
+    "class_weights": [
+      1.048915982246399,
+      21.44322967529297
+    ],
+    "samples_per_dataset": {
+      "0": 9324,
+      "1": 5132,
+      "2": 3092,
+      "3": 3079,
+      "4": 4869
+    },
+    "epoch_metrics_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\gui_global_split_order_folds\\folds\\train_test_val\\epoch_metrics\\frac40_rep0.jsonl",
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 2048.4685003757477
+  },
+  {
+    "fraction": 40,
+    "repeat": 1,
+    "seed": 1040001,
+    "n_frames_train": 25496,
+    "accuracy": 0.9438095238095238,
+    "macro_f1": 0.8517259396337751,
+    "mcc": 0.7134681344032288,
+    "per_class": {
+      "other": {
+        "precision": 0.9854105877448937,
+        "recall": 0.9523042217209152,
+        "f1": 0.9685745892571803,
+        "support": 12412
+      },
+      "face / head / paw groom": {
+        "precision": 0.6422960725075528,
+        "recall": 0.8586429725363489,
+        "f1": 0.7348772900103698,
+        "support": 1238
+      }
+    },
+    "confusion_matrix": [
+      [
+        11820,
+        592
+      ],
+      [
+        175,
+        1063
+      ]
+    ],
+    "epochs_trained": 20,
+    "epoch_of_best": 13,
+    "best_val_mcc": 0.7516266703605652,
+    "class_weights": [
+      1.048915982246399,
+      21.44322967529297
+    ],
+    "samples_per_dataset": {
+      "0": 9324,
+      "1": 5132,
+      "2": 3092,
+      "3": 3079,
+      "4": 4869
+    },
+    "epoch_metrics_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\gui_global_split_order_folds\\folds\\train_test_val\\epoch_metrics\\frac40_rep1.jsonl",
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 24254.534900665283
+  },
+  {
+    "fraction": 60,
+    "repeat": 0,
+    "seed": 1060000,
+    "n_frames_train": 33628,
+    "accuracy": 0.9282619563406099,
+    "macro_f1": 0.8399628723698687,
+    "mcc": 0.699845016002655,
+    "per_class": {
+      "other": {
+        "precision": 0.9876883679700581,
+        "recall": 0.9316239316239316,
+        "f1": 0.9588373093655878,
+        "support": 10764
+      },
+      "face / head / paw groom": {
+        "precision": 0.6019469983775013,
+        "recall": 0.8990306946688207,
+        "f1": 0.7210884353741497,
+        "support": 1238
+      }
+    },
+    "confusion_matrix": [
+      [
+        10028,
+        736
+      ],
+      [
+        125,
+        1113
+      ]
+    ],
+    "epochs_trained": 12,
+    "epoch_of_best": 5,
+    "best_val_mcc": 0.7688271999359131,
+    "class_weights": [
+      1.0464928150177002,
+      22.50870132446289
+    ],
+    "samples_per_dataset": {
+      "0": 13985,
+      "1": 7698,
+      "2": 4640,
+      "4": 7305
+    },
+    "epoch_metrics_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\gui_global_split_order_folds\\folds\\train_test_val\\epoch_metrics\\frac60_rep0.jsonl",
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 2014.5858008861542
+  },
+  {
+    "fraction": 60,
+    "repeat": 1,
+    "seed": 1060001,
+    "n_frames_train": 33628,
+    "accuracy": 0.903766038993501,
+    "macro_f1": 0.8016799543991409,
+    "mcc": 0.6396716833114624,
+    "per_class": {
+      "other": {
+        "precision": 0.9878160219311605,
+        "recall": 0.9038461538461539,
+        "f1": 0.9439673992140882,
+        "support": 10764
+      },
+      "face / head / paw groom": {
+        "precision": 0.5192754296330702,
+        "recall": 0.9030694668820679,
+        "f1": 0.6593925095841935,
+        "support": 1238
+      }
+    },
+    "confusion_matrix": [
+      [
+        9729,
+        1035
+      ],
+      [
+        120,
+        1118
+      ]
+    ],
+    "epochs_trained": 9,
+    "epoch_of_best": 2,
+    "best_val_mcc": 0.8080939054489136,
+    "class_weights": [
+      1.0464928150177002,
+      22.50870132446289
+    ],
+    "samples_per_dataset": {
+      "0": 13985,
+      "1": 7698,
+      "2": 4640,
+      "4": 7305
+    },
+    "epoch_metrics_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\gui_global_split_order_folds\\folds\\train_test_val\\epoch_metrics\\frac60_rep1.jsonl",
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 1529.6338202953339
+  },
+  {
+    "fraction": 80,
+    "repeat": 0,
+    "seed": 1080000,
+    "n_frames_train": 44836,
+    "accuracy": 0.9383436093984336,
+    "macro_f1": 0.8559936575128269,
+    "mcc": 0.7240478992462158,
+    "per_class": {
+      "other": {
+        "precision": 0.9859414388210199,
+        "recall": 0.9447231512448904,
+        "f1": 0.9648923047727488,
+        "support": 10764
+      },
+      "face / head / paw groom": {
+        "precision": 0.6475118483412322,
+        "recall": 0.882875605815832,
+        "f1": 0.747095010252905,
+        "support": 1238
+      }
+    },
+    "confusion_matrix": [
+      [
+        10169,
+        595
+      ],
+      [
+        145,
+        1093
+      ]
+    ],
+    "epochs_trained": 20,
+    "epoch_of_best": 13,
+    "best_val_mcc": 0.8202009797096252,
+    "class_weights": [
+      1.046469807624817,
+      22.519336700439453
+    ],
+    "samples_per_dataset": {
+      "0": 18647,
+      "1": 10264,
+      "2": 6186,
+      "4": 9739
+    },
+    "epoch_metrics_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\gui_global_split_order_folds\\folds\\train_test_val\\epoch_metrics\\frac80_rep0.jsonl",
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 4016.407883644104
+  },
+  {
+    "fraction": 80,
+    "repeat": 1,
+    "seed": 1080001,
+    "n_frames_train": 44836,
+    "accuracy": 0.8910181636393935,
+    "macro_f1": 0.7900104319173331,
+    "mcc": 0.6352806687355042,
+    "per_class": {
+      "other": {
+        "precision": 0.9944572265216481,
+        "recall": 0.8834076551467855,
+        "f1": 0.9356489225622356,
+        "support": 10764
+      },
+      "face / head / paw groom": {
+        "precision": 0.48565573770491804,
+        "recall": 0.9571890145395799,
+        "f1": 0.6443719412724307,
+        "support": 1238
+      }
+    },
+    "confusion_matrix": [
+      [
+        9509,
+        1255
+      ],
+      [
+        53,
+        1185
+      ]
+    ],
+    "epochs_trained": 11,
+    "epoch_of_best": 4,
+    "best_val_mcc": 0.8027605414390564,
+    "class_weights": [
+      1.046469807624817,
+      22.519336700439453
+    ],
+    "samples_per_dataset": {
+      "0": 18647,
+      "1": 10264,
+      "2": 6186,
+      "4": 9739
+    },
+    "epoch_metrics_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\gui_global_split_order_folds\\folds\\train_test_val\\epoch_metrics\\frac80_rep1.jsonl",
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 2254.6211977005005
+  },
+  {
+    "fraction": 100,
+    "repeat": 0,
+    "seed": 1100000,
+    "n_frames_train": 56045,
+    "accuracy": 0.9202632894517581,
+    "macro_f1": 0.8264112290136201,
+    "mcc": 0.6773170828819275,
+    "per_class": {
+      "other": {
+        "precision": 0.987280135148564,
+        "recall": 0.9229840208101078,
+        "f1": 0.9540500312094876,
+        "support": 10764
+      },
+      "face / head / paw groom": {
+        "precision": 0.5724600309437855,
+        "recall": 0.8966074313408724,
+        "f1": 0.6987724268177525,
+        "support": 1238
+      }
+    },
+    "confusion_matrix": [
+      [
+        9935,
+        829
+      ],
+      [
+        128,
+        1110
+      ]
+    ],
+    "epochs_trained": 9,
+    "epoch_of_best": 2,
+    "best_val_mcc": 0.7705394625663757,
+    "class_weights": [
+      1.0464746952056885,
+      22.517074584960938
+    ],
+    "samples_per_dataset": {
+      "0": 23309,
+      "1": 12830,
+      "2": 7732,
+      "4": 12174
+    },
+    "epoch_metrics_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\gui_global_split_order_folds\\folds\\train_test_val\\epoch_metrics\\frac100_rep0.jsonl",
+    "checkpoint_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\gui_global_split_order_folds\\folds\\train_test_val\\checkpoints\\frac100_rep0_best.ckpt",
+    "torchscript_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\models\\frac100_rep0_best.pt",
+    "wall_seconds": 2260.526428937912
+  }
+]

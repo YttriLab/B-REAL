@@ -37,6 +37,7 @@ class TrainingConfig(BaseModel):
     test_percent: float = 0.15
     shuffle: bool = False
     split_order: list[str] = ["val", "train", "test"]
+    split_order_by_dataset: Optional[list[list[str]]] = None
 
     # Model
     num_frames: int = 3
@@ -47,6 +48,7 @@ class TrainingConfig(BaseModel):
     dropout: float = 0.2
     lr: float = 1e-4
     weight_decay: float = 1e-3
+    lr_scheduler_t_max: Optional[int] = None
     temporal_pool: str = "last"
 
     # Training
@@ -105,6 +107,7 @@ async def api_start_training(req: TrainingConfig):
             "test_percent": req.test_percent,
             "shuffle": req.shuffle,
             "split_order": req.split_order,
+            "split_order_by_dataset": req.split_order_by_dataset,
         },
         "model": {
             "num_frames": req.num_frames,
@@ -115,6 +118,7 @@ async def api_start_training(req: TrainingConfig):
             "dropout": req.dropout,
             "lr": req.lr,
             "weight_decay": req.weight_decay,
+            "lr_scheduler_t_max": req.lr_scheduler_t_max,
             "temporal_pool": req.temporal_pool,
         },
         "max_epochs": req.max_epochs,

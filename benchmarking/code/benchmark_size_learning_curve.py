@@ -686,13 +686,14 @@ def plot_learning_curve(results: list[dict], metric_key: str, ylabel: str, title
     fig, ax = plt.subplots(figsize=(7, 5), dpi=150)
     fig.patch.set_facecolor(SURFACE)
     ax.set_facecolor(SURFACE)
+    has_folds = any("fold" in r for r in results)
 
     for frac in fractions:
         rows = [r for r in results if r["fraction"] == frac]
         xs = [r["n_frames_train"] / fps if use_seconds else r["n_frames_train"] for r in rows]
         ys = [r[metric_key] for r in rows]
 
-        ax.scatter(xs, ys, color=PALETTE[0], alpha=0.45, s=28, zorder=2,
+        ax.scatter(xs, ys, color=PALETTE[0], alpha=0.18 if has_folds else 0.45, s=28, zorder=2,
                    label="Individual runs" if frac == fractions[0] else None)
 
         xs_mean.append(float(np.mean(xs)))
@@ -704,8 +705,29 @@ def plot_learning_curve(results: list[dict], metric_key: str, ylabel: str, title
     ys_mean = np.array(ys_mean)[order]
     ys_std = np.array(ys_std)[order]
 
+    # Retain the aggregate as the visual focus while exposing the temporal
+    # fold trajectories that produced it.
+    if has_folds:
+        for fold_idx, fold in enumerate(sorted({r["fold"] for r in results})):
+            fold_xs, fold_ys = [], []
+            fold_rows = [r for r in results if r["fold"] == fold]
+            for frac in fractions:
+                rows = [r for r in fold_rows if r["fraction"] == frac]
+                if not rows:
+                    continue
+                raw_xs = [r["n_frames_train"] / fps if use_seconds else r["n_frames_train"]
+                          for r in rows]
+                fold_xs.append(float(np.mean(raw_xs)))
+                fold_ys.append(float(np.mean([r[metric_key] for r in rows])))
+            fold_order = np.argsort(fold_xs)
+            label = " → ".join(fold.split("_"))
+            ax.plot(np.asarray(fold_xs)[fold_order], np.asarray(fold_ys)[fold_order],
+                    color=PALETTE[(fold_idx + 2) % len(PALETTE)], alpha=0.38,
+                    marker="o", markersize=3.5, linewidth=1.25, zorder=2,
+                    label=f"Fold: {label}")
+
     ax.errorbar(xs_mean, ys_mean, yerr=ys_std, color=PALETTE[1], marker="o",
-                markersize=6, linewidth=1.8, capsize=4, zorder=3, label="Mean ± std")
+                markersize=6, linewidth=2.1, capsize=4, zorder=3, label="Overall mean ± std")
 
     ax.set_xlabel(xlabel, color=INK_SECONDARY)
     ax.set_ylabel(ylabel, color=INK_PRIMARY)
@@ -717,7 +739,7 @@ def plot_learning_curve(results: list[dict], metric_key: str, ylabel: str, title
     ax.spines["bottom"].set_color(GRIDLINE)
     ax.yaxis.grid(True, color=GRIDLINE, linewidth=0.8)
     ax.set_axisbelow(True)
-    ax.legend(frameon=False, labelcolor=INK_SECONDARY, loc="lower right")
+    ax.legend(frameon=False, labelcolor=INK_SECONDARY, loc="best", fontsize=8)
 
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -954,6 +976,21 @@ def main():
             print(f"Note: {state_path} exists and will be overwritten "
                   f"(pass --resume to continue it instead)")
         completed = []
+
+    email_address_present = bool(os.environ.get("GMAIL_ADDRESS"))
+    email_password_present = bool(os.environ.get("GMAIL_APP_PASSWORD"))
+    if not args.notify:
+        email_status = "DISABLED by --no-notify"
+    elif email_address_present and email_password_present:
+        email_status = "READY"
+    else:
+        email_status = "NOT READY -- missing credential variable(s)"
+    print("\nEmail notification configuration:")
+    print(f"  enabled: {args.notify}")
+    print(f"  recipient: {args.notify_email}")
+    print(f"  GMAIL_ADDRESS: {'set' if email_address_present else 'MISSING'}")
+    print(f"  GMAIL_APP_PASSWORD: {'set' if email_password_present else 'MISSING'}")
+    print(f"  status: {email_status}\n")
 
     results, final_report_sent = run_experiment(args, completed)
 

@@ -1,0 +1,71 @@
+{
+  "mode": "multibehavioral",
+  "checkpoint": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\multibehavior_split_orders_lr_fixed\\train_test_val\\multibehavioral\\model.ckpt",
+  "data_root": "C:\\Realtime\\brayden_data",
+  "class_names": [
+    "face_head_paw_groom",
+    "body_groom",
+    "other",
+    "left_turn",
+    "locomotion",
+    "rear",
+    "right_turn",
+    "itch"
+  ],
+  "split": {
+    "train_percent": 0.7,
+    "val_percent": 0.15,
+    "test_percent": 0.15,
+    "shuffle": false,
+    "random_seed": 42,
+    "frames_per_group": 3,
+    "split_config": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\multibehavior_split_orders_lr_fixed\\train_test_val\\split_config.json",
+    "split_order_by_dataset": [
+      [
+        "train",
+        "test",
+        "val"
+      ],
+      [
+        "train",
+        "test",
+        "val"
+      ]
+    ]
+  },
+  "n_train": 13983,
+  "n_val": 2994,
+  "n_test": 2992,
+  "train_class_counts": [
+    2045,
+    1233,
+    6147,
+    480,
+    1954,
+    1452,
+    641,
+    31
+  ],
+  "class_weights": [
+    6.837652683258057,
+    11.340632438659668,
+    2.274768114089966,
+    29.131250381469727,
+    7.156090259552002,
+    9.630165100097656,
+    21.81435203552246,
+    451.06451416015625
+  ],
+  "seed": 42,
+  "max_epochs": 100,
+  "patience": 4,
+  "learning_rate": 5e-05,
+  "lr_scheduler": "plateau",
+  "lr_plateau_factor": 0.5,
+  "lr_plateau_patience": 1,
+  "min_learning_rate": 1e-06,
+  "epochs_trained": 12,
+  "best_epoch": 6,
+  "best_val_mcc": 0.4035528600215912,
+  "wall_seconds": 881.5291346999584
+}

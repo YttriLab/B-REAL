@@ -22,6 +22,8 @@ wandb/
 # Preprocessed frames (large, regenerable)
 frames_*/
 cropped_*/
+processed_frames*/
+labels/
 
 # Node / Electron
 node_modules/

@@ -1,0 +1,52 @@
+[
+  {
+    "fraction": 100,
+    "repeat": 0,
+    "seed": 100000,
+    "n_frames_train": 62182,
+    "accuracy": 0.8820571057754705,
+    "macro_f1": 0.7940043751042338,
+    "mcc": 0.6067641973495483,
+    "per_class": {
+      "other": {
+        "precision": 0.9668096405228758,
+        "recall": 0.8934503586258966,
+        "f1": 0.9286835393368649,
+        "support": 10596
+      },
+      "face/head/paw groom": {
+        "precision": 0.5548107255520505,
+        "recall": 0.8123556581986143,
+        "f1": 0.6593252108716027,
+        "support": 1732
+      }
+    },
+    "confusion_matrix": [
+      [
+        9467,
+        1129
+      ],
+      [
+        325,
+        1407
+      ]
+    ],
+    "epochs_trained": 5,
+    "epoch_of_best": 0,
+    "best_val_loss": 0.30568408966064453,
+    "class_weights": [
+      1.1829094886779785,
+      6.467186450958252
+    ],
+    "samples_per_dataset": {
+      "0": 19150,
+      "1": 2504,
+      "2": 20890,
+      "3": 19638
+    },
+    "epoch_metrics_path": "c:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\size_learning_curve_test\\epoch_metrics\\frac100_rep0.jsonl",
+    "checkpoint_path": "c:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\size_learning_curve_test\\checkpoints\\frac100_rep0_best.ckpt",
+    "torchscript_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\models\\frac100_rep0_best.pt",
+    "wall_seconds": null
+  }
+]

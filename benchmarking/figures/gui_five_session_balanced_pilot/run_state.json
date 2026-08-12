@@ -1,0 +1,165 @@
+{
+  "args": {
+    "config": "benchmarking/configs/gui_five_session_balanced_pilot.yaml",
+    "fractions": "0,20,40,60,80,100",
+    "repeats": 1,
+    "seed": 0,
+    "max_epochs": null,
+    "patience": null,
+    "batch_size": 64,
+    "num_workers": 4,
+    "accelerator": "auto",
+    "fps": 60.0,
+    "progress_bar": true,
+    "output_dir": "benchmarking/figures/gui_five_session_balanced_pilot",
+    "resume": false,
+    "notify_email": "braydenk@andrew.cmu.edu",
+    "notify": true
+  },
+  "results": [
+    {
+      "fraction": 0,
+      "repeat": 0,
+      "seed": 0,
+      "n_frames_train": 0,
+      "accuracy": 0.9813323572474377,
+      "macro_f1": 0.4952891187881027,
+      "mcc": 0.060855090618133545,
+      "per_class": {
+        "other": {
+          "precision": 0.9813323572474377,
+          "recall": 1.0,
+          "f1": 0.9905782375762054,
+          "support": 13405
+        },
+        "face / head / paw groom": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 255
+        }
+      },
+      "confusion_matrix": [
+        [
+          13405,
+          0
+        ],
+        [
+          255,
+          0
+        ]
+      ],
+      "epochs_trained": null,
+      "epoch_of_best": null,
+      "best_val_mcc": null,
+      "class_weights": null,
+      "samples_per_dataset": null,
+      "epoch_metrics_path": null,
+      "checkpoint_path": null,
+      "torchscript_path": null,
+      "wall_seconds": 0.0
+    },
+    {
+      "fraction": 20,
+      "repeat": 0,
+      "seed": 20000,
+      "n_frames_train": 12749,
+      "accuracy": 0.9299414348462665,
+      "macro_f1": 0.5799237902470527,
+      "mcc": 0.21307751536369324,
+      "per_class": {
+        "other": {
+          "precision": 0.9891543539767369,
+          "recall": 0.9389033942558747,
+          "f1": 0.9633740288568258,
+          "support": 13405
+        },
+        "face / head / paw groom": {
+          "precision": 0.125,
+          "recall": 0.4588235294117647,
+          "f1": 0.19647355163727961,
+          "support": 255
+        }
+      },
+      "confusion_matrix": [
+        [
+          12586,
+          819
+        ],
+        [
+          138,
+          117
+        ]
+      ],
+      "epochs_trained": 6,
+      "epoch_of_best": 2,
+      "best_val_mcc": 0.7455375790596008,
+      "class_weights": [
+        1.093114972114563,
+        11.739410400390625
+      ],
+      "samples_per_dataset": {
+        "0": 4662,
+        "1": 2566,
+        "2": 1546,
+        "3": 1540,
+        "4": 2435
+      },
+      "epoch_metrics_path": "benchmarking\\figures\\gui_five_session_balanced_pilot\\epoch_metrics\\frac20_rep0.jsonl",
+      "checkpoint_path": null,
+      "torchscript_path": null,
+      "wall_seconds": 580.1342144012451
+    },
+    {
+      "fraction": 40,
+      "repeat": 0,
+      "seed": 40000,
+      "n_frames_train": 25499,
+      "accuracy": 0.9299414348462665,
+      "macro_f1": 0.5487154171517636,
+      "mcc": 0.1301610916852951,
+      "per_class": {
+        "other": {
+          "precision": 0.9858704137392662,
+          "recall": 0.9421111525550168,
+          "f1": 0.9634941827198169,
+          "support": 13405
+        },
+        "face / head / paw groom": {
+          "precision": 0.08705882352941176,
+          "recall": 0.2901960784313726,
+          "f1": 0.1339366515837104,
+          "support": 255
+        }
+      },
+      "confusion_matrix": [
+        [
+          12629,
+          776
+        ],
+        [
+          181,
+          74
+        ]
+      ],
+      "epochs_trained": 6,
+      "epoch_of_best": 2,
+      "best_val_mcc": 0.7722780108451843,
+      "class_weights": [
+        1.0931578874588013,
+        11.734468460083008
+      ],
+      "samples_per_dataset": {
+        "0": 9324,
+        "1": 5133,
+        "2": 3093,
+        "3": 3079,
+        "4": 4870
+      },
+      "epoch_metrics_path": "benchmarking\\figures\\gui_five_session_balanced_pilot\\epoch_metrics\\frac40_rep0.jsonl",
+      "checkpoint_path": null,
+      "torchscript_path": null,
+      "wall_seconds": 845.5365633964539
+    }
+  ]
+}

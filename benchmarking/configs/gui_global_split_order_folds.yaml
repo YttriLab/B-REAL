@@ -1,0 +1,65 @@
+project_name: aeagle-yttri-lab
+run_name: gui_global_split_order_folds
+
+max_epochs: 100
+fine_tune_lr: false
+
+model:
+  num_frames: 3
+  variant: b0
+  shift_fraction: 0.125
+  pretrained: true
+  tsm_stages: [1, 2, 3, 4, 5, 6, 7]
+  dropout: 0.2
+  lr: 1e-4
+  weight_decay: 1e-3
+  lr_scheduler_t_max: 100
+  temporal_pool: last
+
+data:
+  train_percent: 0.7
+  val_percent: 0.15
+  test_percent: 0.15
+  shuffle: false
+  # Each sample uses its endpoint plus two preceding frames. Dropping the
+  # first two endpoints of each later chronological block prevents raw-frame
+  # context from crossing a train/validation/test boundary.
+  boundary_embargo: 2
+
+# The fold runner applies each order globally to all five recordings. These
+# four folds cover the four unique test windows available when a contiguous
+# 70% training block and two 15% evaluation blocks partition the timeline.
+benchmark_folds:
+  - name: test_val_train
+    split_order: [test, val, train]
+  - name: train_test_val
+    split_order: [train, test, val]
+  - name: train_val_test
+    split_order: [train, val, test]
+  - name: val_test_train
+    split_order: [val, test, train]
+
+callbacks:
+  early_stopping_patience: 6
+
+data_loading:
+  label_paths:
+    - D:/Realtime/realtime_app_output/labels/6_10_reencoded_bouts.csv
+    - D:/Realtime/realtime_app_output/labels/7_1_reencoded_bouts.csv
+    - D:/Realtime/realtime_app_output/labels/7_16m_reencoded_bouts.csv
+    - D:/Realtime/realtime_app_output/labels/7_16f_reencoded_bouts.csv
+    - D:/Realtime/realtime_app_output/labels/7_17m_reencoded_bouts.csv
+  frame_dirs:
+    - D:/Realtime/realtime_app_output/frames/6_10_reencoded
+    - D:/Realtime/realtime_app_output/frames/7_1_reencoded
+    - D:/Realtime/realtime_app_output/frames/7_16m_reencoded
+    - D:/Realtime/realtime_app_output/frames/7_16f_reencoded
+    - D:/Realtime/realtime_app_output/frames/7_17m_reencoded
+  frames_per_group: 3
+  label_union:
+  binarize: face / head / paw groom
+
+boundary_smoothing:
+  enabled: true
+  epsilon: 0.3
+  window: 5
