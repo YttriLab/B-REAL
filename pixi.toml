@@ -17,7 +17,7 @@ name = "realtimeasoid"
 version = "0.1.0"
 description = "Real-time clip-based animal behavior classifier (PySide6 GUI + FastAPI/PyTorch backend)."
 channels = ["conda-forge"]
-platforms = ["win-64"]   # add "linux-64" / "osx-64" here, then re-run `pixi install`
+platforms = ["win-64", "linux-64"]   # add "osx-64" here too, then re-run `pixi install`
 
 [dependencies]
 # Shared by both environments — kept minimal so the gui environment stays
