@@ -36,6 +36,7 @@ class TrainingConfig(BaseModel):
     val_percent: float = 0.15
     test_percent: float = 0.15
     shuffle: bool = False
+    split_order: list[str] = ["val", "train", "test"]
 
     # Model
     num_frames: int = 3
@@ -139,6 +140,7 @@ async def api_start_training(req: TrainingConfig):
             "val_percent": req.val_percent,
             "test_percent": req.test_percent,
             "shuffle": req.shuffle,
+            "split_order": req.split_order,
         },
         "model": {
             "num_frames": req.num_frames,

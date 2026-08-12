@@ -18,6 +18,7 @@ import os
 import cv2
 import pandas as pd
 import wandb
+from collections import defaultdict
 
 def load_data(frame_dirs, label_paths, frames_per_group=3, label_union=None, binarize=None):
     """
@@ -373,11 +374,115 @@ class MultiImageDataModule(L.LightningDataModule):
                 pin_memory=True,
             )
 
+def _find_bouts(labels_arr: np.ndarray, max_chunk_len: int = 300) -> list:
+    """Maximal runs of one label in a dataset's (already binarized/remapped)
+    label sequence, subdivided so no single chunk exceeds max_chunk_len.
+    Index space is the per-dataset labeled-sample sequence load_data
+    produces -- not necessarily contiguous native frame numbers, since only
+    labeled (in-bout) frames are kept.
+
+    The subdivision matters for the negative/background class: an actual
+    annotated behavior bout is typically short (tens to low hundreds of
+    frames), but "other" is frequently one huge contiguous run spanning
+    most of a video (everything between/around annotated bouts) -- tens of
+    thousands of frames in a single run. Treating that whole run as one
+    indivisible unit means train_test_split's greedy bout-to-split
+    assignment can only place it entirely in one split, which can single-
+    handedly blow a split's target percentage by tens of points (there's
+    nothing smaller to fill the remainder with). Capping chunk length gives
+    the assignment fine-grained pieces to balance with -- max_chunk_len=300
+    (~5s at 60fps) bounds the resulting quantization error to a small
+    fraction of any real video, while staying far above frames_per_group so
+    it never subdivides an actual short behavior bout (those pass through
+    as a single chunk, still never split apart).
+
+    Returns a list of (start, end_exclusive, label).
+    """
+    bouts = []
+    start = 0
+    n = len(labels_arr)
+    for i in range(1, n + 1):
+        if i == n or labels_arr[i] != labels_arr[start]:
+            run_start, run_end, lbl = start, i, int(labels_arr[start])
+            pos = run_start
+            while pos < run_end:
+                chunk_end = min(pos + max_chunk_len, run_end)
+                bouts.append((pos, chunk_end, lbl))
+                pos = chunk_end
+            start = i
+    return bouts
+
+
+_SPLIT_NAMES = ("train", "val", "test")
+
+
+def _chronological_split_indices(total, train_percent, val_percent, test_percent,
+                                 split_order=("train", "val", "test")):
+    """Return exact-size contiguous chronological blocks in ``split_order``.
+
+    The final block receives any integer-rounding remainder. With the default
+    order this is identical to the historical first-train, then-val, then-test
+    behavior.
+    """
+    order = tuple(split_order)
+    if len(order) != 3 or set(order) != set(_SPLIT_NAMES):
+        raise ValueError(
+            "split_order must contain train, val, and test exactly once; "
+            f"got {list(order)!r}"
+        )
+
+    proportions = {
+        "train": train_percent,
+        "val": val_percent,
+        "test": test_percent,
+    }
+    indices = np.arange(total)
+    by_split = {}
+    start = 0
+    cumulative_fraction = 0.0
+    for position, split_name in enumerate(order):
+        cumulative_fraction += proportions[split_name]
+        end = total if position == len(order) - 1 else int(total * cumulative_fraction)
+        by_split[split_name] = indices[start:end]
+        start = end
+    return by_split
+
+
 def train_test_split(file_paths, labels, boundary_dists, train_percent=0.7, val_percent=0.15, test_percent=0.15,
-                     shuffle=False, random_seed=42):
+                     shuffle=False, random_seed=42, return_dataset_ids=False,
+                     split_order=("train", "val", "test")):
     """
     Split data from multiple datasets into train/val/test sets.
     Splits each dataset separately, then combines across datasets.
+
+    shuffle=False (chronological): each video is cut into three contiguous
+    blocks in native-frame order. ``split_order`` controls which role gets
+    each block; its default is train, then val, then test. Simple, but behavior
+    bouts cluster in time within a
+    session (e.g. grooming can taper off entirely by the end of a
+    recording), so val/test can land on wildly different class balances
+    than train purely from where in the timeline the cut fell, not from any
+    real train/test difference in difficulty.
+
+    shuffle=True: splitting is bout-level and class-stratified instead.
+    Each video's labeled-frame sequence is grouped into bouts (maximal runs
+    of one label, see _find_bouts); within each (dataset, label) group,
+    bouts are shuffled and then greedily assigned to train/val/test by
+    cumulative bout length until each split's target percentage of that
+    group is reached. This never splits a bout across two sets (avoiding
+    near-duplicate frames landing on both sides of a split) while making
+    every split's class balance track the source video's real balance,
+    rather than depending on session timing. Within each split, samples are
+    kept in original chronological order (not row-shuffled) so consecutive
+    entries stay temporally meaningful wherever they came from the same bout.
+
+    Trade-off: a bout's first frames_per_group-1 samples draw lead-in frames
+    from just before the bout starts (extracted for clip context). Under
+    the chronological split that lead-in almost always fell in the same
+    split (except right at the one train/val or val/test cut per video).
+    Bout-level shuffling creates many more cut points, so lead-in context
+    can occasionally cross a split boundary -- a small, bounded amount of
+    context overlap traded for far more representative splits.
 
     Args:
         file_paths: Nested list [dataset][sample] of file paths
@@ -386,11 +491,21 @@ def train_test_split(file_paths, labels, boundary_dists, train_percent=0.7, val_
         train_percent: Percentage of data for training (0-1)
         val_percent: Percentage of data for validation (0-1)
         test_percent: Percentage of data for testing (0-1)
-        shuffle: Whether to shuffle each dataset before splitting
-        random_seed: Random seed for reproducibility
+        shuffle: False = chronological split; True = bout-level stratified split
+        random_seed: Random seed for reproducibility (only used when shuffle=True)
+        split_order: Permutation of (train, val, test) specifying the temporal
+            block order when shuffle=False. Ignored when shuffle=True.
+        return_dataset_ids: If True, also return a per-sample array (parallel
+            to y_train) recording which source dataset each training sample
+            came from -- needed by callers that stratify/report on top of the
+            training pool (e.g. benchmark_size_learning_curve.py), since
+            bout-level splitting means a dataset's train rows are no longer
+            simply "the first N samples of that dataset" and can't be
+            recovered by replaying the split arithmetic after the fact.
 
     Returns:
-        (x_train, y_train, bd_train), (x_valid, y_valid, bd_valid), (x_test, y_test, bd_test)
+        (x_train, y_train, bd_train), (x_valid, y_valid, bd_valid), (x_test, y_test, bd_test), test_clip_sizes
+        (..., train_dataset_ids) if return_dataset_ids=True
     """
     assert abs(train_percent + val_percent + test_percent - 1.0) < 1e-6, \
         "train_percent + val_percent + test_percent must equal 1.0"
@@ -399,44 +514,77 @@ def train_test_split(file_paths, labels, boundary_dists, train_percent=0.7, val_
     y_train, y_valid, y_test = [], [], []
     bd_train, bd_valid, bd_test = [], [], []
     test_clip_sizes = []
-
-    if random_seed is not None:
-        np.random.seed(random_seed)
+    train_dataset_ids = []
 
     # Process each dataset separately
     for dataset_idx, (dataset_paths, dataset_labels, dataset_bd) in enumerate(zip(file_paths, labels, boundary_dists)):
         total = len(dataset_labels)
-        indices = np.arange(total)
-
-        # Shuffle if requested
-        if shuffle:
-            np.random.shuffle(indices)
-
-        # Calculate split indices
-        train_end = int(total * train_percent)
-        val_end = int(total * (train_percent + val_percent))
-
-        # Split indices
-        train_indices = indices[:train_end]
-        val_indices = indices[train_end:val_end]
-        test_indices = indices[val_end:]
-
-        # Convert to numpy arrays for indexing
+        labels_arr = np.array(dataset_labels)
         dataset_paths_arr = np.array(dataset_paths, dtype=object)
-        dataset_labels_arr = np.array(dataset_labels)
         dataset_bd_arr = np.array(dataset_bd)
+
+        if shuffle:
+            rng = np.random.RandomState(None if random_seed is None else random_seed + dataset_idx)
+            bouts = _find_bouts(labels_arr)
+
+            bouts_by_label = defaultdict(list)
+            for bout_idx, (_s, _e, lbl) in enumerate(bouts):
+                bouts_by_label[lbl].append(bout_idx)
+
+            split_of_bout = {}
+            for lbl, bout_idxs in bouts_by_label.items():
+                bout_idxs = list(bout_idxs)
+                rng.shuffle(bout_idxs)
+                lengths = [bouts[i][1] - bouts[i][0] for i in bout_idxs]
+                label_total = sum(lengths)
+                train_end = round(label_total * train_percent)
+                val_end = round(label_total * (train_percent + val_percent))
+
+                cum = 0
+                n_val_bouts = n_test_bouts = 0
+                for bout_idx, length in zip(bout_idxs, lengths):
+                    if cum < train_end:
+                        split_of_bout[bout_idx] = "train"
+                    elif cum < val_end:
+                        split_of_bout[bout_idx] = "val"
+                        n_val_bouts += 1
+                    else:
+                        split_of_bout[bout_idx] = "test"
+                        n_test_bouts += 1
+                    cum += length
+
+                if len(bout_idxs) > 1 and (n_val_bouts == 0 or n_test_bouts == 0):
+                    print(f"  WARNING: dataset {dataset_idx} label {lbl} has only "
+                          f"{len(bout_idxs)} bout(s) -- val/test may end up with none "
+                          f"of this class from this video (a bout can't be split).")
+
+            train_pos, val_pos, test_pos = [], [], []
+            for bout_idx, (s, e, _lbl) in enumerate(bouts):
+                target = {"train": train_pos, "val": val_pos, "test": test_pos}[split_of_bout[bout_idx]]
+                target.extend(range(s, e))
+            train_indices = np.array(sorted(train_pos), dtype=int)
+            val_indices = np.array(sorted(val_pos), dtype=int)
+            test_indices = np.array(sorted(test_pos), dtype=int)
+        else:
+            chronological = _chronological_split_indices(
+                total, train_percent, val_percent, test_percent, split_order
+            )
+            train_indices = chronological["train"]
+            val_indices = chronological["val"]
+            test_indices = chronological["test"]
 
         # Split this dataset
         x_train.extend(dataset_paths_arr[train_indices].tolist())
-        y_train.extend(dataset_labels_arr[train_indices].tolist())
+        y_train.extend(labels_arr[train_indices].tolist())
         bd_train.extend(dataset_bd_arr[train_indices].tolist())
+        train_dataset_ids.extend([dataset_idx] * len(train_indices))
 
         x_valid.extend(dataset_paths_arr[val_indices].tolist())
-        y_valid.extend(dataset_labels_arr[val_indices].tolist())
+        y_valid.extend(labels_arr[val_indices].tolist())
         bd_valid.extend(dataset_bd_arr[val_indices].tolist())
 
         x_test.extend(dataset_paths_arr[test_indices].tolist())
-        y_test.extend(dataset_labels_arr[test_indices].tolist())
+        y_test.extend(labels_arr[test_indices].tolist())
         bd_test.extend(dataset_bd_arr[test_indices].tolist())
 
         test_clip_sizes.append(len(test_indices))
@@ -444,7 +592,10 @@ def train_test_split(file_paths, labels, boundary_dists, train_percent=0.7, val_
 
     print(f"\nTotal across all datasets: {len(x_train)} train, {len(x_valid)} val, {len(x_test)} test")
 
-    return (x_train, y_train, bd_train), (x_valid, y_valid, bd_valid), (x_test, y_test, bd_test), test_clip_sizes
+    result = (x_train, y_train, bd_train), (x_valid, y_valid, bd_valid), (x_test, y_test, bd_test), test_clip_sizes
+    if return_dataset_ids:
+        return result + (np.array(train_dataset_ids, dtype=int),)
+    return result
 
 ## Transformers
 class Mlp(nn.Module):
@@ -692,7 +843,10 @@ class MultiImageTransformerClassifier(L.LightningModule):
 
         self.log('train_loss', loss, prog_bar=True)
         self.log('train_balanced_acc', self.train_acc(preds, labels), on_step=False, on_epoch=True, prog_bar=True)
-        self.log('train_mcc', self.train_mcc(preds, labels), on_step=False, on_epoch=True)
+        # Log the Metric object so Lightning computes one MCC from the full
+        # epoch, rather than averaging nonlinear per-batch MCC values.
+        self.train_mcc.update(preds, labels)
+        self.log('train_mcc', self.train_mcc, on_step=False, on_epoch=True)
 
         return loss
 
@@ -705,7 +859,8 @@ class MultiImageTransformerClassifier(L.LightningModule):
 
         self.log('val_loss', loss, prog_bar=True)
         self.log('val_balanced_acc', self.val_acc(preds, labels), on_step=False, on_epoch=True, prog_bar=True)
-        self.log('val_mcc', self.val_mcc(preds, labels), on_step=False, on_epoch=True)
+        self.val_mcc.update(preds, labels)
+        self.log('val_mcc', self.val_mcc, on_step=False, on_epoch=True)
 
         return loss
 
@@ -718,7 +873,8 @@ class MultiImageTransformerClassifier(L.LightningModule):
 
         self.log('test_loss', loss)
         self.log('test_balanced_acc', self.test_acc(preds, labels), on_step=False, on_epoch=True)
-        self.log('test_mcc', self.test_mcc(preds, labels), on_step=False, on_epoch=True)
+        self.test_mcc.update(preds, labels)
+        self.log('test_mcc', self.test_mcc, on_step=False, on_epoch=True)
 
         self.test_confusion.update(preds, labels)
         self.test_preds.append(preds.cpu())
@@ -1065,4 +1221,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

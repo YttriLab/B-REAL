@@ -58,7 +58,7 @@ class TSMInferenceWrapper(nn.Module):
 
 
 def export_model(checkpoint_path, output_name, output_dir, device="cuda",
-                 tsm_stages=None):
+                 tsm_stages=None, optimize=False):
     """
     Export TSM-EfficientNet checkpoint to TorchScript.
 
@@ -69,6 +69,19 @@ def export_model(checkpoint_path, output_name, output_dir, device="cuda",
         device: Device to use for export
         tsm_stages: Override tsm_stages if checkpoint used a different config.
             Pass [1,2,3,4,5,6,7] for checkpoints trained with all stages.
+        optimize: Run torch.jit.optimize_for_inference before saving. Off by
+            default -- on this TSM model it has produced two separate
+            failure modes: on CUDA the resulting fused kernels JIT-compile
+            via nvrtc at first call, which errors out on any machine missing
+            an nvrtc-builtins DLL (no system CUDA toolkit installed); on CPU
+            the optimized graph can serialize "successfully" (traced.save
+            reports OK) but then fail to reload with a cryptic
+            `RuntimeError: required keyword attribute 'value' is undefined`
+            -- the .pt file it wrote is silently corrupt (suspiciously
+            small, e.g. 44KB for a model with 4M+ params). The plain traced
+            module (this function's default) saves/loads/runs correctly on
+            both CPU and CUDA; only pass optimize=True if you've verified it
+            round-trips on your specific machine/torch build first.
     """
     print(f"Loading checkpoint: {checkpoint_path}")
 
@@ -102,8 +115,8 @@ def export_model(checkpoint_path, output_name, output_dir, device="cuda",
     with torch.no_grad():
         traced = torch.jit.trace(wrapper, dummy_input)
 
-    # Optimize for inference
-    traced = torch.jit.optimize_for_inference(traced)
+    if optimize:
+        traced = torch.jit.optimize_for_inference(traced)
 
     # Save
     traced.save(output_path)

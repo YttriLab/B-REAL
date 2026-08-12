@@ -360,7 +360,11 @@ class TSMClassifier(L.LightningModule):
 
         self.log("train_loss", loss, prog_bar=True)
         self.log("train_balanced_acc", self.train_acc(preds, labels), on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train_mcc", self.train_mcc(preds, labels), on_step=False, on_epoch=True)
+        # Log the Metric object, rather than its per-batch return tensor, so
+        # Lightning calls compute() once over the complete epoch state. MCC is
+        # nonlinear: averaging batch MCC values is not the dataset-wide MCC.
+        self.train_mcc.update(preds, labels)
+        self.log("train_mcc", self.train_mcc, on_step=False, on_epoch=True)
 
         return loss
 
@@ -373,7 +377,8 @@ class TSMClassifier(L.LightningModule):
 
         self.log("val_loss", loss, prog_bar=True)
         self.log("val_balanced_acc", self.val_acc(preds, labels), on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val_mcc", self.val_mcc(preds, labels), on_step=False, on_epoch=True)
+        self.val_mcc.update(preds, labels)
+        self.log("val_mcc", self.val_mcc, on_step=False, on_epoch=True)
 
         return loss
 
@@ -386,7 +391,8 @@ class TSMClassifier(L.LightningModule):
 
         self.log("test_loss", loss)
         self.log("test_balanced_acc", self.test_acc(preds, labels), on_step=False, on_epoch=True)
-        self.log("test_mcc", self.test_mcc(preds, labels), on_step=False, on_epoch=True)
+        self.test_mcc.update(preds, labels)
+        self.log("test_mcc", self.test_mcc, on_step=False, on_epoch=True)
 
         self.test_confusion.update(preds, labels)
         self.test_preds.append(preds.cpu())

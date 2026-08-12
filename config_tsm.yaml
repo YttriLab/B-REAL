@@ -21,7 +21,9 @@ data:
   train_percent: 0.7
   val_percent: 0.15
   test_percent: 0.15
-  shuffle: False
+  shuffle: True   # bout-level, class-stratified split (see model.py::train_test_split) -- not a raw frame shuffle
+  # Temporal block order when shuffle is False. Must contain train, val, test exactly once.
+  split_order: [val, train, test]  # best current label-only balance; tied with [test, train, val]
 
 callbacks:
   early_stopping_patience: 20

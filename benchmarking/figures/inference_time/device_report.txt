@@ -1,0 +1,60 @@
+======================================================================
+Model: _models\torchscript_models\torchscript_models\tsm_binary_groom.pt
+Tested at: 2026-07-02T14:56:18
+Trials: 50  Warmup: 10  Batch size: 1
+Scenario label (user-supplied): Super-Battery
+
+[cpu] Intel64 Family 6 Model 154 Stepping 3, GenuineIntel
+    physical_cores: 12
+    logical_cores: 16
+    total_ram_gb: 16.87
+    os: Windows 11 (10.0.26200)
+    max_freq_mhz: 2500.0
+    power_plan: Power Scheme GUID: 381b4222-f694-41f0-9685-ff5bb260df2e  (Balanced)
+    mean_ms: 102.877
+    std_ms: 12.047
+    fps: 9.72
+
+[cuda:0] NVIDIA GeForce RTX 3050 Ti Laptop GPU
+    total_memory_gb: 4.29
+    multiprocessor_count: 20
+    compute_capability: 8.6
+    cuda_version: 12.8
+    driver_version: 595.79
+    power_limit: [N/A]
+    power_draw_at_query: 12.68 W
+    max_sm_clock: 2100 MHz
+    mean_ms: 20.910
+    std_ms: 3.771
+    fps: 47.82
+
+======================================================================
+Model: _models\torchscript_models\torchscript_models\tsm_binary_groom.pt
+Tested at: 2026-07-02T14:57:58
+Trials: 50  Warmup: 10  Batch size: 1
+Scenario label (user-supplied): High-Perf
+
+[cpu] Intel64 Family 6 Model 154 Stepping 3, GenuineIntel
+    physical_cores: 12
+    logical_cores: 16
+    total_ram_gb: 16.87
+    os: Windows 11 (10.0.26200)
+    max_freq_mhz: 2500.0
+    power_plan: Power Scheme GUID: 381b4222-f694-41f0-9685-ff5bb260df2e  (Balanced)
+    mean_ms: 55.788
+    std_ms: 3.067
+    fps: 17.93
+
+[cuda:0] NVIDIA GeForce RTX 3050 Ti Laptop GPU
+    total_memory_gb: 4.29
+    multiprocessor_count: 20
+    compute_capability: 8.6
+    cuda_version: 12.8
+    driver_version: 595.79
+    power_limit: [N/A]
+    power_draw_at_query: 13.28 W
+    max_sm_clock: 2100 MHz
+    mean_ms: 9.622
+    std_ms: 1.947
+    fps: 103.93
+

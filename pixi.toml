@@ -74,6 +74,10 @@ openvino = "*"
 pytest = "*"
 pytest-asyncio = "*"
 httpx = "*"
+# Benchmarking (benchmarking/code/)
+psutil = "*"
+py-cpuinfo = "*"
+tqdm = "*"
 
 # albucore (an albumentations dependency) imports simsimd unconditionally, but
 # the conda-forge simsimd 7.7.0 win-64/py312 build ships an empty payload (a
