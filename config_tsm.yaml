@@ -15,29 +15,34 @@ model:
   dropout: 0.2
   lr: 1e-4
   weight_decay: 1e-3
+  # Decoupled from max_epochs so short benchmark runs do not collapse the LR.
+  # At epoch 10 this horizon keeps LR near 7.5e-5 instead of reaching 1e-6.
+  lr_scheduler_t_max: 30
   temporal_pool: last       # last | avg | max
 
 data:
   train_percent: 0.7
   val_percent: 0.15
   test_percent: 0.15
-  shuffle: True   # bout-level, class-stratified split (see model.py::train_test_split) -- not a raw frame shuffle
+  shuffle: False   # bout-level, class-stratified split (see model.py::train_test_split) -- not a raw frame shuffle
   # Temporal block order when shuffle is False. Must contain train, val, test exactly once.
-  split_order: [val, train, test]  # best current label-only balance; tied with [test, train, val]
+  split_order: [val, test, train]  # best current label-only balance; tied with [test, train, val]
 
 callbacks:
   early_stopping_patience: 20
 
 data_loading:
   label_paths:
-    - labels\01_09.csv
-    - labels\01_09_after_15.csv
-    - labels\01_09_remaining.csv
+    # - labels\01_09.csv
+    # - labels\01_09_after_15.csv
+    # - labels\01_09_remaining.csv
+    - labels\01_09_all_concat_onehot.csv
     - labels\02_23.csv
 
   frame_dirs:
-    - processed_frames\01_09
-    - processed_frames\01_09
+    # - processed_frames\01_09
+    # - processed_frames\01_09
+    # - processed_frames\01_09
     - processed_frames\01_09
     - processed_frames\02_23
 

@@ -1,0 +1,271 @@
+{
+  "mode": "multibehavioral",
+  "checkpoint": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\multibehavior_split_orders_lr_fixed\\test_val_train\\multibehavioral\\model.ckpt",
+  "class_names": [
+    "face_head_paw_groom",
+    "body_groom",
+    "other",
+    "left_turn",
+    "locomotion",
+    "rear",
+    "right_turn",
+    "itch"
+  ],
+  "n_test": 2996,
+  "bout_identification_latency": {
+    "overall_mean_frames": 4.821428571428571,
+    "overall_median_frames": 4.0,
+    "per_class": {
+      "face_head_paw_groom": {
+        "mean_frames": 2.5,
+        "median_frames": 0.0,
+        "identified_bouts": 12,
+        "missed_bouts": 1,
+        "total_bouts": 13,
+        "identified_fraction": 0.9230769230769231
+      },
+      "body_groom": {
+        "mean_frames": 4.428571428571429,
+        "median_frames": 4.0,
+        "identified_bouts": 7,
+        "missed_bouts": 3,
+        "total_bouts": 10,
+        "identified_fraction": 0.7
+      },
+      "other": {
+        "mean_frames": 7.346153846153846,
+        "median_frames": 5.0,
+        "identified_bouts": 26,
+        "missed_bouts": 4,
+        "total_bouts": 30,
+        "identified_fraction": 0.8666666666666667
+      },
+      "left_turn": {
+        "mean_frames": 4.454545454545454,
+        "median_frames": 5.0,
+        "identified_bouts": 11,
+        "missed_bouts": 1,
+        "total_bouts": 12,
+        "identified_fraction": 0.9166666666666666
+      },
+      "locomotion": {
+        "mean_frames": 4.105263157894737,
+        "median_frames": 1.0,
+        "identified_bouts": 19,
+        "missed_bouts": 0,
+        "total_bouts": 19,
+        "identified_fraction": 1.0
+      },
+      "rear": {
+        "mean_frames": 2.5,
+        "median_frames": 1.0,
+        "identified_bouts": 6,
+        "missed_bouts": 1,
+        "total_bouts": 7,
+        "identified_fraction": 0.8571428571428571
+      },
+      "right_turn": {
+        "mean_frames": 2.5,
+        "median_frames": 2.5,
+        "identified_bouts": 2,
+        "missed_bouts": 5,
+        "total_bouts": 7,
+        "identified_fraction": 0.2857142857142857
+      },
+      "itch": {
+        "mean_frames": 6.0,
+        "median_frames": 6.0,
+        "identified_bouts": 1,
+        "missed_bouts": 0,
+        "total_bouts": 1,
+        "identified_fraction": 1.0
+      }
+    }
+  },
+  "segmental_edit": {
+    "distance": 350,
+    "ground_truth_bouts": 99,
+    "normalized_score": 0.0,
+    "per_contiguous_sequence": [
+      36,
+      314
+    ],
+    "coalescing_semantics": true
+  },
+  "segmental_f1": {
+    "f1@10": {
+      "all_classes": {
+        "f1": 0.1751269035532995,
+        "tp": 69,
+        "fp": 620,
+        "fn": 30
+      },
+      "per_class": {
+        "face_head_paw_groom": {
+          "f1": 0.11428571428571428,
+          "tp": 10,
+          "fp": 152,
+          "fn": 3
+        },
+        "body_groom": {
+          "f1": 0.10869565217391304,
+          "tp": 5,
+          "fp": 77,
+          "fn": 5
+        },
+        "other": {
+          "f1": 0.1935483870967742,
+          "tp": 21,
+          "fp": 166,
+          "fn": 9
+        },
+        "left_turn": {
+          "f1": 0.21951219512195122,
+          "tp": 9,
+          "fp": 61,
+          "fn": 3
+        },
+        "locomotion": {
+          "f1": 0.34408602150537637,
+          "tp": 16,
+          "fp": 58,
+          "fn": 3
+        },
+        "rear": {
+          "f1": 0.12244897959183673,
+          "tp": 6,
+          "fp": 85,
+          "fn": 1
+        },
+        "right_turn": {
+          "f1": 0.16666666666666666,
+          "tp": 2,
+          "fp": 15,
+          "fn": 5
+        },
+        "itch": {
+          "f1": 0.0,
+          "tp": 0,
+          "fp": 6,
+          "fn": 1
+        }
+      }
+    },
+    "f1@25": {
+      "all_classes": {
+        "f1": 0.12436548223350254,
+        "tp": 49,
+        "fp": 640,
+        "fn": 50
+      },
+      "per_class": {
+        "face_head_paw_groom": {
+          "f1": 0.08,
+          "tp": 7,
+          "fp": 155,
+          "fn": 6
+        },
+        "body_groom": {
+          "f1": 0.021739130434782608,
+          "tp": 1,
+          "fp": 81,
+          "fn": 9
+        },
+        "other": {
+          "f1": 0.12903225806451613,
+          "tp": 14,
+          "fp": 173,
+          "fn": 16
+        },
+        "left_turn": {
+          "f1": 0.17073170731707318,
+          "tp": 7,
+          "fp": 63,
+          "fn": 5
+        },
+        "locomotion": {
+          "f1": 0.27956989247311825,
+          "tp": 13,
+          "fp": 61,
+          "fn": 6
+        },
+        "rear": {
+          "f1": 0.10204081632653061,
+          "tp": 5,
+          "fp": 86,
+          "fn": 2
+        },
+        "right_turn": {
+          "f1": 0.16666666666666666,
+          "tp": 2,
+          "fp": 15,
+          "fn": 5
+        },
+        "itch": {
+          "f1": 0.0,
+          "tp": 0,
+          "fp": 6,
+          "fn": 1
+        }
+      }
+    },
+    "f1@50": {
+      "all_classes": {
+        "f1": 0.0532994923857868,
+        "tp": 21,
+        "fp": 668,
+        "fn": 78
+      },
+      "per_class": {
+        "face_head_paw_groom": {
+          "f1": 0.022857142857142857,
+          "tp": 2,
+          "fp": 160,
+          "fn": 11
+        },
+        "body_groom": {
+          "f1": 0.0,
+          "tp": 0,
+          "fp": 82,
+          "fn": 10
+        },
+        "other": {
+          "f1": 0.04608294930875576,
+          "tp": 5,
+          "fp": 182,
+          "fn": 25
+        },
+        "left_turn": {
+          "f1": 0.024390243902439025,
+          "tp": 1,
+          "fp": 69,
+          "fn": 11
+        },
+        "locomotion": {
+          "f1": 0.17204301075268819,
+          "tp": 8,
+          "fp": 66,
+          "fn": 11
+        },
+        "rear": {
+          "f1": 0.10204081632653061,
+          "tp": 5,
+          "fp": 86,
+          "fn": 2
+        },
+        "right_turn": {
+          "f1": 0.0,
+          "tp": 0,
+          "fp": 17,
+          "fn": 7
+        },
+        "itch": {
+          "f1": 0.0,
+          "tp": 0,
+          "fp": 6,
+          "fn": 1
+        }
+      }
+    }
+  }
+}

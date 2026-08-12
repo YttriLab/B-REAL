@@ -450,14 +450,16 @@ def _chronological_split_indices(total, train_percent, val_percent, test_percent
 
 def train_test_split(file_paths, labels, boundary_dists, train_percent=0.7, val_percent=0.15, test_percent=0.15,
                      shuffle=False, random_seed=42, return_dataset_ids=False,
-                     split_order=("train", "val", "test")):
+                     split_order=("train", "val", "test"),
+                     split_order_by_dataset=None, boundary_embargo=0):
     """
     Split data from multiple datasets into train/val/test sets.
     Splits each dataset separately, then combines across datasets.
 
     shuffle=False (chronological): each video is cut into three contiguous
     blocks in native-frame order. ``split_order`` controls which role gets
-    each block; its default is train, then val, then test. Simple, but behavior
+    each block globally. ``split_order_by_dataset`` can instead provide one
+    order per source recording. Simple, but behavior
     bouts cluster in time within a
     session (e.g. grooming can taper off entirely by the end of a
     recording), so val/test can land on wildly different class balances
@@ -495,6 +497,17 @@ def train_test_split(file_paths, labels, boundary_dists, train_percent=0.7, val_
         random_seed: Random seed for reproducibility (only used when shuffle=True)
         split_order: Permutation of (train, val, test) specifying the temporal
             block order when shuffle=False. Ignored when shuffle=True.
+        split_order_by_dataset: Optional list containing one split-order
+            permutation per source dataset. When provided with shuffle=False,
+            it takes precedence over split_order. This lets recordings use
+            different contiguous block roles without mixing or shuffling
+            temporally adjacent bouts.
+        boundary_embargo: For chronological splitting, remove this many
+            samples from the start of every block that follows another block.
+            Set this to at least ``frames_per_group - 1`` at the caller when
+            samples contain preceding-frame context, preventing an example in
+            one split from reading raw frames belonging to the previous split.
+            Ignored when ``shuffle=True``.
         return_dataset_ids: If True, also return a per-sample array (parallel
             to y_train) recording which source dataset each training sample
             came from -- needed by callers that stratify/report on top of the
@@ -509,6 +522,17 @@ def train_test_split(file_paths, labels, boundary_dists, train_percent=0.7, val_
     """
     assert abs(train_percent + val_percent + test_percent - 1.0) < 1e-6, \
         "train_percent + val_percent + test_percent must equal 1.0"
+
+    if not isinstance(boundary_embargo, (int, np.integer)) or boundary_embargo < 0:
+        raise ValueError("boundary_embargo must be a non-negative integer")
+
+    if not shuffle and split_order_by_dataset is not None:
+        if len(split_order_by_dataset) != len(file_paths):
+            raise ValueError(
+                "split_order_by_dataset must contain exactly one order per "
+                f"dataset; got {len(split_order_by_dataset)} order(s) for "
+                f"{len(file_paths)} dataset(s)"
+            )
 
     x_train, x_valid, x_test = [], [], []
     y_train, y_valid, y_test = [], [], []
@@ -566,9 +590,21 @@ def train_test_split(file_paths, labels, boundary_dists, train_percent=0.7, val_
             val_indices = np.array(sorted(val_pos), dtype=int)
             test_indices = np.array(sorted(test_pos), dtype=int)
         else:
-            chronological = _chronological_split_indices(
-                total, train_percent, val_percent, test_percent, split_order
+            dataset_split_order = (
+                split_order_by_dataset[dataset_idx]
+                if split_order_by_dataset is not None
+                else split_order
             )
+            chronological = _chronological_split_indices(
+                total, train_percent, val_percent, test_percent,
+                dataset_split_order,
+            )
+            if boundary_embargo:
+                # The first chronological block has no preceding split to
+                # leak from. Every later block drops its first E endpoints so
+                # their preceding-frame context cannot cross a split boundary.
+                for split_name in tuple(dataset_split_order)[1:]:
+                    chronological[split_name] = chronological[split_name][boundary_embargo:]
             train_indices = chronological["train"]
             val_indices = chronological["val"]
             test_indices = chronological["test"]

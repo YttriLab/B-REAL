@@ -1,0 +1,284 @@
+[
+  {
+    "fraction": 0,
+    "repeat": 0,
+    "seed": 0,
+    "n_frames_train": 0,
+    "accuracy": 0.8962202185466054,
+    "macro_f1": 0.4726350925809296,
+    "mcc": 0.020078642293810844,
+    "per_class": {
+      "other": {
+        "precision": 0.8962202185466054,
+        "recall": 1.0,
+        "f1": 0.9452701851618592,
+        "support": 15009
+      },
+      "face/head/paw groom": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "support": 1738
+      }
+    },
+    "confusion_matrix": [
+      [
+        15009,
+        0
+      ],
+      [
+        1738,
+        0
+      ]
+    ],
+    "epochs_trained": null,
+    "epoch_of_best": null,
+    "best_val_mcc": null,
+    "class_weights": null,
+    "samples_per_dataset": null,
+    "epoch_metrics_path": null,
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 0.008969545364379883
+  },
+  {
+    "fraction": 20,
+    "repeat": 0,
+    "seed": 20000,
+    "n_frames_train": 15631,
+    "accuracy": 0.9319878187137994,
+    "macro_f1": 0.7692539487224921,
+    "mcc": 0.5718437433242798,
+    "per_class": {
+      "other": {
+        "precision": 0.9388684976585242,
+        "recall": 0.9884735825171563,
+        "f1": 0.9630326831326473,
+        "support": 15009
+      },
+      "face/head/paw groom": {
+        "precision": 0.816931216931217,
+        "recall": 0.4441887226697353,
+        "f1": 0.575475214312337,
+        "support": 1738
+      }
+    },
+    "confusion_matrix": [
+      [
+        14836,
+        173
+      ],
+      [
+        966,
+        772
+      ]
+    ],
+    "epochs_trained": 10,
+    "epoch_of_best": 1,
+    "best_val_mcc": 0.42839622497558594,
+    "class_weights": [
+      1.2265379428863525,
+      5.414270877838135
+    ],
+    "samples_per_dataset": {
+      "0": 11738,
+      "1": 3893
+    },
+    "epoch_metrics_path": "benchmarking\\figures\\size_learning_curve_concat_10ep\\epoch_metrics\\frac20_rep0.jsonl",
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 4929.875436782837
+  },
+  {
+    "fraction": 40,
+    "repeat": 0,
+    "seed": 40000,
+    "n_frames_train": 31262,
+    "accuracy": 0.925658326864513,
+    "macro_f1": 0.7831607163878058,
+    "mcc": 0.5699600577354431,
+    "per_class": {
+      "other": {
+        "precision": 0.9493927125506073,
+        "recall": 0.9686854553934306,
+        "f1": 0.9589420571843156,
+        "support": 15009
+      },
+      "face/head/paw groom": {
+        "precision": 0.672016748080949,
+        "recall": 0.5540851553509781,
+        "f1": 0.6073793755912961,
+        "support": 1738
+      }
+    },
+    "confusion_matrix": [
+      [
+        14539,
+        470
+      ],
+      [
+        775,
+        963
+      ]
+    ],
+    "epochs_trained": 10,
+    "epoch_of_best": 6,
+    "best_val_mcc": 0.5581634044647217,
+    "class_weights": [
+      1.2265379428863525,
+      5.414270877838135
+    ],
+    "samples_per_dataset": {
+      "0": 23477,
+      "1": 7785
+    },
+    "epoch_metrics_path": "benchmarking\\figures\\size_learning_curve_concat_10ep\\epoch_metrics\\frac40_rep0.jsonl",
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 1790.398690700531
+  },
+  {
+    "fraction": 60,
+    "repeat": 0,
+    "seed": 60000,
+    "n_frames_train": 46893,
+    "accuracy": 0.9273302681077208,
+    "macro_f1": 0.7915611527470313,
+    "mcc": 0.585440993309021,
+    "per_class": {
+      "other": {
+        "precision": 0.9520781434377869,
+        "recall": 0.9676194283429942,
+        "f1": 0.9597858771437068,
+        "support": 15009
+      },
+      "face/head/paw groom": {
+        "precision": 0.6744809109176155,
+        "recall": 0.5794016110471807,
+        "f1": 0.6233364283503559,
+        "support": 1738
+      }
+    },
+    "confusion_matrix": [
+      [
+        14523,
+        486
+      ],
+      [
+        731,
+        1007
+      ]
+    ],
+    "epochs_trained": 10,
+    "epoch_of_best": 6,
+    "best_val_mcc": 0.49015265703201294,
+    "class_weights": [
+      1.2265379428863525,
+      5.414270877838135
+    ],
+    "samples_per_dataset": {
+      "0": 35215,
+      "1": 11678
+    },
+    "epoch_metrics_path": "benchmarking\\figures\\size_learning_curve_concat_10ep\\epoch_metrics\\frac60_rep0.jsonl",
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 2294.6056447029114
+  },
+  {
+    "fraction": 80,
+    "repeat": 0,
+    "seed": 80000,
+    "n_frames_train": 62524,
+    "accuracy": 0.924225234370335,
+    "macro_f1": 0.7779769742950617,
+    "mcc": 0.5599672198295593,
+    "per_class": {
+      "other": {
+        "precision": 0.9481409001956947,
+        "recall": 0.9684189486308215,
+        "f1": 0.9581726490655592,
+        "support": 15009
+      },
+      "face/head/paw groom": {
+        "precision": 0.6654904728299224,
+        "recall": 0.5425776754890679,
+        "f1": 0.5977812995245642,
+        "support": 1738
+      }
+    },
+    "confusion_matrix": [
+      [
+        14535,
+        474
+      ],
+      [
+        795,
+        943
+      ]
+    ],
+    "epochs_trained": 10,
+    "epoch_of_best": 7,
+    "best_val_mcc": 0.578785240650177,
+    "class_weights": [
+      1.2265379428863525,
+      5.414270877838135
+    ],
+    "samples_per_dataset": {
+      "0": 46954,
+      "1": 15570
+    },
+    "epoch_metrics_path": "benchmarking\\figures\\size_learning_curve_concat_10ep\\epoch_metrics\\frac80_rep0.jsonl",
+    "checkpoint_path": null,
+    "torchscript_path": null,
+    "wall_seconds": 2904.6945230960846
+  },
+  {
+    "fraction": 100,
+    "repeat": 0,
+    "seed": 100000,
+    "n_frames_train": 78155,
+    "accuracy": 0.916104376903326,
+    "macro_f1": 0.7328772675980908,
+    "mcc": 0.48044636845588684,
+    "per_class": {
+      "other": {
+        "precision": 0.9358021527421835,
+        "recall": 0.9731494436671331,
+        "f1": 0.9541104615083124,
+        "support": 15009
+      },
+      "face/head/paw groom": {
+        "precision": 0.646180860403863,
+        "recall": 0.4234752589182969,
+        "f1": 0.5116440736878693,
+        "support": 1738
+      }
+    },
+    "confusion_matrix": [
+      [
+        14606,
+        403
+      ],
+      [
+        1002,
+        736
+      ]
+    ],
+    "epochs_trained": 10,
+    "epoch_of_best": 9,
+    "best_val_mcc": 0.568284273147583,
+    "class_weights": [
+      1.2265379428863525,
+      5.414270877838135
+    ],
+    "samples_per_dataset": {
+      "0": 58692,
+      "1": 19463
+    },
+    "epoch_metrics_path": "benchmarking\\figures\\size_learning_curve_concat_10ep\\epoch_metrics\\frac100_rep0.jsonl",
+    "checkpoint_path": "benchmarking\\figures\\size_learning_curve_concat_10ep\\checkpoints\\frac100_rep0_best.ckpt",
+    "torchscript_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\models\\frac100_rep0_best.pt",
+    "wall_seconds": 3519.2974486351013
+  }
+]

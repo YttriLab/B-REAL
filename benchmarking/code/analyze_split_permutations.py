@@ -22,6 +22,7 @@ because aggregation can hide opposing imbalances in individual datasets.
 Usage:
     python benchmarking/code/analyze_split_permutations.py
     python benchmarking/code/analyze_split_permutations.py --config config_tsm.yaml
+    python benchmarking/code/analyze_split_permutations.py --config config_tsm.yaml --per-dataset
     python benchmarking/code/analyze_split_permutations.py --output path/to/results.json
 """
 
@@ -146,10 +147,179 @@ def compact_distribution(split_report, class_names):
     return ", ".join(values)
 
 
+def search_per_dataset_orders(all_labels, class_names, percentages,
+                              minimum_eval_class_count=25, top_k=20):
+    """Search one contiguous split-order permutation per source dataset.
+
+    Candidate selection deliberately emphasizes the non-majority classes:
+      1. Every class present in a source dataset must remain represented in
+         that dataset's training block.
+      2. Maximize the worst validation/test source-session coverage at the
+         requested minimum count.
+      3. Jointly minimize session dominance and validation-vs-test class
+         distribution mismatch. This prevents a tiny improvement in one
+         criterion from selecting the severe session confounding seen with a
+         single global chronological order.
+      4. Prefer broader positive-count coverage, then use aggregate distance
+         from the full distribution as a final tie breaker. A session with
+         only a handful of examples therefore cannot outweigh a badly
+         mismatched validation/test distribution.
+
+    No samples or bouts are shuffled: each role remains a single contiguous
+    chronological block within every dataset.
+    """
+    orders = list(itertools.permutations(SPLIT_NAMES))
+    dataset_options = []
+    full_counts_by_dataset = []
+    for labels in all_labels:
+        full_counts, _ = label_distribution(labels, len(class_names))
+        full_counts_by_dataset.append(full_counts)
+        options = {}
+        for order in orders:
+            options[order] = analyze_order(
+                [labels], class_names, percentages, order
+            )["datasets"][0]
+        dataset_options.append(options)
+
+    full_counts = sum(full_counts_by_dataset, np.zeros(len(class_names), dtype=np.int64))
+    majority_class_id = int(np.argmax(full_counts))
+    selection_class_ids = [
+        class_id for class_id in range(len(class_names))
+        if class_id != majority_class_id and full_counts[class_id] > 0
+    ]
+    if not selection_class_ids:
+        selection_class_ids = [
+            class_id for class_id, count in enumerate(full_counts) if count > 0
+        ]
+
+    candidates = []
+    rejected_no_train_class = 0
+    for order_combination in itertools.product(orders, repeat=len(all_labels)):
+        split_counts = {
+            split_name: np.zeros((len(all_labels), len(class_names)), dtype=np.int64)
+            for split_name in SPLIT_NAMES
+        }
+        split_sizes = {split_name: np.zeros(len(all_labels), dtype=np.int64)
+                       for split_name in SPLIT_NAMES}
+
+        for dataset_id, order in enumerate(order_combination):
+            report = dataset_options[dataset_id][order]
+            for split_name in SPLIT_NAMES:
+                split = report["splits"][split_name]
+                split_sizes[split_name][dataset_id] = split["n_samples"]
+                split_counts[split_name][dataset_id] = [
+                    split["classes"][name]["count"] for name in class_names
+                ]
+
+        missing_train_class = any(
+            full_counts_by_dataset[dataset_id][class_id] > 0
+            and split_counts["train"][dataset_id, class_id] == 0
+            for dataset_id in range(len(all_labels))
+            for class_id in range(len(class_names))
+        )
+        if missing_train_class:
+            rejected_no_train_class += 1
+            continue
+
+        aggregate_counts = {
+            split_name: split_counts[split_name].sum(axis=0)
+            for split_name in SPLIT_NAMES
+        }
+        aggregate_proportions = {
+            split_name: aggregate_counts[split_name] / aggregate_counts[split_name].sum()
+            for split_name in SPLIT_NAMES
+        }
+        full_proportions = full_counts / full_counts.sum()
+
+        coverage_at_minimum = min(
+            int(np.sum(split_counts[split_name][:, class_id] >= minimum_eval_class_count))
+            for split_name in ("val", "test")
+            for class_id in selection_class_ids
+        )
+        coverage_positive = min(
+            int(np.sum(split_counts[split_name][:, class_id] > 0))
+            for split_name in ("val", "test")
+            for class_id in selection_class_ids
+        )
+        maximum_session_share = max(
+            float(split_counts[split_name][:, class_id].max()
+                  / split_counts[split_name][:, class_id].sum())
+            for split_name in ("val", "test")
+            for class_id in selection_class_ids
+            if split_counts[split_name][:, class_id].sum() > 0
+        )
+        val_test_tv = total_variation(
+            aggregate_proportions["val"], aggregate_proportions["test"]
+        )
+        aggregate_mean_tv = float(np.mean([
+            total_variation(aggregate_proportions[split_name], full_proportions)
+            for split_name in SPLIT_NAMES
+        ]))
+        confounding_risk = maximum_session_share + val_test_tv
+
+        selection_key = (
+            -coverage_at_minimum,
+            confounding_risk,
+            maximum_session_share,
+            -coverage_positive,
+            aggregate_mean_tv,
+            order_combination,
+        )
+        candidates.append((selection_key, {
+            "split_order_by_dataset": [list(order) for order in order_combination],
+            "evaluation_source_coverage_at_minimum": coverage_at_minimum,
+            "evaluation_source_coverage_positive": coverage_positive,
+            "minimum_eval_class_count": minimum_eval_class_count,
+            "maximum_evaluation_session_share": maximum_session_share,
+            "validation_test_total_variation": val_test_tv,
+            "session_confounding_risk": confounding_risk,
+            "aggregate_mean_total_variation": aggregate_mean_tv,
+            "splits": {
+                split_name: {
+                    "n_samples": int(split_sizes[split_name].sum()),
+                    "classes": {
+                        name: {
+                            "count": int(aggregate_counts[split_name][class_id]),
+                            "proportion": float(aggregate_proportions[split_name][class_id]),
+                            "counts_by_dataset": split_counts[split_name][:, class_id].tolist(),
+                        }
+                        for class_id, name in enumerate(class_names)
+                    },
+                }
+                for split_name in SPLIT_NAMES
+            },
+        }))
+
+    if not candidates:
+        raise ValueError(
+            "No per-dataset chronological ordering leaves every class present "
+            "in each dataset's training block."
+        )
+
+    candidates.sort(key=lambda item: item[0])
+    return {
+        "selection_class_names": [class_names[class_id] for class_id in selection_class_ids],
+        "minimum_eval_class_count": minimum_eval_class_count,
+        "total_combinations": len(orders) ** len(all_labels),
+        "eligible_combinations": len(candidates),
+        "rejected_missing_training_class": rejected_no_train_class,
+        "recommended": candidates[0][1],
+        "top_candidates": [candidate for _key, candidate in candidates[:top_k]],
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=REPO_ROOT / "config_tsm.yaml")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--per-dataset", action="store_true",
+        help="Search one chronological split order per configured dataset",
+    )
+    parser.add_argument(
+        "--minimum-eval-class-count", type=int, default=25,
+        help="Minimum examples for a dataset to count as representing a class in val/test",
+    )
     args = parser.parse_args()
 
     config = OmegaConf.load(args.config)
@@ -161,6 +331,63 @@ def main():
     }
     if abs(sum(percentages.values()) - 1.0) >= 1e-6:
         raise ValueError(f"Split percentages must sum to 1.0; got {percentages}")
+
+    if args.per_dataset:
+        search = search_per_dataset_orders(
+            all_labels,
+            class_names,
+            percentages,
+            minimum_eval_class_count=args.minimum_eval_class_count,
+        )
+        report = {
+            "config_path": str(args.config.resolve()),
+            "class_names": class_names,
+            "percentages": percentages,
+            "mode": "per_dataset_chronological_orders",
+            "dataset_label_paths": [str(path) for path in data_loading["label_paths"]],
+            "selection": {
+                "priority": [
+                    "maximize worst val/test source coverage for non-majority classes",
+                    "minimize max session share plus val/test distribution mismatch",
+                    "maximize worst positive source coverage",
+                    "minimize aggregate distribution mismatch",
+                ],
+                "all_blocks_remain_contiguous": True,
+                **search,
+            },
+        }
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        with open(args.output, "w", encoding="utf-8") as output_file:
+            json.dump(report, output_file, indent=2)
+
+        recommended = search["recommended"]
+        print("\nPer-dataset chronological split-order search")
+        print(f"Evaluated {search['total_combinations']:,} combinations; "
+              f"{search['eligible_combinations']:,} kept every dataset class in training.")
+        print("Selection classes: " + ", ".join(search["selection_class_names"]))
+        for dataset_id, order in enumerate(recommended["split_order_by_dataset"]):
+            print(f"  dataset {dataset_id}: {' -> '.join(order)}")
+        print("\nAggregate split distributions:")
+        for split_name in SPLIT_NAMES:
+            split = recommended["splits"][split_name]
+            values = ", ".join(
+                f"{name}={100 * split['classes'][name]['proportion']:.2f}% "
+                f"({split['classes'][name]['count']})"
+                for name in class_names
+            )
+            print(f"  {split_name:<5} n={split['n_samples']}: {values}")
+        print(f"Max evaluation session share: "
+              f"{100 * recommended['maximum_evaluation_session_share']:.2f}%")
+        print(f"Val/test distribution TV: "
+              f"{100 * recommended['validation_test_total_variation']:.2f}%")
+        print("\nRecommended config:")
+        print("data:")
+        print("  shuffle: false")
+        print("  split_order_by_dataset:")
+        for order in recommended["split_order_by_dataset"]:
+            print(f"    - [{', '.join(order)}]")
+        print(f"\nDetailed results written to {args.output.resolve()}")
+        return
 
     results = [
         analyze_order(all_labels, class_names, percentages, order)

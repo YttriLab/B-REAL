@@ -1,0 +1,51 @@
+{
+  "source_config": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\configs\\gui_global_split_order_folds.yaml",
+  "folds": [
+    {
+      "name": "test_val_train",
+      "split_order": [
+        "test",
+        "val",
+        "train"
+      ]
+    },
+    {
+      "name": "train_test_val",
+      "split_order": [
+        "train",
+        "test",
+        "val"
+      ]
+    },
+    {
+      "name": "train_val_test",
+      "split_order": [
+        "train",
+        "val",
+        "test"
+      ]
+    },
+    {
+      "name": "val_test_train",
+      "split_order": [
+        "val",
+        "test",
+        "train"
+      ]
+    }
+  ],
+  "arguments": {
+    "fractions": "0,1,5,10,15,20,40,60,80,100",
+    "repeats": 2,
+    "seed": 0,
+    "max_epochs": null,
+    "patience": null,
+    "batch_size": 64,
+    "num_workers": 4,
+    "accelerator": "auto",
+    "fps": 60.0,
+    "progress_bar": true,
+    "notify_email": "braydenk@andrew.cmu.edu",
+    "notify": true
+  }
+}

@@ -24,6 +24,8 @@ wandb/
 # Preprocessed frames (large, regenerable)
 frames_*/
 cropped_*/
+processed_frames*/
+labels/
 
 # pytest
 .pytest_cache/

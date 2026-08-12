@@ -1,0 +1,43 @@
+project_name: aeagle-yttri-lab
+run_name: concat_chronological_tmax30
+
+max_epochs: 100
+fine_tune_lr: false
+
+model:
+  num_frames: 3
+  variant: b0
+  shift_fraction: 0.125
+  pretrained: true
+  tsm_stages: [1, 2, 3, 4, 5, 6, 7]
+  dropout: 0.2
+  lr: 1e-4
+  weight_decay: 1e-3
+  lr_scheduler_t_max: 30
+  temporal_pool: last
+
+data:
+  train_percent: 0.7
+  val_percent: 0.15
+  test_percent: 0.15
+  shuffle: false
+  split_order: [val, test, train]
+
+callbacks:
+  early_stopping_patience: 20
+
+data_loading:
+  label_paths:
+    - labels/01_09_all_concat_onehot.csv
+    - labels/02_23.csv
+  frame_dirs:
+    - processed_frames/01_09
+    - processed_frames/02_23
+  frames_per_group: 3
+  label_union:
+  binarize: face/head/paw groom
+
+boundary_smoothing:
+  enabled: true
+  epsilon: 0.3
+  window: 5

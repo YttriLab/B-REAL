@@ -1,0 +1,2537 @@
+{
+  "config_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\configs\\gui_five_session_per_dataset_pilot.yaml",
+  "class_names": [
+    "other",
+    "face / head / paw groom"
+  ],
+  "percentages": {
+    "train": 0.7,
+    "val": 0.15,
+    "test": 0.15
+  },
+  "mode": "per_dataset_chronological_orders",
+  "dataset_label_paths": [
+    "D:/Realtime/realtime_app_output/labels/6_10_reencoded_bouts.csv",
+    "D:/Realtime/realtime_app_output/labels/7_1_reencoded_bouts.csv",
+    "D:/Realtime/realtime_app_output/labels/7_16m_reencoded_bouts.csv",
+    "D:/Realtime/realtime_app_output/labels/7_16f_reencoded_bouts.csv",
+    "D:/Realtime/realtime_app_output/labels/7_17m_reencoded_bouts.csv"
+  ],
+  "selection": {
+    "priority": [
+      "maximize worst val/test source coverage for non-majority classes",
+      "minimize max session share plus val/test distribution mismatch",
+      "maximize worst positive source coverage",
+      "minimize aggregate distribution mismatch"
+    ],
+    "all_blocks_remain_contiguous": true,
+    "selection_class_names": [
+      "face / head / paw groom"
+    ],
+    "minimum_eval_class_count": 25,
+    "total_combinations": 7776,
+    "eligible_combinations": 7776,
+    "rejected_missing_training_class": 0,
+    "recommended": {
+      "split_order_by_dataset": [
+        [
+          "test",
+          "val",
+          "train"
+        ],
+        [
+          "test",
+          "train",
+          "val"
+        ],
+        [
+          "train",
+          "test",
+          "val"
+        ],
+        [
+          "test",
+          "train",
+          "val"
+        ],
+        [
+          "train",
+          "val",
+          "test"
+        ]
+      ],
+      "evaluation_source_coverage_at_minimum": 4,
+      "evaluation_source_coverage_positive": 4,
+      "minimum_eval_class_count": 25,
+      "maximum_evaluation_session_share": 0.39932508436445446,
+      "validation_test_total_variation": 0.01301836086620558,
+      "session_confounding_risk": 0.41234344523066,
+      "aggregate_mean_total_variation": 0.006024313409087119,
+      "splits": {
+        "train": {
+          "n_samples": 63745,
+          "classes": {
+            "other": {
+              "count": 59334,
+              "proportion": 0.930802415875755,
+              "counts_by_dataset": [
+                21271,
+                11035,
+                7641,
+                7486,
+                11901
+              ]
+            },
+            "face / head / paw groom": {
+              "count": 4411,
+              "proportion": 0.06919758412424504,
+              "counts_by_dataset": [
+                2039,
+                1795,
+                91,
+                213,
+                273
+              ]
+            }
+          }
+        },
+        "val": {
+          "n_samples": 13661,
+          "classes": {
+            "other": {
+              "count": 12772,
+              "proportion": 0.9349242368787058,
+              "counts_by_dataset": [
+                4817,
+                2460,
+                1650,
+                1591,
+                2254
+              ]
+            },
+            "face / head / paw groom": {
+              "count": 889,
+              "proportion": 0.06507576312129419,
+              "counts_by_dataset": [
+                178,
+                290,
+                7,
+                59,
+                355
+              ]
+            }
+          }
+        },
+        "test": {
+          "n_samples": 13658,
+          "classes": {
+            "other": {
+              "count": 12947,
+              "proportion": 0.9479425977449114,
+              "counts_by_dataset": [
+                4994,
+                2711,
+                1440,
+                1376,
+                2426
+              ]
+            },
+            "face / head / paw groom": {
+              "count": 711,
+              "proportion": 0.05205740225508859,
+              "counts_by_dataset": [
+                0,
+                38,
+                217,
+                273,
+                183
+              ]
+            }
+          }
+        }
+      }
+    },
+    "top_candidates": [
+      {
+        "split_order_by_dataset": [
+          [
+            "test",
+            "val",
+            "train"
+          ],
+          [
+            "test",
+            "train",
+            "val"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ],
+          [
+            "test",
+            "train",
+            "val"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ]
+        ],
+        "evaluation_source_coverage_at_minimum": 4,
+        "evaluation_source_coverage_positive": 4,
+        "minimum_eval_class_count": 25,
+        "maximum_evaluation_session_share": 0.39932508436445446,
+        "validation_test_total_variation": 0.01301836086620558,
+        "session_confounding_risk": 0.41234344523066,
+        "aggregate_mean_total_variation": 0.006024313409087119,
+        "splits": {
+          "train": {
+            "n_samples": 63745,
+            "classes": {
+              "other": {
+                "count": 59334,
+                "proportion": 0.930802415875755,
+                "counts_by_dataset": [
+                  21271,
+                  11035,
+                  7641,
+                  7486,
+                  11901
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 4411,
+                "proportion": 0.06919758412424504,
+                "counts_by_dataset": [
+                  2039,
+                  1795,
+                  91,
+                  213,
+                  273
+                ]
+              }
+            }
+          },
+          "val": {
+            "n_samples": 13661,
+            "classes": {
+              "other": {
+                "count": 12772,
+                "proportion": 0.9349242368787058,
+                "counts_by_dataset": [
+                  4817,
+                  2460,
+                  1650,
+                  1591,
+                  2254
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 889,
+                "proportion": 0.06507576312129419,
+                "counts_by_dataset": [
+                  178,
+                  290,
+                  7,
+                  59,
+                  355
+                ]
+              }
+            }
+          },
+          "test": {
+            "n_samples": 13658,
+            "classes": {
+              "other": {
+                "count": 12947,
+                "proportion": 0.9479425977449114,
+                "counts_by_dataset": [
+                  4994,
+                  2711,
+                  1440,
+                  1376,
+                  2426
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 711,
+                "proportion": 0.05205740225508859,
+                "counts_by_dataset": [
+                  0,
+                  38,
+                  217,
+                  273,
+                  183
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "split_order_by_dataset": [
+          [
+            "val",
+            "test",
+            "train"
+          ],
+          [
+            "val",
+            "train",
+            "test"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ],
+          [
+            "val",
+            "train",
+            "test"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ]
+        ],
+        "evaluation_source_coverage_at_minimum": 4,
+        "evaluation_source_coverage_positive": 4,
+        "minimum_eval_class_count": 25,
+        "maximum_evaluation_session_share": 0.39932508436445446,
+        "validation_test_total_variation": 0.01301836086620558,
+        "session_confounding_risk": 0.41234344523066,
+        "aggregate_mean_total_variation": 0.006024313409087119,
+        "splits": {
+          "train": {
+            "n_samples": 63745,
+            "classes": {
+              "other": {
+                "count": 59334,
+                "proportion": 0.930802415875755,
+                "counts_by_dataset": [
+                  21271,
+                  11035,
+                  7641,
+                  7486,
+                  11901
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 4411,
+                "proportion": 0.06919758412424504,
+                "counts_by_dataset": [
+                  2039,
+                  1795,
+                  91,
+                  213,
+                  273
+                ]
+              }
+            }
+          },
+          "val": {
+            "n_samples": 13658,
+            "classes": {
+              "other": {
+                "count": 12947,
+                "proportion": 0.9479425977449114,
+                "counts_by_dataset": [
+                  4994,
+                  2711,
+                  1440,
+                  1376,
+                  2426
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 711,
+                "proportion": 0.05205740225508859,
+                "counts_by_dataset": [
+                  0,
+                  38,
+                  217,
+                  273,
+                  183
+                ]
+              }
+            }
+          },
+          "test": {
+            "n_samples": 13661,
+            "classes": {
+              "other": {
+                "count": 12772,
+                "proportion": 0.9349242368787058,
+                "counts_by_dataset": [
+                  4817,
+                  2460,
+                  1650,
+                  1591,
+                  2254
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 889,
+                "proportion": 0.06507576312129419,
+                "counts_by_dataset": [
+                  178,
+                  290,
+                  7,
+                  59,
+                  355
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "split_order_by_dataset": [
+          [
+            "test",
+            "val",
+            "train"
+          ],
+          [
+            "test",
+            "train",
+            "val"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ],
+          [
+            "test",
+            "train",
+            "val"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ]
+        ],
+        "evaluation_source_coverage_at_minimum": 4,
+        "evaluation_source_coverage_positive": 4,
+        "minimum_eval_class_count": 25,
+        "maximum_evaluation_session_share": 0.40446304044630405,
+        "validation_test_total_variation": 0.012165577356153309,
+        "session_confounding_risk": 0.41662861780245736,
+        "aggregate_mean_total_variation": 0.00602339156208603,
+        "splits": {
+          "train": {
+            "n_samples": 63745,
+            "classes": {
+              "other": {
+                "count": 59334,
+                "proportion": 0.930802415875755,
+                "counts_by_dataset": [
+                  21271,
+                  11035,
+                  7641,
+                  7486,
+                  11901
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 4411,
+                "proportion": 0.06919758412424504,
+                "counts_by_dataset": [
+                  2039,
+                  1795,
+                  91,
+                  213,
+                  273
+                ]
+              }
+            }
+          },
+          "val": {
+            "n_samples": 13661,
+            "classes": {
+              "other": {
+                "count": 12944,
+                "proportion": 0.9475148232193836,
+                "counts_by_dataset": [
+                  4817,
+                  2460,
+                  1650,
+                  1591,
+                  2426
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 717,
+                "proportion": 0.05248517678061635,
+                "counts_by_dataset": [
+                  178,
+                  290,
+                  7,
+                  59,
+                  183
+                ]
+              }
+            }
+          },
+          "test": {
+            "n_samples": 13658,
+            "classes": {
+              "other": {
+                "count": 12775,
+                "proportion": 0.9353492458632303,
+                "counts_by_dataset": [
+                  4994,
+                  2711,
+                  1440,
+                  1376,
+                  2254
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 883,
+                "proportion": 0.06465075413676966,
+                "counts_by_dataset": [
+                  0,
+                  38,
+                  217,
+                  273,
+                  355
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "split_order_by_dataset": [
+          [
+            "val",
+            "test",
+            "train"
+          ],
+          [
+            "val",
+            "train",
+            "test"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ],
+          [
+            "val",
+            "train",
+            "test"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ]
+        ],
+        "evaluation_source_coverage_at_minimum": 4,
+        "evaluation_source_coverage_positive": 4,
+        "minimum_eval_class_count": 25,
+        "maximum_evaluation_session_share": 0.40446304044630405,
+        "validation_test_total_variation": 0.012165577356153309,
+        "session_confounding_risk": 0.41662861780245736,
+        "aggregate_mean_total_variation": 0.00602339156208603,
+        "splits": {
+          "train": {
+            "n_samples": 63745,
+            "classes": {
+              "other": {
+                "count": 59334,
+                "proportion": 0.930802415875755,
+                "counts_by_dataset": [
+                  21271,
+                  11035,
+                  7641,
+                  7486,
+                  11901
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 4411,
+                "proportion": 0.06919758412424504,
+                "counts_by_dataset": [
+                  2039,
+                  1795,
+                  91,
+                  213,
+                  273
+                ]
+              }
+            }
+          },
+          "val": {
+            "n_samples": 13658,
+            "classes": {
+              "other": {
+                "count": 12775,
+                "proportion": 0.9353492458632303,
+                "counts_by_dataset": [
+                  4994,
+                  2711,
+                  1440,
+                  1376,
+                  2254
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 883,
+                "proportion": 0.06465075413676966,
+                "counts_by_dataset": [
+                  0,
+                  38,
+                  217,
+                  273,
+                  355
+                ]
+              }
+            }
+          },
+          "test": {
+            "n_samples": 13661,
+            "classes": {
+              "other": {
+                "count": 12944,
+                "proportion": 0.9475148232193836,
+                "counts_by_dataset": [
+                  4817,
+                  2460,
+                  1650,
+                  1591,
+                  2426
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 717,
+                "proportion": 0.05248517678061635,
+                "counts_by_dataset": [
+                  178,
+                  290,
+                  7,
+                  59,
+                  183
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "split_order_by_dataset": [
+          [
+            "test",
+            "val",
+            "train"
+          ],
+          [
+            "val",
+            "train",
+            "test"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ],
+          [
+            "val",
+            "train",
+            "test"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ]
+        ],
+        "evaluation_source_coverage_at_minimum": 4,
+        "evaluation_source_coverage_positive": 4,
+        "minimum_eval_class_count": 25,
+        "maximum_evaluation_session_share": 0.4020618556701031,
+        "validation_test_total_variation": 0.017712319852607423,
+        "session_confounding_risk": 0.4197741755227105,
+        "aggregate_mean_total_variation": 0.006967127499151126,
+        "splits": {
+          "train": {
+            "n_samples": 63745,
+            "classes": {
+              "other": {
+                "count": 59334,
+                "proportion": 0.930802415875755,
+                "counts_by_dataset": [
+                  21271,
+                  11035,
+                  7641,
+                  7486,
+                  11901
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 4411,
+                "proportion": 0.06919758412424504,
+                "counts_by_dataset": [
+                  2039,
+                  1795,
+                  91,
+                  213,
+                  273
+                ]
+              }
+            }
+          },
+          "val": {
+            "n_samples": 13659,
+            "classes": {
+              "other": {
+                "count": 12980,
+                "proportion": 0.9502891866168827,
+                "counts_by_dataset": [
+                  4817,
+                  2711,
+                  1650,
+                  1376,
+                  2426
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 679,
+                "proportion": 0.04971081338311736,
+                "counts_by_dataset": [
+                  178,
+                  38,
+                  7,
+                  273,
+                  183
+                ]
+              }
+            }
+          },
+          "test": {
+            "n_samples": 13660,
+            "classes": {
+              "other": {
+                "count": 12739,
+                "proportion": 0.9325768667642752,
+                "counts_by_dataset": [
+                  4994,
+                  2460,
+                  1440,
+                  1591,
+                  2254
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 921,
+                "proportion": 0.06742313323572474,
+                "counts_by_dataset": [
+                  0,
+                  290,
+                  217,
+                  59,
+                  355
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "split_order_by_dataset": [
+          [
+            "val",
+            "test",
+            "train"
+          ],
+          [
+            "test",
+            "train",
+            "val"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ],
+          [
+            "test",
+            "train",
+            "val"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ]
+        ],
+        "evaluation_source_coverage_at_minimum": 4,
+        "evaluation_source_coverage_positive": 4,
+        "minimum_eval_class_count": 25,
+        "maximum_evaluation_session_share": 0.4020618556701031,
+        "validation_test_total_variation": 0.017712319852607423,
+        "session_confounding_risk": 0.4197741755227105,
+        "aggregate_mean_total_variation": 0.006967127499151126,
+        "splits": {
+          "train": {
+            "n_samples": 63745,
+            "classes": {
+              "other": {
+                "count": 59334,
+                "proportion": 0.930802415875755,
+                "counts_by_dataset": [
+                  21271,
+                  11035,
+                  7641,
+                  7486,
+                  11901
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 4411,
+                "proportion": 0.06919758412424504,
+                "counts_by_dataset": [
+                  2039,
+                  1795,
+                  91,
+                  213,
+                  273
+                ]
+              }
+            }
+          },
+          "val": {
+            "n_samples": 13660,
+            "classes": {
+              "other": {
+                "count": 12739,
+                "proportion": 0.9325768667642752,
+                "counts_by_dataset": [
+                  4994,
+                  2460,
+                  1440,
+                  1591,
+                  2254
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 921,
+                "proportion": 0.06742313323572474,
+                "counts_by_dataset": [
+                  0,
+                  290,
+                  217,
+                  59,
+                  355
+                ]
+              }
+            }
+          },
+          "test": {
+            "n_samples": 13659,
+            "classes": {
+              "other": {
+                "count": 12980,
+                "proportion": 0.9502891866168827,
+                "counts_by_dataset": [
+                  4817,
+                  2711,
+                  1650,
+                  1376,
+                  2426
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 679,
+                "proportion": 0.04971081338311736,
+                "counts_by_dataset": [
+                  178,
+                  38,
+                  7,
+                  273,
+                  183
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "split_order_by_dataset": [
+          [
+            "test",
+            "val",
+            "train"
+          ],
+          [
+            "val",
+            "train",
+            "test"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ],
+          [
+            "val",
+            "train",
+            "test"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ]
+        ],
+        "evaluation_source_coverage_at_minimum": 4,
+        "evaluation_source_coverage_positive": 4,
+        "minimum_eval_class_count": 25,
+        "maximum_evaluation_session_share": 0.4171562867215041,
+        "validation_test_total_variation": 0.007471618099801104,
+        "session_confounding_risk": 0.42462790482130525,
+        "aggregate_mean_total_variation": 0.006023745712603605,
+        "splits": {
+          "train": {
+            "n_samples": 63745,
+            "classes": {
+              "other": {
+                "count": 59334,
+                "proportion": 0.930802415875755,
+                "counts_by_dataset": [
+                  21271,
+                  11035,
+                  7641,
+                  7486,
+                  11901
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 4411,
+                "proportion": 0.06919758412424504,
+                "counts_by_dataset": [
+                  2039,
+                  1795,
+                  91,
+                  213,
+                  273
+                ]
+              }
+            }
+          },
+          "val": {
+            "n_samples": 13659,
+            "classes": {
+              "other": {
+                "count": 12808,
+                "proportion": 0.9376967567171828,
+                "counts_by_dataset": [
+                  4817,
+                  2711,
+                  1650,
+                  1376,
+                  2254
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 851,
+                "proportion": 0.06230324328281719,
+                "counts_by_dataset": [
+                  178,
+                  38,
+                  7,
+                  273,
+                  355
+                ]
+              }
+            }
+          },
+          "test": {
+            "n_samples": 13660,
+            "classes": {
+              "other": {
+                "count": 12911,
+                "proportion": 0.9451683748169839,
+                "counts_by_dataset": [
+                  4994,
+                  2460,
+                  1440,
+                  1591,
+                  2426
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 749,
+                "proportion": 0.054831625183016104,
+                "counts_by_dataset": [
+                  0,
+                  290,
+                  217,
+                  59,
+                  183
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "split_order_by_dataset": [
+          [
+            "val",
+            "test",
+            "train"
+          ],
+          [
+            "test",
+            "train",
+            "val"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ],
+          [
+            "test",
+            "train",
+            "val"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ]
+        ],
+        "evaluation_source_coverage_at_minimum": 4,
+        "evaluation_source_coverage_positive": 4,
+        "minimum_eval_class_count": 25,
+        "maximum_evaluation_session_share": 0.4171562867215041,
+        "validation_test_total_variation": 0.007471618099801104,
+        "session_confounding_risk": 0.42462790482130525,
+        "aggregate_mean_total_variation": 0.006023745712603605,
+        "splits": {
+          "train": {
+            "n_samples": 63745,
+            "classes": {
+              "other": {
+                "count": 59334,
+                "proportion": 0.930802415875755,
+                "counts_by_dataset": [
+                  21271,
+                  11035,
+                  7641,
+                  7486,
+                  11901
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 4411,
+                "proportion": 0.06919758412424504,
+                "counts_by_dataset": [
+                  2039,
+                  1795,
+                  91,
+                  213,
+                  273
+                ]
+              }
+            }
+          },
+          "val": {
+            "n_samples": 13660,
+            "classes": {
+              "other": {
+                "count": 12911,
+                "proportion": 0.9451683748169839,
+                "counts_by_dataset": [
+                  4994,
+                  2460,
+                  1440,
+                  1591,
+                  2426
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 749,
+                "proportion": 0.054831625183016104,
+                "counts_by_dataset": [
+                  0,
+                  290,
+                  217,
+                  59,
+                  183
+                ]
+              }
+            }
+          },
+          "test": {
+            "n_samples": 13659,
+            "classes": {
+              "other": {
+                "count": 12808,
+                "proportion": 0.9376967567171828,
+                "counts_by_dataset": [
+                  4817,
+                  2711,
+                  1650,
+                  1376,
+                  2254
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 851,
+                "proportion": 0.06230324328281719,
+                "counts_by_dataset": [
+                  178,
+                  38,
+                  7,
+                  273,
+                  355
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "split_order_by_dataset": [
+          [
+            "test",
+            "val",
+            "train"
+          ],
+          [
+            "val",
+            "train",
+            "test"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ],
+          [
+            "test",
+            "train",
+            "val"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ]
+        ],
+        "evaluation_source_coverage_at_minimum": 4,
+        "evaluation_source_coverage_positive": 4,
+        "minimum_eval_class_count": 25,
+        "maximum_evaluation_session_share": 0.3935483870967742,
+        "validation_test_total_variation": 0.04905439937005694,
+        "session_confounding_risk": 0.44260278646683116,
+        "aggregate_mean_total_variation": 0.017414487338300966,
+        "splits": {
+          "train": {
+            "n_samples": 63745,
+            "classes": {
+              "other": {
+                "count": 59334,
+                "proportion": 0.930802415875755,
+                "counts_by_dataset": [
+                  21271,
+                  11035,
+                  7641,
+                  7486,
+                  11901
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 4411,
+                "proportion": 0.06919758412424504,
+                "counts_by_dataset": [
+                  2039,
+                  1795,
+                  91,
+                  213,
+                  273
+                ]
+              }
+            }
+          },
+          "val": {
+            "n_samples": 13660,
+            "classes": {
+              "other": {
+                "count": 13195,
+                "proportion": 0.9659590043923866,
+                "counts_by_dataset": [
+                  4817,
+                  2711,
+                  1650,
+                  1591,
+                  2426
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 465,
+                "proportion": 0.03404099560761347,
+                "counts_by_dataset": [
+                  178,
+                  38,
+                  7,
+                  59,
+                  183
+                ]
+              }
+            }
+          },
+          "test": {
+            "n_samples": 13659,
+            "classes": {
+              "other": {
+                "count": 12524,
+                "proportion": 0.9169046050223296,
+                "counts_by_dataset": [
+                  4994,
+                  2460,
+                  1440,
+                  1376,
+                  2254
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 1135,
+                "proportion": 0.0830953949776704,
+                "counts_by_dataset": [
+                  0,
+                  290,
+                  217,
+                  273,
+                  355
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "split_order_by_dataset": [
+          [
+            "val",
+            "test",
+            "train"
+          ],
+          [
+            "test",
+            "train",
+            "val"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ],
+          [
+            "val",
+            "train",
+            "test"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ]
+        ],
+        "evaluation_source_coverage_at_minimum": 4,
+        "evaluation_source_coverage_positive": 4,
+        "minimum_eval_class_count": 25,
+        "maximum_evaluation_session_share": 0.3935483870967742,
+        "validation_test_total_variation": 0.04905439937005694,
+        "session_confounding_risk": 0.44260278646683116,
+        "aggregate_mean_total_variation": 0.017414487338300966,
+        "splits": {
+          "train": {
+            "n_samples": 63745,
+            "classes": {
+              "other": {
+                "count": 59334,
+                "proportion": 0.930802415875755,
+                "counts_by_dataset": [
+                  21271,
+                  11035,
+                  7641,
+                  7486,
+                  11901
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 4411,
+                "proportion": 0.06919758412424504,
+                "counts_by_dataset": [
+                  2039,
+                  1795,
+                  91,
+                  213,
+                  273
+                ]
+              }
+            }
+          },
+          "val": {
+            "n_samples": 13659,
+            "classes": {
+              "other": {
+                "count": 12524,
+                "proportion": 0.9169046050223296,
+                "counts_by_dataset": [
+                  4994,
+                  2460,
+                  1440,
+                  1376,
+                  2254
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 1135,
+                "proportion": 0.0830953949776704,
+                "counts_by_dataset": [
+                  0,
+                  290,
+                  217,
+                  273,
+                  355
+                ]
+              }
+            }
+          },
+          "test": {
+            "n_samples": 13660,
+            "classes": {
+              "other": {
+                "count": 13195,
+                "proportion": 0.9659590043923866,
+                "counts_by_dataset": [
+                  4817,
+                  2711,
+                  1650,
+                  1591,
+                  2426
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 465,
+                "proportion": 0.03404099560761347,
+                "counts_by_dataset": [
+                  178,
+                  38,
+                  7,
+                  59,
+                  183
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "split_order_by_dataset": [
+          [
+            "test",
+            "val",
+            "train"
+          ],
+          [
+            "test",
+            "train",
+            "val"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ],
+          [
+            "val",
+            "train",
+            "test"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ]
+        ],
+        "evaluation_source_coverage_at_minimum": 4,
+        "evaluation_source_coverage_positive": 4,
+        "minimum_eval_class_count": 25,
+        "maximum_evaluation_session_share": 0.43661971830985913,
+        "validation_test_total_variation": 0.04436044024410936,
+        "session_confounding_risk": 0.4809801585539685,
+        "aggregate_mean_total_variation": 0.01584983429631844,
+        "splits": {
+          "train": {
+            "n_samples": 63745,
+            "classes": {
+              "other": {
+                "count": 59334,
+                "proportion": 0.930802415875755,
+                "counts_by_dataset": [
+                  21271,
+                  11035,
+                  7641,
+                  7486,
+                  11901
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 4411,
+                "proportion": 0.06919758412424504,
+                "counts_by_dataset": [
+                  2039,
+                  1795,
+                  91,
+                  213,
+                  273
+                ]
+              }
+            }
+          },
+          "val": {
+            "n_samples": 13660,
+            "classes": {
+              "other": {
+                "count": 12557,
+                "proportion": 0.9192532942898975,
+                "counts_by_dataset": [
+                  4817,
+                  2460,
+                  1650,
+                  1376,
+                  2254
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 1103,
+                "proportion": 0.08074670571010249,
+                "counts_by_dataset": [
+                  178,
+                  290,
+                  7,
+                  273,
+                  355
+                ]
+              }
+            }
+          },
+          "test": {
+            "n_samples": 13659,
+            "classes": {
+              "other": {
+                "count": 13162,
+                "proportion": 0.9636137345340069,
+                "counts_by_dataset": [
+                  4994,
+                  2711,
+                  1440,
+                  1591,
+                  2426
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 497,
+                "proportion": 0.03638626546599312,
+                "counts_by_dataset": [
+                  0,
+                  38,
+                  217,
+                  59,
+                  183
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "split_order_by_dataset": [
+          [
+            "val",
+            "test",
+            "train"
+          ],
+          [
+            "val",
+            "train",
+            "test"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ],
+          [
+            "test",
+            "train",
+            "val"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ]
+        ],
+        "evaluation_source_coverage_at_minimum": 4,
+        "evaluation_source_coverage_positive": 4,
+        "minimum_eval_class_count": 25,
+        "maximum_evaluation_session_share": 0.43661971830985913,
+        "validation_test_total_variation": 0.04436044024410936,
+        "session_confounding_risk": 0.4809801585539685,
+        "aggregate_mean_total_variation": 0.01584983429631844,
+        "splits": {
+          "train": {
+            "n_samples": 63745,
+            "classes": {
+              "other": {
+                "count": 59334,
+                "proportion": 0.930802415875755,
+                "counts_by_dataset": [
+                  21271,
+                  11035,
+                  7641,
+                  7486,
+                  11901
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 4411,
+                "proportion": 0.06919758412424504,
+                "counts_by_dataset": [
+                  2039,
+                  1795,
+                  91,
+                  213,
+                  273
+                ]
+              }
+            }
+          },
+          "val": {
+            "n_samples": 13659,
+            "classes": {
+              "other": {
+                "count": 13162,
+                "proportion": 0.9636137345340069,
+                "counts_by_dataset": [
+                  4994,
+                  2711,
+                  1440,
+                  1591,
+                  2426
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 497,
+                "proportion": 0.03638626546599312,
+                "counts_by_dataset": [
+                  0,
+                  38,
+                  217,
+                  59,
+                  183
+                ]
+              }
+            }
+          },
+          "test": {
+            "n_samples": 13660,
+            "classes": {
+              "other": {
+                "count": 12557,
+                "proportion": 0.9192532942898975,
+                "counts_by_dataset": [
+                  4817,
+                  2460,
+                  1650,
+                  1376,
+                  2254
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 1103,
+                "proportion": 0.08074670571010249,
+                "counts_by_dataset": [
+                  178,
+                  290,
+                  7,
+                  273,
+                  355
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "split_order_by_dataset": [
+          [
+            "test",
+            "val",
+            "train"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ],
+          [
+            "test",
+            "train",
+            "val"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ]
+        ],
+        "evaluation_source_coverage_at_minimum": 4,
+        "evaluation_source_coverage_positive": 4,
+        "minimum_eval_class_count": 25,
+        "maximum_evaluation_session_share": 0.43779108449767135,
+        "validation_test_total_variation": 0.057560217859887394,
+        "session_confounding_risk": 0.49535130235755875,
+        "aggregate_mean_total_variation": 0.021365802751498505,
+        "splits": {
+          "train": {
+            "n_samples": 63745,
+            "classes": {
+              "other": {
+                "count": 59954,
+                "proportion": 0.940528668915209,
+                "counts_by_dataset": [
+                  21271,
+                  11655,
+                  7641,
+                  7486,
+                  11901
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 3791,
+                "proportion": 0.05947133108479096,
+                "counts_by_dataset": [
+                  2039,
+                  1175,
+                  91,
+                  213,
+                  273
+                ]
+              }
+            }
+          },
+          "val": {
+            "n_samples": 13661,
+            "classes": {
+              "other": {
+                "count": 12944,
+                "proportion": 0.9475148232193836,
+                "counts_by_dataset": [
+                  4817,
+                  2460,
+                  1650,
+                  1591,
+                  2426
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 717,
+                "proportion": 0.05248517678061635,
+                "counts_by_dataset": [
+                  178,
+                  290,
+                  7,
+                  59,
+                  183
+                ]
+              }
+            }
+          },
+          "test": {
+            "n_samples": 13658,
+            "classes": {
+              "other": {
+                "count": 12155,
+                "proportion": 0.8899546053594962,
+                "counts_by_dataset": [
+                  4994,
+                  2091,
+                  1440,
+                  1376,
+                  2254
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 1503,
+                "proportion": 0.11004539464050374,
+                "counts_by_dataset": [
+                  0,
+                  658,
+                  217,
+                  273,
+                  355
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "split_order_by_dataset": [
+          [
+            "val",
+            "test",
+            "train"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ],
+          [
+            "val",
+            "train",
+            "test"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ]
+        ],
+        "evaluation_source_coverage_at_minimum": 4,
+        "evaluation_source_coverage_positive": 4,
+        "minimum_eval_class_count": 25,
+        "maximum_evaluation_session_share": 0.43779108449767135,
+        "validation_test_total_variation": 0.057560217859887394,
+        "session_confounding_risk": 0.49535130235755875,
+        "aggregate_mean_total_variation": 0.021365802751498505,
+        "splits": {
+          "train": {
+            "n_samples": 63745,
+            "classes": {
+              "other": {
+                "count": 59954,
+                "proportion": 0.940528668915209,
+                "counts_by_dataset": [
+                  21271,
+                  11655,
+                  7641,
+                  7486,
+                  11901
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 3791,
+                "proportion": 0.05947133108479096,
+                "counts_by_dataset": [
+                  2039,
+                  1175,
+                  91,
+                  213,
+                  273
+                ]
+              }
+            }
+          },
+          "val": {
+            "n_samples": 13658,
+            "classes": {
+              "other": {
+                "count": 12155,
+                "proportion": 0.8899546053594962,
+                "counts_by_dataset": [
+                  4994,
+                  2091,
+                  1440,
+                  1376,
+                  2254
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 1503,
+                "proportion": 0.11004539464050374,
+                "counts_by_dataset": [
+                  0,
+                  658,
+                  217,
+                  273,
+                  355
+                ]
+              }
+            }
+          },
+          "test": {
+            "n_samples": 13661,
+            "classes": {
+              "other": {
+                "count": 12944,
+                "proportion": 0.9475148232193836,
+                "counts_by_dataset": [
+                  4817,
+                  2460,
+                  1650,
+                  1591,
+                  2426
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 717,
+                "proportion": 0.05248517678061635,
+                "counts_by_dataset": [
+                  178,
+                  290,
+                  7,
+                  59,
+                  183
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "split_order_by_dataset": [
+          [
+            "test",
+            "val",
+            "train"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ],
+          [
+            "val",
+            "train",
+            "test"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ]
+        ],
+        "evaluation_source_coverage_at_minimum": 4,
+        "evaluation_source_coverage_positive": 4,
+        "minimum_eval_class_count": 25,
+        "maximum_evaluation_session_share": 0.44731475186947656,
+        "validation_test_total_variation": 0.05286293518011442,
+        "session_confounding_risk": 0.500177687049591,
+        "aggregate_mean_total_variation": 0.019800041858240847,
+        "splits": {
+          "train": {
+            "n_samples": 63745,
+            "classes": {
+              "other": {
+                "count": 59954,
+                "proportion": 0.940528668915209,
+                "counts_by_dataset": [
+                  21271,
+                  11655,
+                  7641,
+                  7486,
+                  11901
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 3791,
+                "proportion": 0.05947133108479096,
+                "counts_by_dataset": [
+                  2039,
+                  1175,
+                  91,
+                  213,
+                  273
+                ]
+              }
+            }
+          },
+          "val": {
+            "n_samples": 13659,
+            "classes": {
+              "other": {
+                "count": 12188,
+                "proportion": 0.8923054396368695,
+                "counts_by_dataset": [
+                  4817,
+                  2091,
+                  1650,
+                  1376,
+                  2254
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 1471,
+                "proportion": 0.10769456036313053,
+                "counts_by_dataset": [
+                  178,
+                  658,
+                  7,
+                  273,
+                  355
+                ]
+              }
+            }
+          },
+          "test": {
+            "n_samples": 13660,
+            "classes": {
+              "other": {
+                "count": 12911,
+                "proportion": 0.9451683748169839,
+                "counts_by_dataset": [
+                  4994,
+                  2460,
+                  1440,
+                  1591,
+                  2426
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 749,
+                "proportion": 0.054831625183016104,
+                "counts_by_dataset": [
+                  0,
+                  290,
+                  217,
+                  59,
+                  183
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "split_order_by_dataset": [
+          [
+            "val",
+            "test",
+            "train"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ],
+          [
+            "test",
+            "train",
+            "val"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ]
+        ],
+        "evaluation_source_coverage_at_minimum": 4,
+        "evaluation_source_coverage_positive": 4,
+        "minimum_eval_class_count": 25,
+        "maximum_evaluation_session_share": 0.44731475186947656,
+        "validation_test_total_variation": 0.05286293518011442,
+        "session_confounding_risk": 0.500177687049591,
+        "aggregate_mean_total_variation": 0.019800041858240847,
+        "splits": {
+          "train": {
+            "n_samples": 63745,
+            "classes": {
+              "other": {
+                "count": 59954,
+                "proportion": 0.940528668915209,
+                "counts_by_dataset": [
+                  21271,
+                  11655,
+                  7641,
+                  7486,
+                  11901
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 3791,
+                "proportion": 0.05947133108479096,
+                "counts_by_dataset": [
+                  2039,
+                  1175,
+                  91,
+                  213,
+                  273
+                ]
+              }
+            }
+          },
+          "val": {
+            "n_samples": 13660,
+            "classes": {
+              "other": {
+                "count": 12911,
+                "proportion": 0.9451683748169839,
+                "counts_by_dataset": [
+                  4994,
+                  2460,
+                  1440,
+                  1591,
+                  2426
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 749,
+                "proportion": 0.054831625183016104,
+                "counts_by_dataset": [
+                  0,
+                  290,
+                  217,
+                  59,
+                  183
+                ]
+              }
+            }
+          },
+          "test": {
+            "n_samples": 13659,
+            "classes": {
+              "other": {
+                "count": 12188,
+                "proportion": 0.8923054396368695,
+                "counts_by_dataset": [
+                  4817,
+                  2091,
+                  1650,
+                  1376,
+                  2254
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 1471,
+                "proportion": 0.10769456036313053,
+                "counts_by_dataset": [
+                  178,
+                  658,
+                  7,
+                  273,
+                  355
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "split_order_by_dataset": [
+          [
+            "test",
+            "val",
+            "train"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ],
+          [
+            "test",
+            "train",
+            "val"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ]
+        ],
+        "evaluation_source_coverage_at_minimum": 4,
+        "evaluation_source_coverage_positive": 4,
+        "minimum_eval_class_count": 25,
+        "maximum_evaluation_session_share": 0.49436513899323814,
+        "validation_test_total_variation": 0.03237627963752851,
+        "session_confounding_risk": 0.5267414186307666,
+        "aggregate_mean_total_variation": 0.012971156677378878,
+        "splits": {
+          "train": {
+            "n_samples": 63745,
+            "classes": {
+              "other": {
+                "count": 59954,
+                "proportion": 0.940528668915209,
+                "counts_by_dataset": [
+                  21271,
+                  11655,
+                  7641,
+                  7486,
+                  11901
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 3791,
+                "proportion": 0.05947133108479096,
+                "counts_by_dataset": [
+                  2039,
+                  1175,
+                  91,
+                  213,
+                  273
+                ]
+              }
+            }
+          },
+          "val": {
+            "n_samples": 13661,
+            "classes": {
+              "other": {
+                "count": 12772,
+                "proportion": 0.9349242368787058,
+                "counts_by_dataset": [
+                  4817,
+                  2460,
+                  1650,
+                  1591,
+                  2254
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 889,
+                "proportion": 0.06507576312129419,
+                "counts_by_dataset": [
+                  178,
+                  290,
+                  7,
+                  59,
+                  355
+                ]
+              }
+            }
+          },
+          "test": {
+            "n_samples": 13658,
+            "classes": {
+              "other": {
+                "count": 12327,
+                "proportion": 0.9025479572411773,
+                "counts_by_dataset": [
+                  4994,
+                  2091,
+                  1440,
+                  1376,
+                  2426
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 1331,
+                "proportion": 0.09745204275882267,
+                "counts_by_dataset": [
+                  0,
+                  658,
+                  217,
+                  273,
+                  183
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "split_order_by_dataset": [
+          [
+            "val",
+            "test",
+            "train"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ],
+          [
+            "val",
+            "train",
+            "test"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ]
+        ],
+        "evaluation_source_coverage_at_minimum": 4,
+        "evaluation_source_coverage_positive": 4,
+        "minimum_eval_class_count": 25,
+        "maximum_evaluation_session_share": 0.49436513899323814,
+        "validation_test_total_variation": 0.03237627963752851,
+        "session_confounding_risk": 0.5267414186307666,
+        "aggregate_mean_total_variation": 0.012971156677378878,
+        "splits": {
+          "train": {
+            "n_samples": 63745,
+            "classes": {
+              "other": {
+                "count": 59954,
+                "proportion": 0.940528668915209,
+                "counts_by_dataset": [
+                  21271,
+                  11655,
+                  7641,
+                  7486,
+                  11901
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 3791,
+                "proportion": 0.05947133108479096,
+                "counts_by_dataset": [
+                  2039,
+                  1175,
+                  91,
+                  213,
+                  273
+                ]
+              }
+            }
+          },
+          "val": {
+            "n_samples": 13658,
+            "classes": {
+              "other": {
+                "count": 12327,
+                "proportion": 0.9025479572411773,
+                "counts_by_dataset": [
+                  4994,
+                  2091,
+                  1440,
+                  1376,
+                  2426
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 1331,
+                "proportion": 0.09745204275882267,
+                "counts_by_dataset": [
+                  0,
+                  658,
+                  217,
+                  273,
+                  183
+                ]
+              }
+            }
+          },
+          "test": {
+            "n_samples": 13661,
+            "classes": {
+              "other": {
+                "count": 12772,
+                "proportion": 0.9349242368787058,
+                "counts_by_dataset": [
+                  4817,
+                  2460,
+                  1650,
+                  1591,
+                  2254
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 889,
+                "proportion": 0.06507576312129419,
+                "counts_by_dataset": [
+                  178,
+                  290,
+                  7,
+                  59,
+                  355
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "split_order_by_dataset": [
+          [
+            "val",
+            "test",
+            "train"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ],
+          [
+            "test",
+            "train",
+            "val"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ]
+        ],
+        "evaluation_source_coverage_at_minimum": 4,
+        "evaluation_source_coverage_positive": 4,
+        "minimum_eval_class_count": 25,
+        "maximum_evaluation_session_share": 0.5065434949961509,
+        "validation_test_total_variation": 0.027678997227705955,
+        "session_confounding_risk": 0.5342224922238569,
+        "aggregate_mean_total_variation": 0.012348470378321813,
+        "splits": {
+          "train": {
+            "n_samples": 63745,
+            "classes": {
+              "other": {
+                "count": 59954,
+                "proportion": 0.940528668915209,
+                "counts_by_dataset": [
+                  21271,
+                  11655,
+                  7641,
+                  7486,
+                  11901
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 3791,
+                "proportion": 0.05947133108479096,
+                "counts_by_dataset": [
+                  2039,
+                  1175,
+                  91,
+                  213,
+                  273
+                ]
+              }
+            }
+          },
+          "val": {
+            "n_samples": 13660,
+            "classes": {
+              "other": {
+                "count": 12739,
+                "proportion": 0.9325768667642752,
+                "counts_by_dataset": [
+                  4994,
+                  2460,
+                  1440,
+                  1591,
+                  2254
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 921,
+                "proportion": 0.06742313323572474,
+                "counts_by_dataset": [
+                  0,
+                  290,
+                  217,
+                  59,
+                  355
+                ]
+              }
+            }
+          },
+          "test": {
+            "n_samples": 13659,
+            "classes": {
+              "other": {
+                "count": 12360,
+                "proportion": 0.9048978695365693,
+                "counts_by_dataset": [
+                  4817,
+                  2091,
+                  1650,
+                  1376,
+                  2426
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 1299,
+                "proportion": 0.0951021304634307,
+                "counts_by_dataset": [
+                  178,
+                  658,
+                  7,
+                  273,
+                  183
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "split_order_by_dataset": [
+          [
+            "test",
+            "val",
+            "train"
+          ],
+          [
+            "train",
+            "val",
+            "test"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ],
+          [
+            "val",
+            "train",
+            "test"
+          ],
+          [
+            "train",
+            "test",
+            "val"
+          ]
+        ],
+        "evaluation_source_coverage_at_minimum": 4,
+        "evaluation_source_coverage_positive": 4,
+        "minimum_eval_class_count": 25,
+        "maximum_evaluation_session_share": 0.5065434949961509,
+        "validation_test_total_variation": 0.027678997227705955,
+        "session_confounding_risk": 0.5342224922238569,
+        "aggregate_mean_total_variation": 0.012348470378321817,
+        "splits": {
+          "train": {
+            "n_samples": 63745,
+            "classes": {
+              "other": {
+                "count": 59954,
+                "proportion": 0.940528668915209,
+                "counts_by_dataset": [
+                  21271,
+                  11655,
+                  7641,
+                  7486,
+                  11901
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 3791,
+                "proportion": 0.05947133108479096,
+                "counts_by_dataset": [
+                  2039,
+                  1175,
+                  91,
+                  213,
+                  273
+                ]
+              }
+            }
+          },
+          "val": {
+            "n_samples": 13659,
+            "classes": {
+              "other": {
+                "count": 12360,
+                "proportion": 0.9048978695365693,
+                "counts_by_dataset": [
+                  4817,
+                  2091,
+                  1650,
+                  1376,
+                  2426
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 1299,
+                "proportion": 0.0951021304634307,
+                "counts_by_dataset": [
+                  178,
+                  658,
+                  7,
+                  273,
+                  183
+                ]
+              }
+            }
+          },
+          "test": {
+            "n_samples": 13660,
+            "classes": {
+              "other": {
+                "count": 12739,
+                "proportion": 0.9325768667642752,
+                "counts_by_dataset": [
+                  4994,
+                  2460,
+                  1440,
+                  1591,
+                  2254
+                ]
+              },
+              "face / head / paw groom": {
+                "count": 921,
+                "proportion": 0.06742313323572474,
+                "counts_by_dataset": [
+                  0,
+                  290,
+                  217,
+                  59,
+                  355
+                ]
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

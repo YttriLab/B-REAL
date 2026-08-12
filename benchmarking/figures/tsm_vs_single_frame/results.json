@@ -1,0 +1,86 @@
+[
+  {
+    "model": "tsm_3frame",
+    "display_name": "TSM (3 frames)",
+    "repeat": 0,
+    "seed": 0,
+    "epochs_trained": 16,
+    "best_epoch": 9,
+    "best_val_mcc": 0.7529149651527405,
+    "wall_seconds": 3981.785490500013,
+    "class_weights": [
+      1.0464746952056885,
+      22.517074584960938
+    ],
+    "accuracy": 0.947096559193535,
+    "balanced_accuracy": 0.8702002891350913,
+    "macro_f1": 0.8880259344687926,
+    "mcc": 0.7779766321182251,
+    "per_class": {
+      "other": {
+        "precision": 0.9604092952089509,
+        "recall": 0.9784684333593141,
+        "f1": 0.9693547608706142,
+        "support": 10264
+      },
+      "face / head / paw groom": {
+        "precision": 0.8570504527813713,
+        "recall": 0.7619321449108684,
+        "f1": 0.8066971080669711,
+        "support": 1739
+      }
+    },
+    "confusion_matrix": [
+      [
+        10043,
+        221
+      ],
+      [
+        414,
+        1325
+      ]
+    ]
+  },
+  {
+    "model": "cnn_latest",
+    "display_name": "CNN (latest frame)",
+    "repeat": 0,
+    "seed": 0,
+    "epochs_trained": 13,
+    "best_epoch": 6,
+    "best_val_mcc": 0.7009034752845764,
+    "wall_seconds": 1859.1539451999997,
+    "class_weights": [
+      1.0464746952056885,
+      22.517074584960938
+    ],
+    "accuracy": 0.9452636840789802,
+    "balanced_accuracy": 0.8397552458679141,
+    "macro_f1": 0.876998195909715,
+    "mcc": 0.7639805674552917,
+    "per_class": {
+      "other": {
+        "precision": 0.9497238086321506,
+        "recall": 0.9883086515978177,
+        "f1": 0.9686321317736931,
+        "support": 10264
+      },
+      "face / head / paw groom": {
+        "precision": 0.9092284417549168,
+        "recall": 0.6912018401380103,
+        "f1": 0.7853642600457368,
+        "support": 1739
+      }
+    },
+    "confusion_matrix": [
+      [
+        10144,
+        120
+      ],
+      [
+        537,
+        1202
+      ]
+    ]
+  }
+]

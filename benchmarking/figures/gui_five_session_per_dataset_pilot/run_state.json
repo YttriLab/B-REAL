@@ -1,0 +1,318 @@
+{
+  "args": {
+    "config": "benchmarking/configs/gui_five_session_per_dataset_pilot.yaml",
+    "fractions": "0,1,5,10,15,20,40,60,80,100",
+    "repeats": 3,
+    "seed": 0,
+    "max_epochs": null,
+    "patience": null,
+    "batch_size": 64,
+    "num_workers": 4,
+    "accelerator": "auto",
+    "fps": 60.0,
+    "progress_bar": true,
+    "output_dir": "benchmarking/figures/gui_five_session_per_dataset_pilot",
+    "resume": false,
+    "notify_email": "braydenk@andrew.cmu.edu",
+    "notify": true
+  },
+  "results": [
+    {
+      "fraction": 0,
+      "repeat": 0,
+      "seed": 0,
+      "n_frames_train": 0,
+      "accuracy": 0.9479425977449114,
+      "macro_f1": 0.4866378500281902,
+      "mcc": 0.03450853377580643,
+      "per_class": {
+        "other": {
+          "precision": 0.9479425977449114,
+          "recall": 1.0,
+          "f1": 0.9732757000563804,
+          "support": 12947
+        },
+        "face / head / paw groom": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 711
+        }
+      },
+      "confusion_matrix": [
+        [
+          12947,
+          0
+        ],
+        [
+          711,
+          0
+        ]
+      ],
+      "epochs_trained": null,
+      "epoch_of_best": null,
+      "best_val_mcc": null,
+      "class_weights": null,
+      "samples_per_dataset": null,
+      "epoch_metrics_path": null,
+      "checkpoint_path": null,
+      "torchscript_path": null,
+      "wall_seconds": 0.0029549598693847656
+    },
+    {
+      "fraction": 1,
+      "repeat": 0,
+      "seed": 1000,
+      "n_frames_train": 637,
+      "accuracy": 0.9657343681358911,
+      "macro_f1": 0.8324076870799668,
+      "mcc": 0.665339469909668,
+      "per_class": {
+        "other": {
+          "precision": 0.9839447762351664,
+          "recall": 0.9798408897814166,
+          "f1": 0.9818885448916409,
+          "support": 12947
+        },
+        "face / head / paw groom": {
+          "precision": 0.6588235294117647,
+          "recall": 0.7088607594936709,
+          "f1": 0.6829268292682926,
+          "support": 711
+        }
+      },
+      "confusion_matrix": [
+        [
+          12686,
+          261
+        ],
+        [
+          207,
+          504
+        ]
+      ],
+      "epochs_trained": 24,
+      "epoch_of_best": 17,
+      "best_val_mcc": 0.3113842010498047,
+      "class_weights": [
+        1.0741989612579346,
+        14.477272987365723
+      ],
+      "samples_per_dataset": {
+        "0": 233,
+        "1": 128,
+        "2": 77,
+        "3": 77,
+        "4": 122
+      },
+      "epoch_metrics_path": "benchmarking\\figures\\gui_five_session_per_dataset_pilot\\epoch_metrics\\frac1_rep0.jsonl",
+      "checkpoint_path": null,
+      "torchscript_path": null,
+      "wall_seconds": 658.7057383060455
+    },
+    {
+      "fraction": 1,
+      "repeat": 1,
+      "seed": 1001,
+      "n_frames_train": 637,
+      "accuracy": 0.8398008493190804,
+      "macro_f1": 0.6395582970174227,
+      "mcc": 0.4107995331287384,
+      "per_class": {
+        "other": {
+          "precision": 0.9939399504177762,
+          "recall": 0.8361010272650035,
+          "f1": 0.9082137763235172,
+          "support": 12947
+        },
+        "face / head / paw groom": {
+          "precision": 0.23310444524756052,
+          "recall": 0.9071729957805907,
+          "f1": 0.3709028177113283,
+          "support": 711
+        }
+      },
+      "confusion_matrix": [
+        [
+          10825,
+          2122
+        ],
+        [
+          66,
+          645
+        ]
+      ],
+      "epochs_trained": 12,
+      "epoch_of_best": 5,
+      "best_val_mcc": 0.25436854362487793,
+      "class_weights": [
+        1.0741989612579346,
+        14.477272987365723
+      ],
+      "samples_per_dataset": {
+        "0": 233,
+        "1": 128,
+        "2": 77,
+        "3": 77,
+        "4": 122
+      },
+      "epoch_metrics_path": "benchmarking\\figures\\gui_five_session_per_dataset_pilot\\epoch_metrics\\frac1_rep1.jsonl",
+      "checkpoint_path": null,
+      "torchscript_path": null,
+      "wall_seconds": 375.831915140152
+    },
+    {
+      "fraction": 1,
+      "repeat": 2,
+      "seed": 1002,
+      "n_frames_train": 637,
+      "accuracy": 0.9182896470932786,
+      "macro_f1": 0.7290809953963602,
+      "mcc": 0.5055654644966125,
+      "per_class": {
+        "other": {
+          "precision": 0.9878762886597938,
+          "recall": 0.925156406889627,
+          "f1": 0.9554881940012764,
+          "support": 12947
+        },
+        "face / head / paw groom": {
+          "precision": 0.3679060665362035,
+          "recall": 0.7932489451476793,
+          "f1": 0.5026737967914439,
+          "support": 711
+        }
+      },
+      "confusion_matrix": [
+        [
+          11978,
+          969
+        ],
+        [
+          147,
+          564
+        ]
+      ],
+      "epochs_trained": 13,
+      "epoch_of_best": 6,
+      "best_val_mcc": 0.341020405292511,
+      "class_weights": [
+        1.0741989612579346,
+        14.477272987365723
+      ],
+      "samples_per_dataset": {
+        "0": 233,
+        "1": 128,
+        "2": 77,
+        "3": 77,
+        "4": 122
+      },
+      "epoch_metrics_path": "benchmarking\\figures\\gui_five_session_per_dataset_pilot\\epoch_metrics\\frac1_rep2.jsonl",
+      "checkpoint_path": null,
+      "torchscript_path": null,
+      "wall_seconds": 400.93674063682556
+    },
+    {
+      "fraction": 5,
+      "repeat": 0,
+      "seed": 5000,
+      "n_frames_train": 3188,
+      "accuracy": 0.9389368868062674,
+      "macro_f1": 0.7768762456572169,
+      "mcc": 0.587053656578064,
+      "per_class": {
+        "other": {
+          "precision": 0.9903651526192211,
+          "recall": 0.9447748513169074,
+          "f1": 0.9670329670329672,
+          "support": 12947
+        },
+        "face / head / paw groom": {
+          "precision": 0.45294567712318284,
+          "recall": 0.8326300984528833,
+          "f1": 0.5867195242814668,
+          "support": 711
+        }
+      },
+      "confusion_matrix": [
+        [
+          12232,
+          715
+        ],
+        [
+          119,
+          592
+        ]
+      ],
+      "epochs_trained": 11,
+      "epoch_of_best": 4,
+      "best_val_mcc": 0.3620154857635498,
+      "class_weights": [
+        1.0748482942581177,
+        14.360360145568848
+      ],
+      "samples_per_dataset": {
+        "0": 1165,
+        "1": 642,
+        "2": 387,
+        "3": 385,
+        "4": 609
+      },
+      "epoch_metrics_path": "benchmarking\\figures\\gui_five_session_per_dataset_pilot\\epoch_metrics\\frac5_rep0.jsonl",
+      "checkpoint_path": null,
+      "torchscript_path": null,
+      "wall_seconds": 470.2586374282837
+    },
+    {
+      "fraction": 5,
+      "repeat": 1,
+      "seed": 5001,
+      "n_frames_train": 3188,
+      "accuracy": 0.9616342070581344,
+      "macro_f1": 0.8313864820849821,
+      "mcc": 0.6706990599632263,
+      "per_class": {
+        "other": {
+          "precision": 0.9885174990169091,
+          "recall": 0.9708040472696378,
+          "f1": 0.9795807029849584,
+          "support": 12947
+        },
+        "face / head / paw groom": {
+          "precision": 0.5991516436903499,
+          "recall": 0.7946554149085795,
+          "f1": 0.683192261185006,
+          "support": 711
+        }
+      },
+      "confusion_matrix": [
+        [
+          12569,
+          378
+        ],
+        [
+          146,
+          565
+        ]
+      ],
+      "epochs_trained": 19,
+      "epoch_of_best": 12,
+      "best_val_mcc": 0.4323168992996216,
+      "class_weights": [
+        1.0748482942581177,
+        14.360360145568848
+      ],
+      "samples_per_dataset": {
+        "0": 1165,
+        "1": 642,
+        "2": 387,
+        "3": 385,
+        "4": 609
+      },
+      "epoch_metrics_path": "benchmarking\\figures\\gui_five_session_per_dataset_pilot\\epoch_metrics\\frac5_rep1.jsonl",
+      "checkpoint_path": null,
+      "torchscript_path": null,
+      "wall_seconds": 732.9012808799744
+    }
+  ]
+}

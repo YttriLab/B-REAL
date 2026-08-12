@@ -1,0 +1,31 @@
+{
+  "behavior": "face_head_paw_groom",
+  "checkpoint": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\binary_behaviors\\face_head_paw_groom\\model.ckpt",
+  "device": "cuda",
+  "n_test": 2994,
+  "positive_class": 1,
+  "f1": 0.4239766081871345,
+  "mcc": 0.39306951628174996,
+  "accuracy": 0.8684034736138945,
+  "precision": 0.6621004566210046,
+  "recall": 0.3118279569892473,
+  "confusion_matrix": [
+    [
+      2455,
+      74
+    ],
+    [
+      320,
+      145
+    ]
+  ],
+  "support": {
+    "negative": 2529,
+    "positive": 465
+  },
+  "bout_hit_rate": {
+    "hit_rate": 0.8888888888888888,
+    "bouts_hit": 8,
+    "total_true_bouts": 9
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "behavior": "face_head_paw_groom",
+  "checkpoint": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\figures\\binary_behaviors\\face_head_paw_groom\\model.ckpt",
+  "data_root": "C:\\Realtime\\brayden_data",
+  "frame_dirs": [
+    "C:\\Realtime\\brayden_data\\frames\\AP1_7-8",
+    "C:\\Realtime\\brayden_data\\frames\\AP1_7-8After5"
+  ],
+  "label_paths": [
+    "C:\\Realtime\\brayden_data\\labels\\AP1_7-8_bouts.csv",
+    "C:\\Realtime\\brayden_data\\labels\\AP1_7-8After5_bouts.csv"
+  ],
+  "class_names": [
+    "other",
+    "face_head_paw_groom"
+  ],
+  "split": {
+    "train_percent": 0.7,
+    "val_percent": 0.15,
+    "test_percent": 0.15,
+    "shuffle": false,
+    "random_seed": 42,
+    "frames_per_group": 3,
+    "split_config": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\configs\\brayden_binary_chronological_splits.json",
+    "split_order_by_dataset": [
+      [
+        "train",
+        "val",
+        "test"
+      ],
+      [
+        "train",
+        "val",
+        "test"
+      ]
+    ]
+  },
+  "n_train": 13983,
+  "n_val": 2992,
+  "n_test": 2994,
+  "train_class_counts": [
+    11938,
+    2045
+  ],
+  "class_weights": [
+    1.1713017225265503,
+    6.837652683258057
+  ],
+  "seed": 42,
+  "max_epochs": 100,
+  "patience": 4,
+  "epochs_trained": 8,
+  "best_epoch": 2,
+  "best_val_mcc": 0.552707850933075,
+  "wall_seconds": 617.7992534000659
+}

@@ -1,0 +1,2137 @@
+{
+  "config_path": "C:\\Users\\Jimi\\Desktop\\Brayden\\realtime-behavior-classifier\\benchmarking\\configs\\gui_five_session_balanced_pilot.yaml",
+  "class_names": [
+    "other",
+    "face / head / paw groom"
+  ],
+  "percentages": {
+    "train": 0.7,
+    "val": 0.15,
+    "test": 0.15
+  },
+  "selection_metric": {
+    "name": "sample-weighted per-dataset mean total-variation distance",
+    "formula": "For each dataset: mean over train/val/test of 0.5*sum_classes(abs(split_proportion-full_dataset_proportion)); then mean over datasets weighted by usable sample count.",
+    "lower_is_better": true
+  },
+  "recommended_split_order": [
+    "val",
+    "test",
+    "train"
+  ],
+  "equally_best_split_orders": [
+    [
+      "val",
+      "test",
+      "train"
+    ],
+    [
+      "test",
+      "val",
+      "train"
+    ]
+  ],
+  "recommended_balance_score": 0.0469198005676951,
+  "results": [
+    {
+      "order": [
+        "val",
+        "test",
+        "train"
+      ],
+      "balance_score": 0.0469198005676951,
+      "aggregate_mean_total_variation": 0.03621591034455301,
+      "aggregate_splits": {
+        "train": {
+          "n_samples": 63748,
+          "total_variation": 0.019170621395671487,
+          "classes": {
+            "other": {
+              "count": 58318,
+              "proportion": 0.9148208571249294
+            },
+            "face / head / paw groom": {
+              "count": 5430,
+              "proportion": 0.08517914287507058
+            }
+          }
+        },
+        "val": {
+          "n_samples": 13656,
+          "total_variation": 0.04213623091115071,
+          "classes": {
+            "other": {
+              "count": 13330,
+              "proportion": 0.9761277094317516
+            },
+            "face / head / paw groom": {
+              "count": 326,
+              "proportion": 0.02387229056824839
+            }
+          }
+        },
+        "test": {
+          "n_samples": 13660,
+          "total_variation": 0.04734087872683683,
+          "classes": {
+            "other": {
+              "count": 13405,
+              "proportion": 0.9813323572474377
+            },
+            "face / head / paw groom": {
+              "count": 255,
+              "proportion": 0.018667642752562226
+            }
+          }
+        }
+      },
+      "datasets": [
+        {
+          "dataset_id": 0,
+          "n_samples": 33299,
+          "full_classes": {
+            "other": {
+              "count": 31082,
+              "proportion": 0.9334214240667887
+            },
+            "face / head / paw groom": {
+              "count": 2217,
+              "proportion": 0.0665785759332112
+            }
+          },
+          "mean_total_variation": 0.03947204259025435,
+          "splits": {
+            "train": {
+              "n_samples": 23310,
+              "total_variation": 0.020894611539976224,
+              "classes": {
+                "other": {
+                  "count": 21271,
+                  "proportion": 0.9125268125268126
+                },
+                "face / head / paw groom": {
+                  "count": 2039,
+                  "proportion": 0.08747318747318747
+                }
+              }
+            },
+            "val": {
+              "n_samples": 4994,
+              "total_variation": 0.06657857593321123,
+              "classes": {
+                "other": {
+                  "count": 4994,
+                  "proportion": 1.0
+                },
+                "face / head / paw groom": {
+                  "count": 0,
+                  "proportion": 0.0
+                }
+              }
+            },
+            "test": {
+              "n_samples": 4995,
+              "total_variation": 0.030942940297575588,
+              "classes": {
+                "other": {
+                  "count": 4817,
+                  "proportion": 0.9643643643643643
+                },
+                "face / head / paw groom": {
+                  "count": 178,
+                  "proportion": 0.03563563563563563
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 1,
+          "n_samples": 18329,
+          "full_classes": {
+            "other": {
+              "count": 16206,
+              "proportion": 0.8841726226198919
+            },
+            "face / head / paw groom": {
+              "count": 2123,
+              "proportion": 0.11582737738010802
+            }
+          },
+          "mean_total_variation": 0.08581132269023277,
+          "splits": {
+            "train": {
+              "n_samples": 12831,
+              "total_variation": 0.045422720040202126,
+              "classes": {
+                "other": {
+                  "count": 10762,
+                  "proportion": 0.8387499025796898
+                },
+                "face / head / paw groom": {
+                  "count": 2069,
+                  "proportion": 0.16125009742031018
+                }
+              }
+            },
+            "val": {
+              "n_samples": 2749,
+              "total_variation": 0.10200416894067552,
+              "classes": {
+                "other": {
+                  "count": 2711,
+                  "proportion": 0.9861767915605675
+                },
+                "face / head / paw groom": {
+                  "count": 38,
+                  "proportion": 0.013823208439432522
+                }
+              }
+            },
+            "test": {
+              "n_samples": 2749,
+              "total_variation": 0.11000707908982066,
+              "classes": {
+                "other": {
+                  "count": 2733,
+                  "proportion": 0.9941797017097126
+                },
+                "face / head / paw groom": {
+                  "count": 16,
+                  "proportion": 0.005820298290287377
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 2,
+          "n_samples": 11046,
+          "full_classes": {
+            "other": {
+              "count": 10731,
+              "proportion": 0.9714828897338403
+            },
+            "face / head / paw groom": {
+              "count": 315,
+              "proportion": 0.028517110266159697
+            }
+          },
+          "mean_total_variation": 0.021129698306855543,
+          "splits": {
+            "train": {
+              "n_samples": 7733,
+              "total_variation": 0.01118287680224846,
+              "classes": {
+                "other": {
+                  "count": 7426,
+                  "proportion": 0.9603000129315918
+                },
+                "face / head / paw groom": {
+                  "count": 307,
+                  "proportion": 0.03969998706840812
+                }
+              }
+            },
+            "val": {
+              "n_samples": 1656,
+              "total_variation": 0.02851711026615968,
+              "classes": {
+                "other": {
+                  "count": 1656,
+                  "proportion": 1.0
+                },
+                "face / head / paw groom": {
+                  "count": 0,
+                  "proportion": 0.0
+                }
+              }
+            },
+            "test": {
+              "n_samples": 1657,
+              "total_variation": 0.023689107852158494,
+              "classes": {
+                "other": {
+                  "count": 1649,
+                  "proportion": 0.9951719975859988
+                },
+                "face / head / paw groom": {
+                  "count": 8,
+                  "proportion": 0.004828002414001207
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 3,
+          "n_samples": 10998,
+          "full_classes": {
+            "other": {
+              "count": 10453,
+              "proportion": 0.9504455355519186
+            },
+            "face / head / paw groom": {
+              "count": 545,
+              "proportion": 0.04955446444808147
+            }
+          },
+          "mean_total_variation": 0.05659347896371433,
+          "splits": {
+            "train": {
+              "n_samples": 7699,
+              "total_variation": 0.016952827871902703,
+              "classes": {
+                "other": {
+                  "count": 7448,
+                  "proportion": 0.9673983634238212
+                },
+                "face / head / paw groom": {
+                  "count": 251,
+                  "proportion": 0.032601636576178726
+                }
+              }
+            },
+            "val": {
+              "n_samples": 1649,
+              "total_variation": 0.11600041729843158,
+              "classes": {
+                "other": {
+                  "count": 1376,
+                  "proportion": 0.834445118253487
+                },
+                "face / head / paw groom": {
+                  "count": 273,
+                  "proportion": 0.16555488174651303
+                }
+              }
+            },
+            "test": {
+              "n_samples": 1650,
+              "total_variation": 0.036827191720808734,
+              "classes": {
+                "other": {
+                  "count": 1629,
+                  "proportion": 0.9872727272727273
+                },
+                "face / head / paw groom": {
+                  "count": 21,
+                  "proportion": 0.012727272727272728
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 4,
+          "n_samples": 17392,
+          "full_classes": {
+            "other": {
+              "count": 16581,
+              "proportion": 0.953369365225391
+            },
+            "face / head / paw groom": {
+              "count": 811,
+              "proportion": 0.04663063477460901
+            }
+          },
+          "mean_total_variation": 0.03045513511694882,
+          "splits": {
+            "train": {
+              "n_samples": 12175,
+              "total_variation": 0.01612090526645873,
+              "classes": {
+                "other": {
+                  "count": 11411,
+                  "proportion": 0.9372484599589322
+                },
+                "face / head / paw groom": {
+                  "count": 764,
+                  "proportion": 0.06275154004106777
+                }
+              }
+            },
+            "val": {
+              "n_samples": 2608,
+              "total_variation": 0.040879101032277744,
+              "classes": {
+                "other": {
+                  "count": 2593,
+                  "proportion": 0.9942484662576687
+                },
+                "face / head / paw groom": {
+                  "count": 15,
+                  "proportion": 0.005751533742331288
+                }
+              }
+            },
+            "test": {
+              "n_samples": 2609,
+              "total_variation": 0.03436539905210999,
+              "classes": {
+                "other": {
+                  "count": 2577,
+                  "proportion": 0.987734764277501
+                },
+                "face / head / paw groom": {
+                  "count": 32,
+                  "proportion": 0.012265235722499043
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "order": [
+        "test",
+        "val",
+        "train"
+      ],
+      "balance_score": 0.0469198005676951,
+      "aggregate_mean_total_variation": 0.03621591034455301,
+      "aggregate_splits": {
+        "train": {
+          "n_samples": 63748,
+          "total_variation": 0.019170621395671487,
+          "classes": {
+            "other": {
+              "count": 58318,
+              "proportion": 0.9148208571249294
+            },
+            "face / head / paw groom": {
+              "count": 5430,
+              "proportion": 0.08517914287507058
+            }
+          }
+        },
+        "val": {
+          "n_samples": 13660,
+          "total_variation": 0.04734087872683683,
+          "classes": {
+            "other": {
+              "count": 13405,
+              "proportion": 0.9813323572474377
+            },
+            "face / head / paw groom": {
+              "count": 255,
+              "proportion": 0.018667642752562226
+            }
+          }
+        },
+        "test": {
+          "n_samples": 13656,
+          "total_variation": 0.04213623091115071,
+          "classes": {
+            "other": {
+              "count": 13330,
+              "proportion": 0.9761277094317516
+            },
+            "face / head / paw groom": {
+              "count": 326,
+              "proportion": 0.02387229056824839
+            }
+          }
+        }
+      },
+      "datasets": [
+        {
+          "dataset_id": 0,
+          "n_samples": 33299,
+          "full_classes": {
+            "other": {
+              "count": 31082,
+              "proportion": 0.9334214240667887
+            },
+            "face / head / paw groom": {
+              "count": 2217,
+              "proportion": 0.0665785759332112
+            }
+          },
+          "mean_total_variation": 0.03947204259025435,
+          "splits": {
+            "train": {
+              "n_samples": 23310,
+              "total_variation": 0.020894611539976224,
+              "classes": {
+                "other": {
+                  "count": 21271,
+                  "proportion": 0.9125268125268126
+                },
+                "face / head / paw groom": {
+                  "count": 2039,
+                  "proportion": 0.08747318747318747
+                }
+              }
+            },
+            "val": {
+              "n_samples": 4995,
+              "total_variation": 0.030942940297575588,
+              "classes": {
+                "other": {
+                  "count": 4817,
+                  "proportion": 0.9643643643643643
+                },
+                "face / head / paw groom": {
+                  "count": 178,
+                  "proportion": 0.03563563563563563
+                }
+              }
+            },
+            "test": {
+              "n_samples": 4994,
+              "total_variation": 0.06657857593321123,
+              "classes": {
+                "other": {
+                  "count": 4994,
+                  "proportion": 1.0
+                },
+                "face / head / paw groom": {
+                  "count": 0,
+                  "proportion": 0.0
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 1,
+          "n_samples": 18329,
+          "full_classes": {
+            "other": {
+              "count": 16206,
+              "proportion": 0.8841726226198919
+            },
+            "face / head / paw groom": {
+              "count": 2123,
+              "proportion": 0.11582737738010802
+            }
+          },
+          "mean_total_variation": 0.08581132269023277,
+          "splits": {
+            "train": {
+              "n_samples": 12831,
+              "total_variation": 0.045422720040202126,
+              "classes": {
+                "other": {
+                  "count": 10762,
+                  "proportion": 0.8387499025796898
+                },
+                "face / head / paw groom": {
+                  "count": 2069,
+                  "proportion": 0.16125009742031018
+                }
+              }
+            },
+            "val": {
+              "n_samples": 2749,
+              "total_variation": 0.11000707908982066,
+              "classes": {
+                "other": {
+                  "count": 2733,
+                  "proportion": 0.9941797017097126
+                },
+                "face / head / paw groom": {
+                  "count": 16,
+                  "proportion": 0.005820298290287377
+                }
+              }
+            },
+            "test": {
+              "n_samples": 2749,
+              "total_variation": 0.10200416894067552,
+              "classes": {
+                "other": {
+                  "count": 2711,
+                  "proportion": 0.9861767915605675
+                },
+                "face / head / paw groom": {
+                  "count": 38,
+                  "proportion": 0.013823208439432522
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 2,
+          "n_samples": 11046,
+          "full_classes": {
+            "other": {
+              "count": 10731,
+              "proportion": 0.9714828897338403
+            },
+            "face / head / paw groom": {
+              "count": 315,
+              "proportion": 0.028517110266159697
+            }
+          },
+          "mean_total_variation": 0.021129698306855543,
+          "splits": {
+            "train": {
+              "n_samples": 7733,
+              "total_variation": 0.01118287680224846,
+              "classes": {
+                "other": {
+                  "count": 7426,
+                  "proportion": 0.9603000129315918
+                },
+                "face / head / paw groom": {
+                  "count": 307,
+                  "proportion": 0.03969998706840812
+                }
+              }
+            },
+            "val": {
+              "n_samples": 1657,
+              "total_variation": 0.023689107852158494,
+              "classes": {
+                "other": {
+                  "count": 1649,
+                  "proportion": 0.9951719975859988
+                },
+                "face / head / paw groom": {
+                  "count": 8,
+                  "proportion": 0.004828002414001207
+                }
+              }
+            },
+            "test": {
+              "n_samples": 1656,
+              "total_variation": 0.02851711026615968,
+              "classes": {
+                "other": {
+                  "count": 1656,
+                  "proportion": 1.0
+                },
+                "face / head / paw groom": {
+                  "count": 0,
+                  "proportion": 0.0
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 3,
+          "n_samples": 10998,
+          "full_classes": {
+            "other": {
+              "count": 10453,
+              "proportion": 0.9504455355519186
+            },
+            "face / head / paw groom": {
+              "count": 545,
+              "proportion": 0.04955446444808147
+            }
+          },
+          "mean_total_variation": 0.05659347896371434,
+          "splits": {
+            "train": {
+              "n_samples": 7699,
+              "total_variation": 0.016952827871902703,
+              "classes": {
+                "other": {
+                  "count": 7448,
+                  "proportion": 0.9673983634238212
+                },
+                "face / head / paw groom": {
+                  "count": 251,
+                  "proportion": 0.032601636576178726
+                }
+              }
+            },
+            "val": {
+              "n_samples": 1650,
+              "total_variation": 0.036827191720808734,
+              "classes": {
+                "other": {
+                  "count": 1629,
+                  "proportion": 0.9872727272727273
+                },
+                "face / head / paw groom": {
+                  "count": 21,
+                  "proportion": 0.012727272727272728
+                }
+              }
+            },
+            "test": {
+              "n_samples": 1649,
+              "total_variation": 0.11600041729843158,
+              "classes": {
+                "other": {
+                  "count": 1376,
+                  "proportion": 0.834445118253487
+                },
+                "face / head / paw groom": {
+                  "count": 273,
+                  "proportion": 0.16555488174651303
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 4,
+          "n_samples": 17392,
+          "full_classes": {
+            "other": {
+              "count": 16581,
+              "proportion": 0.953369365225391
+            },
+            "face / head / paw groom": {
+              "count": 811,
+              "proportion": 0.04663063477460901
+            }
+          },
+          "mean_total_variation": 0.030455135116948823,
+          "splits": {
+            "train": {
+              "n_samples": 12175,
+              "total_variation": 0.01612090526645873,
+              "classes": {
+                "other": {
+                  "count": 11411,
+                  "proportion": 0.9372484599589322
+                },
+                "face / head / paw groom": {
+                  "count": 764,
+                  "proportion": 0.06275154004106777
+                }
+              }
+            },
+            "val": {
+              "n_samples": 2609,
+              "total_variation": 0.03436539905210999,
+              "classes": {
+                "other": {
+                  "count": 2577,
+                  "proportion": 0.987734764277501
+                },
+                "face / head / paw groom": {
+                  "count": 32,
+                  "proportion": 0.012265235722499043
+                }
+              }
+            },
+            "test": {
+              "n_samples": 2608,
+              "total_variation": 0.040879101032277744,
+              "classes": {
+                "other": {
+                  "count": 2593,
+                  "proportion": 0.9942484662576687
+                },
+                "face / head / paw groom": {
+                  "count": 15,
+                  "proportion": 0.005751533742331288
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "order": [
+        "test",
+        "train",
+        "val"
+      ],
+      "balance_score": 0.05601823297414367,
+      "aggregate_mean_total_variation": 0.03759212012339848,
+      "aggregate_splits": {
+        "train": {
+          "n_samples": 63747,
+          "total_variation": 0.005033103028334724,
+          "classes": {
+            "other": {
+              "count": 59860,
+              "proportion": 0.9390245815489356
+            },
+            "face / head / paw groom": {
+              "count": 3887,
+              "proportion": 0.06097541845106436
+            }
+          }
+        },
+        "val": {
+          "n_samples": 13661,
+          "total_variation": 0.06560702643071001,
+          "classes": {
+            "other": {
+              "count": 11863,
+              "proportion": 0.8683844520898909
+            },
+            "face / head / paw groom": {
+              "count": 1798,
+              "proportion": 0.13161554791010907
+            }
+          }
+        },
+        "test": {
+          "n_samples": 13656,
+          "total_variation": 0.04213623091115071,
+          "classes": {
+            "other": {
+              "count": 13330,
+              "proportion": 0.9761277094317516
+            },
+            "face / head / paw groom": {
+              "count": 326,
+              "proportion": 0.02387229056824839
+            }
+          }
+        }
+      },
+      "datasets": [
+        {
+          "dataset_id": 0,
+          "n_samples": 33299,
+          "full_classes": {
+            "other": {
+              "count": 31082,
+              "proportion": 0.9334214240667887
+            },
+            "face / head / paw groom": {
+              "count": 2217,
+              "proportion": 0.0665785759332112
+            }
+          },
+          "mean_total_variation": 0.0925107956290074,
+          "splits": {
+            "train": {
+              "n_samples": 23310,
+              "total_variation": 0.025480334834970125,
+              "classes": {
+                "other": {
+                  "count": 22352,
+                  "proportion": 0.9589017589017589
+                },
+                "face / head / paw groom": {
+                  "count": 958,
+                  "proportion": 0.041098241098241096
+                }
+              }
+            },
+            "val": {
+              "n_samples": 4995,
+              "total_variation": 0.18547347611884082,
+              "classes": {
+                "other": {
+                  "count": 3736,
+                  "proportion": 0.7479479479479479
+                },
+                "face / head / paw groom": {
+                  "count": 1259,
+                  "proportion": 0.25205205205205206
+                }
+              }
+            },
+            "test": {
+              "n_samples": 4994,
+              "total_variation": 0.06657857593321123,
+              "classes": {
+                "other": {
+                  "count": 4994,
+                  "proportion": 1.0
+                },
+                "face / head / paw groom": {
+                  "count": 0,
+                  "proportion": 0.0
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 1,
+          "n_samples": 18329,
+          "full_classes": {
+            "other": {
+              "count": 16206,
+              "proportion": 0.8841726226198919
+            },
+            "face / head / paw groom": {
+              "count": 2123,
+              "proportion": 0.11582737738010802
+            }
+          },
+          "mean_total_variation": 0.04548536423297086,
+          "splits": {
+            "train": {
+              "n_samples": 12830,
+              "total_variation": 0.024079091832674475,
+              "classes": {
+                "other": {
+                  "count": 11035,
+                  "proportion": 0.8600935307872175
+                },
+                "face / head / paw groom": {
+                  "count": 1795,
+                  "proportion": 0.13990646921278255
+                }
+              }
+            },
+            "val": {
+              "n_samples": 2750,
+              "total_variation": 0.010372831925562584,
+              "classes": {
+                "other": {
+                  "count": 2460,
+                  "proportion": 0.8945454545454545
+                },
+                "face / head / paw groom": {
+                  "count": 290,
+                  "proportion": 0.10545454545454545
+                }
+              }
+            },
+            "test": {
+              "n_samples": 2749,
+              "total_variation": 0.10200416894067552,
+              "classes": {
+                "other": {
+                  "count": 2711,
+                  "proportion": 0.9861767915605675
+                },
+                "face / head / paw groom": {
+                  "count": 38,
+                  "proportion": 0.013823208439432522
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 2,
+          "n_samples": 11046,
+          "full_classes": {
+            "other": {
+              "count": 10731,
+              "proportion": 0.9714828897338403
+            },
+            "face / head / paw groom": {
+              "count": 315,
+              "proportion": 0.028517110266159697
+            }
+          },
+          "mean_total_variation": 0.021373970380368798,
+          "splits": {
+            "train": {
+              "n_samples": 7733,
+              "total_variation": 0.011312192721038072,
+              "classes": {
+                "other": {
+                  "count": 7425,
+                  "proportion": 0.9601706970128022
+                },
+                "face / head / paw groom": {
+                  "count": 308,
+                  "proportion": 0.03982930298719772
+                }
+              }
+            },
+            "val": {
+              "n_samples": 1657,
+              "total_variation": 0.02429260815390865,
+              "classes": {
+                "other": {
+                  "count": 1650,
+                  "proportion": 0.995775497887749
+                },
+                "face / head / paw groom": {
+                  "count": 7,
+                  "proportion": 0.004224502112251056
+                }
+              }
+            },
+            "test": {
+              "n_samples": 1656,
+              "total_variation": 0.02851711026615968,
+              "classes": {
+                "other": {
+                  "count": 1656,
+                  "proportion": 1.0
+                },
+                "face / head / paw groom": {
+                  "count": 0,
+                  "proportion": 0.0
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 3,
+          "n_samples": 10998,
+          "full_classes": {
+            "other": {
+              "count": 10453,
+              "proportion": 0.9504455355519186
+            },
+            "face / head / paw groom": {
+              "count": 545,
+              "proportion": 0.04955446444808147
+            }
+          },
+          "mean_total_variation": 0.050561946598891926,
+          "splits": {
+            "train": {
+              "n_samples": 7699,
+              "total_variation": 0.02188853380773852,
+              "classes": {
+                "other": {
+                  "count": 7486,
+                  "proportion": 0.972334069359657
+                },
+                "face / head / paw groom": {
+                  "count": 213,
+                  "proportion": 0.027665930640342902
+                }
+              }
+            },
+            "val": {
+              "n_samples": 1650,
+              "total_variation": 0.013796888690505684,
+              "classes": {
+                "other": {
+                  "count": 1591,
+                  "proportion": 0.9642424242424242
+                },
+                "face / head / paw groom": {
+                  "count": 59,
+                  "proportion": 0.03575757575757576
+                }
+              }
+            },
+            "test": {
+              "n_samples": 1649,
+              "total_variation": 0.11600041729843158,
+              "classes": {
+                "other": {
+                  "count": 1376,
+                  "proportion": 0.834445118253487
+                },
+                "face / head / paw groom": {
+                  "count": 273,
+                  "proportion": 0.16555488174651303
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 4,
+          "n_samples": 17392,
+          "full_classes": {
+            "other": {
+              "count": 16581,
+              "proportion": 0.953369365225391
+            },
+            "face / head / paw groom": {
+              "count": 811,
+              "proportion": 0.04663063477460901
+            }
+          },
+          "mean_total_variation": 0.022702908082153472,
+          "splits": {
+            "train": {
+              "n_samples": 12175,
+              "total_variation": 0.0037184412007502977,
+              "classes": {
+                "other": {
+                  "count": 11562,
+                  "proportion": 0.9496509240246407
+                },
+                "face / head / paw groom": {
+                  "count": 613,
+                  "proportion": 0.05034907597535934
+                }
+              }
+            },
+            "val": {
+              "n_samples": 2609,
+              "total_variation": 0.023511182013432382,
+              "classes": {
+                "other": {
+                  "count": 2426,
+                  "proportion": 0.9298581832119586
+                },
+                "face / head / paw groom": {
+                  "count": 183,
+                  "proportion": 0.07014181678804139
+                }
+              }
+            },
+            "test": {
+              "n_samples": 2608,
+              "total_variation": 0.040879101032277744,
+              "classes": {
+                "other": {
+                  "count": 2593,
+                  "proportion": 0.9942484662576687
+                },
+                "face / head / paw groom": {
+                  "count": 15,
+                  "proportion": 0.005751533742331288
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "order": [
+        "val",
+        "train",
+        "test"
+      ],
+      "balance_score": 0.05601823297414368,
+      "aggregate_mean_total_variation": 0.03759212012339848,
+      "aggregate_splits": {
+        "train": {
+          "n_samples": 63747,
+          "total_variation": 0.005033103028334724,
+          "classes": {
+            "other": {
+              "count": 59860,
+              "proportion": 0.9390245815489356
+            },
+            "face / head / paw groom": {
+              "count": 3887,
+              "proportion": 0.06097541845106436
+            }
+          }
+        },
+        "val": {
+          "n_samples": 13656,
+          "total_variation": 0.04213623091115071,
+          "classes": {
+            "other": {
+              "count": 13330,
+              "proportion": 0.9761277094317516
+            },
+            "face / head / paw groom": {
+              "count": 326,
+              "proportion": 0.02387229056824839
+            }
+          }
+        },
+        "test": {
+          "n_samples": 13661,
+          "total_variation": 0.06560702643071001,
+          "classes": {
+            "other": {
+              "count": 11863,
+              "proportion": 0.8683844520898909
+            },
+            "face / head / paw groom": {
+              "count": 1798,
+              "proportion": 0.13161554791010907
+            }
+          }
+        }
+      },
+      "datasets": [
+        {
+          "dataset_id": 0,
+          "n_samples": 33299,
+          "full_classes": {
+            "other": {
+              "count": 31082,
+              "proportion": 0.9334214240667887
+            },
+            "face / head / paw groom": {
+              "count": 2217,
+              "proportion": 0.0665785759332112
+            }
+          },
+          "mean_total_variation": 0.0925107956290074,
+          "splits": {
+            "train": {
+              "n_samples": 23310,
+              "total_variation": 0.025480334834970125,
+              "classes": {
+                "other": {
+                  "count": 22352,
+                  "proportion": 0.9589017589017589
+                },
+                "face / head / paw groom": {
+                  "count": 958,
+                  "proportion": 0.041098241098241096
+                }
+              }
+            },
+            "val": {
+              "n_samples": 4994,
+              "total_variation": 0.06657857593321123,
+              "classes": {
+                "other": {
+                  "count": 4994,
+                  "proportion": 1.0
+                },
+                "face / head / paw groom": {
+                  "count": 0,
+                  "proportion": 0.0
+                }
+              }
+            },
+            "test": {
+              "n_samples": 4995,
+              "total_variation": 0.18547347611884082,
+              "classes": {
+                "other": {
+                  "count": 3736,
+                  "proportion": 0.7479479479479479
+                },
+                "face / head / paw groom": {
+                  "count": 1259,
+                  "proportion": 0.25205205205205206
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 1,
+          "n_samples": 18329,
+          "full_classes": {
+            "other": {
+              "count": 16206,
+              "proportion": 0.8841726226198919
+            },
+            "face / head / paw groom": {
+              "count": 2123,
+              "proportion": 0.11582737738010802
+            }
+          },
+          "mean_total_variation": 0.04548536423297086,
+          "splits": {
+            "train": {
+              "n_samples": 12830,
+              "total_variation": 0.024079091832674475,
+              "classes": {
+                "other": {
+                  "count": 11035,
+                  "proportion": 0.8600935307872175
+                },
+                "face / head / paw groom": {
+                  "count": 1795,
+                  "proportion": 0.13990646921278255
+                }
+              }
+            },
+            "val": {
+              "n_samples": 2749,
+              "total_variation": 0.10200416894067552,
+              "classes": {
+                "other": {
+                  "count": 2711,
+                  "proportion": 0.9861767915605675
+                },
+                "face / head / paw groom": {
+                  "count": 38,
+                  "proportion": 0.013823208439432522
+                }
+              }
+            },
+            "test": {
+              "n_samples": 2750,
+              "total_variation": 0.010372831925562584,
+              "classes": {
+                "other": {
+                  "count": 2460,
+                  "proportion": 0.8945454545454545
+                },
+                "face / head / paw groom": {
+                  "count": 290,
+                  "proportion": 0.10545454545454545
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 2,
+          "n_samples": 11046,
+          "full_classes": {
+            "other": {
+              "count": 10731,
+              "proportion": 0.9714828897338403
+            },
+            "face / head / paw groom": {
+              "count": 315,
+              "proportion": 0.028517110266159697
+            }
+          },
+          "mean_total_variation": 0.0213739703803688,
+          "splits": {
+            "train": {
+              "n_samples": 7733,
+              "total_variation": 0.011312192721038072,
+              "classes": {
+                "other": {
+                  "count": 7425,
+                  "proportion": 0.9601706970128022
+                },
+                "face / head / paw groom": {
+                  "count": 308,
+                  "proportion": 0.03982930298719772
+                }
+              }
+            },
+            "val": {
+              "n_samples": 1656,
+              "total_variation": 0.02851711026615968,
+              "classes": {
+                "other": {
+                  "count": 1656,
+                  "proportion": 1.0
+                },
+                "face / head / paw groom": {
+                  "count": 0,
+                  "proportion": 0.0
+                }
+              }
+            },
+            "test": {
+              "n_samples": 1657,
+              "total_variation": 0.02429260815390865,
+              "classes": {
+                "other": {
+                  "count": 1650,
+                  "proportion": 0.995775497887749
+                },
+                "face / head / paw groom": {
+                  "count": 7,
+                  "proportion": 0.004224502112251056
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 3,
+          "n_samples": 10998,
+          "full_classes": {
+            "other": {
+              "count": 10453,
+              "proportion": 0.9504455355519186
+            },
+            "face / head / paw groom": {
+              "count": 545,
+              "proportion": 0.04955446444808147
+            }
+          },
+          "mean_total_variation": 0.05056194659889193,
+          "splits": {
+            "train": {
+              "n_samples": 7699,
+              "total_variation": 0.02188853380773852,
+              "classes": {
+                "other": {
+                  "count": 7486,
+                  "proportion": 0.972334069359657
+                },
+                "face / head / paw groom": {
+                  "count": 213,
+                  "proportion": 0.027665930640342902
+                }
+              }
+            },
+            "val": {
+              "n_samples": 1649,
+              "total_variation": 0.11600041729843158,
+              "classes": {
+                "other": {
+                  "count": 1376,
+                  "proportion": 0.834445118253487
+                },
+                "face / head / paw groom": {
+                  "count": 273,
+                  "proportion": 0.16555488174651303
+                }
+              }
+            },
+            "test": {
+              "n_samples": 1650,
+              "total_variation": 0.013796888690505684,
+              "classes": {
+                "other": {
+                  "count": 1591,
+                  "proportion": 0.9642424242424242
+                },
+                "face / head / paw groom": {
+                  "count": 59,
+                  "proportion": 0.03575757575757576
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 4,
+          "n_samples": 17392,
+          "full_classes": {
+            "other": {
+              "count": 16581,
+              "proportion": 0.953369365225391
+            },
+            "face / head / paw groom": {
+              "count": 811,
+              "proportion": 0.04663063477460901
+            }
+          },
+          "mean_total_variation": 0.022702908082153476,
+          "splits": {
+            "train": {
+              "n_samples": 12175,
+              "total_variation": 0.0037184412007502977,
+              "classes": {
+                "other": {
+                  "count": 11562,
+                  "proportion": 0.9496509240246407
+                },
+                "face / head / paw groom": {
+                  "count": 613,
+                  "proportion": 0.05034907597535934
+                }
+              }
+            },
+            "val": {
+              "n_samples": 2608,
+              "total_variation": 0.040879101032277744,
+              "classes": {
+                "other": {
+                  "count": 2593,
+                  "proportion": 0.9942484662576687
+                },
+                "face / head / paw groom": {
+                  "count": 15,
+                  "proportion": 0.005751533742331288
+                }
+              }
+            },
+            "test": {
+              "n_samples": 2609,
+              "total_variation": 0.023511182013432382,
+              "classes": {
+                "other": {
+                  "count": 2426,
+                  "proportion": 0.9298581832119586
+                },
+                "face / head / paw groom": {
+                  "count": 183,
+                  "proportion": 0.07014181678804139
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "order": [
+        "train",
+        "val",
+        "test"
+      ],
+      "balance_score": 0.06191505029683389,
+      "aggregate_mean_total_variation": 0.03652160347365167,
+      "aggregate_splits": {
+        "train": {
+          "n_samples": 63743,
+          "total_variation": 0.019336730067008683,
+          "classes": {
+            "other": {
+              "count": 60768,
+              "proportion": 0.9533282085876096
+            },
+            "face / head / paw groom": {
+              "count": 2975,
+              "proportion": 0.04667179141239038
+            }
+          }
+        },
+        "val": {
+          "n_samples": 13660,
+          "total_variation": 0.024621053923236325,
+          "classes": {
+            "other": {
+              "count": 12422,
+              "proportion": 0.9093704245973646
+            },
+            "face / head / paw groom": {
+              "count": 1238,
+              "proportion": 0.09062957540263543
+            }
+          }
+        },
+        "test": {
+          "n_samples": 13661,
+          "total_variation": 0.06560702643071001,
+          "classes": {
+            "other": {
+              "count": 11863,
+              "proportion": 0.8683844520898909
+            },
+            "face / head / paw groom": {
+              "count": 1798,
+              "proportion": 0.13161554791010907
+            }
+          }
+        }
+      },
+      "datasets": [
+        {
+          "dataset_id": 0,
+          "n_samples": 33299,
+          "full_classes": {
+            "other": {
+              "count": 31082,
+              "proportion": 0.9334214240667887
+            },
+            "face / head / paw groom": {
+              "count": 2217,
+              "proportion": 0.0665785759332112
+            }
+          },
+          "mean_total_variation": 0.09209074572020493,
+          "splits": {
+            "train": {
+              "n_samples": 23309,
+              "total_variation": 0.02582178671016432,
+              "classes": {
+                "other": {
+                  "count": 22359,
+                  "proportion": 0.9592432107769531
+                },
+                "face / head / paw groom": {
+                  "count": 950,
+                  "proportion": 0.040756789223046895
+                }
+              }
+            },
+            "val": {
+              "n_samples": 4995,
+              "total_variation": 0.06497697433160962,
+              "classes": {
+                "other": {
+                  "count": 4987,
+                  "proportion": 0.9983983983983984
+                },
+                "face / head / paw groom": {
+                  "count": 8,
+                  "proportion": 0.0016016016016016017
+                }
+              }
+            },
+            "test": {
+              "n_samples": 4995,
+              "total_variation": 0.18547347611884082,
+              "classes": {
+                "other": {
+                  "count": 3736,
+                  "proportion": 0.7479479479479479
+                },
+                "face / head / paw groom": {
+                  "count": 1259,
+                  "proportion": 0.25205205205205206
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 1,
+          "n_samples": 18329,
+          "full_classes": {
+            "other": {
+              "count": 16206,
+              "proportion": 0.8841726226198919
+            },
+            "face / head / paw groom": {
+              "count": 2123,
+              "proportion": 0.11582737738010802
+            }
+          },
+          "mean_total_variation": 0.0527167899877341,
+          "splits": {
+            "train": {
+              "n_samples": 12830,
+              "total_variation": 0.02424514822967936,
+              "classes": {
+                "other": {
+                  "count": 11655,
+                  "proportion": 0.9084177708495713
+                },
+                "face / head / paw groom": {
+                  "count": 1175,
+                  "proportion": 0.09158222915042868
+                }
+              }
+            },
+            "val": {
+              "n_samples": 2749,
+              "total_variation": 0.12353238980796036,
+              "classes": {
+                "other": {
+                  "count": 2091,
+                  "proportion": 0.7606402328119316
+                },
+                "face / head / paw groom": {
+                  "count": 658,
+                  "proportion": 0.2393597671880684
+                }
+              }
+            },
+            "test": {
+              "n_samples": 2750,
+              "total_variation": 0.010372831925562584,
+              "classes": {
+                "other": {
+                  "count": 2460,
+                  "proportion": 0.8945454545454545
+                },
+                "face / head / paw groom": {
+                  "count": 290,
+                  "proportion": 0.10545454545454545
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 2,
+          "n_samples": 11046,
+          "full_classes": {
+            "other": {
+              "count": 10731,
+              "proportion": 0.9714828897338403
+            },
+            "face / head / paw groom": {
+              "count": 315,
+              "proportion": 0.028517110266159697
+            }
+          },
+          "mean_total_variation": 0.04782763435660035,
+          "splits": {
+            "train": {
+              "n_samples": 7732,
+              "total_variation": 0.016747839702269354,
+              "classes": {
+                "other": {
+                  "count": 7641,
+                  "proportion": 0.9882307294361097
+                },
+                "face / head / paw groom": {
+                  "count": 91,
+                  "proportion": 0.011769270563890325
+                }
+              }
+            },
+            "val": {
+              "n_samples": 1657,
+              "total_variation": 0.10244245521362305,
+              "classes": {
+                "other": {
+                  "count": 1440,
+                  "proportion": 0.8690404345202173
+                },
+                "face / head / paw groom": {
+                  "count": 217,
+                  "proportion": 0.13095956547978274
+                }
+              }
+            },
+            "test": {
+              "n_samples": 1657,
+              "total_variation": 0.02429260815390865,
+              "classes": {
+                "other": {
+                  "count": 1650,
+                  "proportion": 0.995775497887749
+                },
+                "face / head / paw groom": {
+                  "count": 7,
+                  "proportion": 0.004224502112251056
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 3,
+          "n_samples": 10998,
+          "full_classes": {
+            "other": {
+              "count": 10453,
+              "proportion": 0.9504455355519186
+            },
+            "face / head / paw groom": {
+              "count": 545,
+              "proportion": 0.04955446444808147
+            }
+          },
+          "mean_total_variation": 0.025643390020763518,
+          "splits": {
+            "train": {
+              "n_samples": 7698,
+              "total_variation": 0.013578816923703427,
+              "classes": {
+                "other": {
+                  "count": 7212,
+                  "proportion": 0.9368667186282151
+                },
+                "face / head / paw groom": {
+                  "count": 486,
+                  "proportion": 0.06313328137178488
+                }
+              }
+            },
+            "val": {
+              "n_samples": 1650,
+              "total_variation": 0.049554464448081446,
+              "classes": {
+                "other": {
+                  "count": 1650,
+                  "proportion": 1.0
+                },
+                "face / head / paw groom": {
+                  "count": 0,
+                  "proportion": 0.0
+                }
+              }
+            },
+            "test": {
+              "n_samples": 1650,
+              "total_variation": 0.013796888690505684,
+              "classes": {
+                "other": {
+                  "count": 1591,
+                  "proportion": 0.9642424242424242
+                },
+                "face / head / paw groom": {
+                  "count": 59,
+                  "proportion": 0.03575757575757576
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 4,
+          "n_samples": 17392,
+          "full_classes": {
+            "other": {
+              "count": 16581,
+              "proportion": 0.953369365225391
+            },
+            "face / head / paw groom": {
+              "count": 811,
+              "proportion": 0.04663063477460901
+            }
+          },
+          "mean_total_variation": 0.04571793366244448,
+          "splits": {
+            "train": {
+              "n_samples": 12174,
+              "total_variation": 0.024205794952036327,
+              "classes": {
+                "other": {
+                  "count": 11901,
+                  "proportion": 0.9775751601774273
+                },
+                "face / head / paw groom": {
+                  "count": 273,
+                  "proportion": 0.022424839822572696
+                }
+              }
+            },
+            "val": {
+              "n_samples": 2609,
+              "total_variation": 0.08943682402186472,
+              "classes": {
+                "other": {
+                  "count": 2254,
+                  "proportion": 0.8639325412035262
+                },
+                "face / head / paw groom": {
+                  "count": 355,
+                  "proportion": 0.13606745879647375
+                }
+              }
+            },
+            "test": {
+              "n_samples": 2609,
+              "total_variation": 0.023511182013432382,
+              "classes": {
+                "other": {
+                  "count": 2426,
+                  "proportion": 0.9298581832119586
+                },
+                "face / head / paw groom": {
+                  "count": 183,
+                  "proportion": 0.07014181678804139
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "order": [
+        "train",
+        "test",
+        "val"
+      ],
+      "balance_score": 0.06191505029683389,
+      "aggregate_mean_total_variation": 0.03652160347365167,
+      "aggregate_splits": {
+        "train": {
+          "n_samples": 63743,
+          "total_variation": 0.019336730067008683,
+          "classes": {
+            "other": {
+              "count": 60768,
+              "proportion": 0.9533282085876096
+            },
+            "face / head / paw groom": {
+              "count": 2975,
+              "proportion": 0.04667179141239038
+            }
+          }
+        },
+        "val": {
+          "n_samples": 13661,
+          "total_variation": 0.06560702643071001,
+          "classes": {
+            "other": {
+              "count": 11863,
+              "proportion": 0.8683844520898909
+            },
+            "face / head / paw groom": {
+              "count": 1798,
+              "proportion": 0.13161554791010907
+            }
+          }
+        },
+        "test": {
+          "n_samples": 13660,
+          "total_variation": 0.024621053923236325,
+          "classes": {
+            "other": {
+              "count": 12422,
+              "proportion": 0.9093704245973646
+            },
+            "face / head / paw groom": {
+              "count": 1238,
+              "proportion": 0.09062957540263543
+            }
+          }
+        }
+      },
+      "datasets": [
+        {
+          "dataset_id": 0,
+          "n_samples": 33299,
+          "full_classes": {
+            "other": {
+              "count": 31082,
+              "proportion": 0.9334214240667887
+            },
+            "face / head / paw groom": {
+              "count": 2217,
+              "proportion": 0.0665785759332112
+            }
+          },
+          "mean_total_variation": 0.09209074572020493,
+          "splits": {
+            "train": {
+              "n_samples": 23309,
+              "total_variation": 0.02582178671016432,
+              "classes": {
+                "other": {
+                  "count": 22359,
+                  "proportion": 0.9592432107769531
+                },
+                "face / head / paw groom": {
+                  "count": 950,
+                  "proportion": 0.040756789223046895
+                }
+              }
+            },
+            "val": {
+              "n_samples": 4995,
+              "total_variation": 0.18547347611884082,
+              "classes": {
+                "other": {
+                  "count": 3736,
+                  "proportion": 0.7479479479479479
+                },
+                "face / head / paw groom": {
+                  "count": 1259,
+                  "proportion": 0.25205205205205206
+                }
+              }
+            },
+            "test": {
+              "n_samples": 4995,
+              "total_variation": 0.06497697433160962,
+              "classes": {
+                "other": {
+                  "count": 4987,
+                  "proportion": 0.9983983983983984
+                },
+                "face / head / paw groom": {
+                  "count": 8,
+                  "proportion": 0.0016016016016016017
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 1,
+          "n_samples": 18329,
+          "full_classes": {
+            "other": {
+              "count": 16206,
+              "proportion": 0.8841726226198919
+            },
+            "face / head / paw groom": {
+              "count": 2123,
+              "proportion": 0.11582737738010802
+            }
+          },
+          "mean_total_variation": 0.0527167899877341,
+          "splits": {
+            "train": {
+              "n_samples": 12830,
+              "total_variation": 0.02424514822967936,
+              "classes": {
+                "other": {
+                  "count": 11655,
+                  "proportion": 0.9084177708495713
+                },
+                "face / head / paw groom": {
+                  "count": 1175,
+                  "proportion": 0.09158222915042868
+                }
+              }
+            },
+            "val": {
+              "n_samples": 2750,
+              "total_variation": 0.010372831925562584,
+              "classes": {
+                "other": {
+                  "count": 2460,
+                  "proportion": 0.8945454545454545
+                },
+                "face / head / paw groom": {
+                  "count": 290,
+                  "proportion": 0.10545454545454545
+                }
+              }
+            },
+            "test": {
+              "n_samples": 2749,
+              "total_variation": 0.12353238980796036,
+              "classes": {
+                "other": {
+                  "count": 2091,
+                  "proportion": 0.7606402328119316
+                },
+                "face / head / paw groom": {
+                  "count": 658,
+                  "proportion": 0.2393597671880684
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 2,
+          "n_samples": 11046,
+          "full_classes": {
+            "other": {
+              "count": 10731,
+              "proportion": 0.9714828897338403
+            },
+            "face / head / paw groom": {
+              "count": 315,
+              "proportion": 0.028517110266159697
+            }
+          },
+          "mean_total_variation": 0.04782763435660035,
+          "splits": {
+            "train": {
+              "n_samples": 7732,
+              "total_variation": 0.016747839702269354,
+              "classes": {
+                "other": {
+                  "count": 7641,
+                  "proportion": 0.9882307294361097
+                },
+                "face / head / paw groom": {
+                  "count": 91,
+                  "proportion": 0.011769270563890325
+                }
+              }
+            },
+            "val": {
+              "n_samples": 1657,
+              "total_variation": 0.02429260815390865,
+              "classes": {
+                "other": {
+                  "count": 1650,
+                  "proportion": 0.995775497887749
+                },
+                "face / head / paw groom": {
+                  "count": 7,
+                  "proportion": 0.004224502112251056
+                }
+              }
+            },
+            "test": {
+              "n_samples": 1657,
+              "total_variation": 0.10244245521362305,
+              "classes": {
+                "other": {
+                  "count": 1440,
+                  "proportion": 0.8690404345202173
+                },
+                "face / head / paw groom": {
+                  "count": 217,
+                  "proportion": 0.13095956547978274
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 3,
+          "n_samples": 10998,
+          "full_classes": {
+            "other": {
+              "count": 10453,
+              "proportion": 0.9504455355519186
+            },
+            "face / head / paw groom": {
+              "count": 545,
+              "proportion": 0.04955446444808147
+            }
+          },
+          "mean_total_variation": 0.025643390020763518,
+          "splits": {
+            "train": {
+              "n_samples": 7698,
+              "total_variation": 0.013578816923703427,
+              "classes": {
+                "other": {
+                  "count": 7212,
+                  "proportion": 0.9368667186282151
+                },
+                "face / head / paw groom": {
+                  "count": 486,
+                  "proportion": 0.06313328137178488
+                }
+              }
+            },
+            "val": {
+              "n_samples": 1650,
+              "total_variation": 0.013796888690505684,
+              "classes": {
+                "other": {
+                  "count": 1591,
+                  "proportion": 0.9642424242424242
+                },
+                "face / head / paw groom": {
+                  "count": 59,
+                  "proportion": 0.03575757575757576
+                }
+              }
+            },
+            "test": {
+              "n_samples": 1650,
+              "total_variation": 0.049554464448081446,
+              "classes": {
+                "other": {
+                  "count": 1650,
+                  "proportion": 1.0
+                },
+                "face / head / paw groom": {
+                  "count": 0,
+                  "proportion": 0.0
+                }
+              }
+            }
+          }
+        },
+        {
+          "dataset_id": 4,
+          "n_samples": 17392,
+          "full_classes": {
+            "other": {
+              "count": 16581,
+              "proportion": 0.953369365225391
+            },
+            "face / head / paw groom": {
+              "count": 811,
+              "proportion": 0.04663063477460901
+            }
+          },
+          "mean_total_variation": 0.04571793366244448,
+          "splits": {
+            "train": {
+              "n_samples": 12174,
+              "total_variation": 0.024205794952036327,
+              "classes": {
+                "other": {
+                  "count": 11901,
+                  "proportion": 0.9775751601774273
+                },
+                "face / head / paw groom": {
+                  "count": 273,
+                  "proportion": 0.022424839822572696
+                }
+              }
+            },
+            "val": {
+              "n_samples": 2609,
+              "total_variation": 0.023511182013432382,
+              "classes": {
+                "other": {
+                  "count": 2426,
+                  "proportion": 0.9298581832119586
+                },
+                "face / head / paw groom": {
+                  "count": 183,
+                  "proportion": 0.07014181678804139
+                }
+              }
+            },
+            "test": {
+              "n_samples": 2609,
+              "total_variation": 0.08943682402186472,
+              "classes": {
+                "other": {
+                  "count": 2254,
+                  "proportion": 0.8639325412035262
+                },
+                "face / head / paw groom": {
+                  "count": 355,
+                  "proportion": 0.13606745879647375
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
