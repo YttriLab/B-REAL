@@ -61,6 +61,7 @@ def bout_hit_rate(
 
 def main() -> None:
     from binary_behavior_common import (
+        DEFAULT_SPLIT_CONFIG,
         load_binary_split,
         predict_test_split,
         save_predictions,
@@ -73,6 +74,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--predictions-output", type=Path)
     parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA_ROOT)
+    parser.add_argument("--split-config", type=Path, default=DEFAULT_SPLIT_CONFIG)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
@@ -83,7 +85,8 @@ def main() -> None:
     if not args.checkpoint.is_file():
         raise FileNotFoundError(f"Checkpoint not found: {args.checkpoint}")
     loaded = load_binary_split(
-        args.data_root.resolve(), args.behavior, shuffle=args.shuffle_split, random_seed=args.seed
+        args.data_root.resolve(), args.behavior, shuffle=args.shuffle_split, random_seed=args.seed,
+        split_config=args.split_config.resolve() if args.split_config else None,
     )
     predictions = predict_test_split(
         args.checkpoint, loaded, batch_size=args.batch_size,

@@ -234,6 +234,7 @@ def calculate_metrics(y_true, y_pred, frames, datasets) -> dict:
 
 def main() -> None:
     from binary_behavior_common import (
+        DEFAULT_SPLIT_CONFIG,
         load_binary_split,
         load_predictions,
         predict_test_split,
@@ -246,6 +247,7 @@ def main() -> None:
     parser.add_argument("--predictions", type=Path)
     parser.add_argument("--checkpoint", type=Path)
     parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA_ROOT)
+    parser.add_argument("--split-config", type=Path, default=DEFAULT_SPLIT_CONFIG)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
@@ -254,7 +256,8 @@ def main() -> None:
     args = parser.parse_args()
 
     loaded = load_binary_split(
-        args.data_root.resolve(), args.behavior, shuffle=args.shuffle_split, random_seed=args.seed
+        args.data_root.resolve(), args.behavior, shuffle=args.shuffle_split, random_seed=args.seed,
+        split_config=args.split_config.resolve() if args.split_config else None,
     )
     if args.predictions:
         predictions = load_predictions(args.predictions.resolve(), expected_behavior=loaded["behavior"])

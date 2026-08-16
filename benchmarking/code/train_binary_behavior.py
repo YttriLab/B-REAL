@@ -17,12 +17,13 @@ from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from binary_behavior_common import (
     DEFAULT_DATA_ROOT,
     DEFAULT_OUTPUT_ROOT,
+    DEFAULT_SPLIT_CONFIG,
     discover_sources,
     load_binary_split,
     slugify,
     write_json,
 )
-from behavior_benchmark_callbacks import ValidationMetricsPrinter
+from behavior_benchmark_callbacks import TrainingProgressPrinter, ValidationMetricsPrinter
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
@@ -36,6 +37,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--list-behaviors", action="store_true")
     parser.add_argument("--data-root", type=Path, default=DEFAULT_DATA_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
+    parser.add_argument("--split-config", type=Path, default=DEFAULT_SPLIT_CONFIG)
     parser.add_argument("--max-epochs", type=int, default=100)
     parser.add_argument("--patience", type=int, default=4)
     parser.add_argument("--batch-size", type=int, default=64)
@@ -45,6 +47,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force", action="store_true", help="Overwrite an existing checkpoint")
     parser.add_argument("--shuffle-split", action="store_true", help="Use bout-stratified rather than chronological splits")
     parser.add_argument("--no-progress-bar", action="store_true")
+    parser.add_argument("--progress-every", type=int, default=50)
     args = parser.parse_args()
     if not args.list_behaviors and not args.behavior:
         parser.error("--behavior is required unless --list-behaviors is used")
@@ -59,7 +62,8 @@ def main() -> None:
         return
 
     loaded = load_binary_split(
-        args.data_root.resolve(), args.behavior, shuffle=args.shuffle_split, random_seed=args.seed
+        args.data_root.resolve(), args.behavior, shuffle=args.shuffle_split, random_seed=args.seed,
+        split_config=args.split_config.resolve() if args.split_config else None,
     )
     behavior = loaded["behavior"]
     output_dir = args.output_root.resolve() / slugify(behavior)
@@ -94,7 +98,7 @@ def main() -> None:
         temporal_pool="last",
         weights=weights,
         class_names=loaded["class_names"],
-        boundary_smoothing={"enabled": True, "epsilon": 0.3, "window": 5},
+        boundary_smoothing={"enabled": False, "epsilon": 0.3, "window": 5},
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -110,6 +114,7 @@ def main() -> None:
             callbacks=[
                 callback,
                 EarlyStopping(monitor="val_mcc", mode="max", patience=args.patience),
+                TrainingProgressPrinter(args.progress_every),
                 ValidationMetricsPrinter(),
             ],
             max_epochs=args.max_epochs,

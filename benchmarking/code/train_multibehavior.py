@@ -21,7 +21,7 @@ from binary_behavior_common import (
     load_multibehavior_split,
     write_json,
 )
-from behavior_benchmark_callbacks import ValidationMetricsPrinter
+from behavior_benchmark_callbacks import TrainingProgressPrinter, ValidationMetricsPrinter
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
@@ -47,6 +47,7 @@ def main() -> None:
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--shuffle-split", action="store_true")
     parser.add_argument("--no-progress-bar", action="store_true")
+    parser.add_argument("--progress-every", type=int, default=50)
     args = parser.parse_args()
 
     loaded = load_multibehavior_split(
@@ -77,7 +78,7 @@ def main() -> None:
         lr_plateau_patience=args.lr_plateau_patience, lr_min=args.min_learning_rate,
         temporal_pool="last",
         weights=weights, class_names=loaded["class_names"],
-        boundary_smoothing={"enabled": True, "epsilon": 0.3, "window": 5},
+        boundary_smoothing={"enabled": False, "epsilon": 0.3, "window": 5},
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     temporary_dir = Path(tempfile.mkdtemp(prefix="multibehavioral_"))
@@ -92,6 +93,7 @@ def main() -> None:
             callbacks=[
                 checkpoint_callback,
                 EarlyStopping(monitor="val_mcc", mode="max", patience=args.patience),
+                TrainingProgressPrinter(args.progress_every),
                 ValidationMetricsPrinter(),
             ],
             max_epochs=args.max_epochs, accelerator=args.accelerator, devices=1,

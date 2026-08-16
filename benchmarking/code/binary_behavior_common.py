@@ -36,9 +36,13 @@ def discover_sources(data_root: Path) -> tuple[list[Path], list[Path], list[str]
     import pandas as pd
 
     frame_root = data_root / "frames"
+    if not frame_root.is_dir():
+        frame_root = data_root / "processed_frames"
     label_root = data_root / "labels"
     if not frame_root.is_dir() or not label_root.is_dir():
-        raise FileNotFoundError(f"Expected frames/ and labels/ beneath {data_root}")
+        raise FileNotFoundError(
+            f"Expected frames/ (or processed_frames/) and labels/ beneath {data_root}"
+        )
 
     frame_dirs: list[Path] = []
     label_paths: list[Path] = []
@@ -46,6 +50,8 @@ def discover_sources(data_root: Path) -> tuple[list[Path], list[Path], list[str]
         candidates = [
             label_root / f"{frame_dir.name}_bouts.csv",
             label_root / f"{frame_dir.name}.csv",
+            label_root / frame_dir.name / f"{frame_dir.name}_bouts.csv",
+            label_root / frame_dir.name / f"{frame_dir.name}.csv",
         ]
         label_path = next((p for p in candidates if p.is_file()), None)
         if label_path is not None:
@@ -85,6 +91,9 @@ def load_binary_split(
     random_seed: int = 42,
     split_config: Path | None = DEFAULT_SPLIT_CONFIG,
 ):
+    local_split_config = data_root / "benchmark_split_config.json"
+    if split_config == DEFAULT_SPLIT_CONFIG and local_split_config.is_file():
+        split_config = local_split_config
     frame_dirs, label_paths, available = discover_sources(data_root)
     behavior = resolve_behavior(behavior, available)
     paths, labels, class_names, boundary_dists = load_data(
@@ -127,9 +136,12 @@ def load_binary_split(
                 f"Split config datasets {configured_names!r} do not match discovered datasets {actual_names!r}"
             )
         behavior_config = config.get("behaviors", {}).get(behavior)
-        if behavior_config is None:
+        split_order_by_dataset = (
+            behavior_config.get("split_order_by_dataset") if behavior_config
+            else config.get("default_split_order_by_dataset")
+        )
+        if split_order_by_dataset is None:
             raise ValueError(f"Split config has no entry for behavior {behavior!r}: {split_config}")
-        split_order_by_dataset = behavior_config["split_order_by_dataset"]
 
     train_data, val_data, test_data, test_clip_sizes = train_test_split(
         paths,
@@ -176,6 +188,9 @@ def load_multibehavior_split(
     random_seed: int = 42,
     split_config: Path | None = DEFAULT_SPLIT_CONFIG,
 ):
+    local_split_config = data_root / "benchmark_split_config.json"
+    if split_config == DEFAULT_SPLIT_CONFIG and local_split_config.is_file():
+        split_config = local_split_config
     frame_dirs, label_paths, _ = discover_sources(data_root)
     paths, labels, class_names, boundary_dists = load_data(
         frame_dirs=[str(path) for path in frame_dirs],
@@ -188,9 +203,12 @@ def load_multibehavior_split(
         if config.get("dataset_names") != [path.name for path in frame_dirs]:
             raise ValueError("Multibehavior split config does not match the discovered datasets")
         behavior_config = config.get("multibehavioral")
-        if behavior_config is None:
+        split_order_by_dataset = (
+            behavior_config.get("split_order_by_dataset") if behavior_config
+            else config.get("default_split_order_by_dataset")
+        )
+        if split_order_by_dataset is None:
             raise ValueError(f"Split config has no multibehavioral entry: {split_config}")
-        split_order_by_dataset = behavior_config["split_order_by_dataset"]
     train_data, val_data, test_data, test_clip_sizes = train_test_split(
         paths, labels, boundary_dists,
         train_percent=train_percent, val_percent=val_percent, test_percent=test_percent,
