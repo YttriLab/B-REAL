@@ -27,6 +27,16 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 RESULTS_DIR = REPO_ROOT / "benchmarking" / "figures" / "inference_time"
 REPORT_PATH = RESULTS_DIR / "device_report.txt"
 
+# Reuse the exact crop and validation transform used by the app and the
+# non-optimized benchmark rather than maintaining a second approximation.
+from benchmark_inference_speed import (
+    _crop_frame,
+    _preprocess_clip,
+    _synthetic_crop_inputs,
+)
+from backend.services.inference_service import _build_val_transform
+from tune_cropping import FindRatBoundingBox
+
 
 def scenario_suffix(scenario: str | None) -> str:
     """Return a short, filesystem-safe suffix while preserving the full tag in metadata."""
@@ -138,26 +148,35 @@ def device_specs(backend: str) -> dict:
 
 
 def save_bar_plot(model_path: Path, result: dict, tested_at: datetime) -> Path:
-    """Save the old benchmark's mean ± population-standard-deviation chart."""
+    """Save crop, preprocessing, and optimized inference mean ± std bars."""
     import matplotlib.pyplot as plt
 
-    mean = result.get("mean_ms")
-    std = result.get("std_ms") or 0.0
-    if mean is None:
+    if result.get("mean_ms") is None:
         raise RuntimeError("Backend did not report a mean latency; cannot create plot")
+    stages = [
+        ("Crop", result["cropping_mean_ms"], result["cropping_std_ms"]),
+        ("Preprocess", result["preprocessing_mean_ms"], result["preprocessing_std_ms"]),
+        ("Inference", result["mean_ms"], result.get("std_ms") or 0.0),
+    ]
+    labels = [stage[0] for stage in stages]
+    means = [stage[1] for stage in stages]
+    stds = [stage[2] for stage in stages]
     backend = result["backend"]
     mode = result.get("precision") or result.get("performance_hint", "")
-    label = f"{backend}\n{mode}"
-    fig, ax = plt.subplots(figsize=(5.5, 5), dpi=150)
+    fig, ax = plt.subplots(figsize=(6.5, 5), dpi=150)
     fig.patch.set_facecolor("#fcfcfb")
     ax.set_facecolor("#fcfcfb")
-    bar = ax.bar([label], [mean], yerr=[std], capsize=5, width=0.48,
-                 color="#2a78d6", edgecolor="none",
-                 error_kw={"ecolor": "#52514e", "elinewidth": 1.2})[0]
-    ax.text(bar.get_x() + bar.get_width() / 2, mean + std + max(mean * 0.03, 0.1),
-            f"{mean:.2f} ± {std:.2f} ms", ha="center", va="bottom", color="#0b0b0b")
-    ax.set_ylabel("Inference time (ms)", color="#52514e")
-    title = f"Inference speed — {model_path.name}"
+    bars = ax.bar(labels, means, yerr=stds, capsize=5, width=0.55,
+                  color=["#1baf7a", "#eda100", "#2a78d6"], edgecolor="none",
+                  error_kw={"ecolor": "#52514e", "elinewidth": 1.2})
+    for bar, mean, std in zip(bars, means, stds):
+        ax.text(bar.get_x() + bar.get_width() / 2,
+                mean + std + max(max(means) * 0.02, 0.02),
+                f"{mean:.3f} ± {std:.3f} ms", ha="center", va="bottom",
+                color="#0b0b0b", fontsize=9)
+    ax.margins(y=0.16)
+    ax.set_ylabel("Time per pipeline step (ms)", color="#52514e")
+    title = f"Optimized pipeline — {model_path.name}\n{backend} {mode}".rstrip()
     if result.get("scenario"):
         title += f"\nScenario: {result['scenario']}"
     ax.set_title(title, color="#0b0b0b", pad=14)
@@ -205,6 +224,50 @@ def summarize(times_ms: list[float]) -> dict[str, float]:
         "p90_ms": float(np.percentile(values, 90)),
         "p95_ms": float(np.percentile(values, 95)),
         "inferences_per_second": float(1000.0 / values.mean()),
+    }
+
+
+def benchmark_pipeline_stages(args: argparse.Namespace, device: str) -> dict:
+    """Time the app's crop and tensor preprocessing around an optimized backend."""
+    import torch
+
+    frame, background = _synthetic_crop_inputs(args.frame_height, args.frame_width)
+    cropper = FindRatBoundingBox(background, box_size=args.crop_size)
+    transform = _build_val_transform(args.resolution)
+    torch_device = torch.device(device)
+
+    def sync() -> None:
+        if torch_device.type == "cuda":
+            torch.cuda.synchronize(torch_device)
+
+    for _ in range(args.pipeline_warmup):
+        rgb = _crop_frame(cropper, frame)
+        _preprocess_clip([rgb] * args.num_frames, transform, torch_device)
+    sync()
+
+    cropping = []
+    preprocessing = []
+    for _ in range(args.trials):
+        start = time.perf_counter_ns()
+        rgb = _crop_frame(cropper, frame)
+        cropping.append((time.perf_counter_ns() - start) / 1e6)
+
+        sync()
+        start = time.perf_counter_ns()
+        _preprocess_clip([rgb] * args.num_frames, transform, torch_device)
+        sync()
+        preprocessing.append((time.perf_counter_ns() - start) / 1e6)
+
+    crop_summary = summarize(cropping)
+    preprocess_summary = summarize(preprocessing)
+    return {
+        "cropping_mean_ms": crop_summary["mean_ms"],
+        "cropping_std_ms": crop_summary["std_ms"],
+        "preprocessing_mean_ms": preprocess_summary["mean_ms"],
+        "preprocessing_std_ms": preprocess_summary["std_ms"],
+        "source_frame_shape": (args.frame_height, args.frame_width, 3),
+        "crop_size": args.crop_size,
+        "preprocessing_includes_device_transfer": True,
     }
 
 
@@ -289,7 +352,12 @@ def benchmark_tensorrt(args: argparse.Namespace) -> dict:
 
 def benchmark_tensorrt_rtx(args: argparse.Namespace) -> dict:
     """Build and benchmark a TensorRT-RTX engine with GPU-resident buffers."""
-    import tensorrt_rtx as trt
+    try:
+        import tensorrt_rtx as trt
+        runtime_name = "tensorrt-rtx"
+    except ImportError:
+        import tensorrt as trt
+        runtime_name = "tensorrt-python"
     import torch
 
     if not torch.cuda.is_available():
@@ -363,7 +431,7 @@ def benchmark_tensorrt_rtx(args: argparse.Namespace) -> dict:
 
     result = summarize(times)
     result.update({
-        "backend": "tensorrt-rtx",
+        "backend": runtime_name,
         "runtime_version": trt.__version__,
         "precision": "fp32/tf32",
         "device": torch.cuda.get_device_name(0),
@@ -405,6 +473,14 @@ def main() -> None:
     rtxp.add_argument("--warmup", type=int, default=100)
     rtxp.add_argument("--workspace-mib", type=int, default=1024)
     rtxp.add_argument("--scenario", help="Free-text run tag included in outputs and filenames")
+    for backend_parser in (ovp, trtp, rtxp):
+        if backend_parser is not trtp:
+            backend_parser.add_argument("--num-frames", type=int, default=3)
+            backend_parser.add_argument("--resolution", type=int, default=224)
+        backend_parser.add_argument("--frame-height", type=int, default=1080)
+        backend_parser.add_argument("--frame-width", type=int, default=1920)
+        backend_parser.add_argument("--crop-size", type=int, default=220)
+        backend_parser.add_argument("--pipeline-warmup", type=int, default=10)
     args = parser.parse_args()
     args.model = args.model.resolve()
     if args.backend == "openvino":
@@ -413,6 +489,8 @@ def main() -> None:
         result = benchmark_tensorrt_rtx(args)
     else:
         result = benchmark_tensorrt(args)
+    pipeline_device = "cpu" if args.backend == "openvino" else "cuda:0"
+    result.update(benchmark_pipeline_stages(args, pipeline_device))
     result["scenario"] = args.scenario
     # Query immediately after the timed loop, before plotting or file I/O, so
     # transient clocks/power are as representative of the selected mode as a
@@ -421,7 +499,7 @@ def main() -> None:
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     tested_at = datetime.now()
     tag = scenario_suffix(args.scenario)
-    output = RESULTS_DIR / f"{args.model.stem}_{args.backend}{tag}_{tested_at:%Y%m%d_%H%M%S}.json"
+    output = RESULTS_DIR / f"{args.model.stem}_{result['backend']}{tag}_{tested_at:%Y%m%d_%H%M%S}.json"
     output.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
     plot = save_bar_plot(args.model, result, tested_at)
     report = append_device_report(args.model, result, tested_at)
