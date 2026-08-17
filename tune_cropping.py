@@ -1,6 +1,5 @@
 import cv2
 import numpy as np
-from functools import partial
 
 
 def pop_resize_factor(crop_params: dict):
@@ -50,12 +49,58 @@ class FindRatBoundingBox():
         self.min_contour_area = min_contour_area
         self.smoothed_center = None  # (cx, cy) in small space; persists across frames
         self.h, self.w = bg.shape[:2]
-        self.resizer = partial(cv2.resize, dsize=(self.w // downsample_factor, self.h // downsample_factor), interpolation=cv2.INTER_NEAREST)
-        self.bg = self.resizer(bg)
+        self.small_size = (self.w // downsample_factor, self.h // downsample_factor)
+        self._resize_is_noop = self.small_size == (self.w, self.h)
+        self.bg = self.resize(bg)
+        self.resizer = self.resize  # Backward-compatible callable used by older callers.
+
+        # Frames are uint8, so the floating-point background comparison can be
+        # converted into equivalent uint8 limits once.  This avoids allocating a
+        # full-frame float difference, bool mask, integer product, and uint8 copy
+        # for every frame.
+        lower_raw = np.ceil(self.bg.astype(np.float32) - self.difference_threshold) - 1
+        self._lower_limit = np.clip(lower_raw, 0, 255).astype(np.uint8)
+        self._lower_never = lower_raw < 0
+        self._lower_always = lower_raw >= 255
+        self._has_lower_never = bool(self._lower_never.any())
+        self._has_lower_always = bool(self._lower_always.any())
+
+        if self.difference_mode == "absolute":
+            upper_raw = np.floor(self.bg.astype(np.float32) + self.difference_threshold)
+            self._upper_limit = np.clip(upper_raw, 0, 255).astype(np.uint8)
+            self._upper_always = upper_raw < 0
+            self._upper_never = upper_raw >= 255
+            self._has_upper_always = bool(self._upper_always.any())
+            self._has_upper_never = bool(self._upper_never.any())
+
+        # Kernel construction is small but constant work; cache these instead of
+        # rebuilding them for every frame.
+        self._open1_kernel = np.ones((self.open1_kernel, self.open1_kernel), np.uint8)
+        self._close_kernel = np.ones((self.close_kernel, self.close_kernel), np.uint8)
+        self._open2_kernel = np.ones((self.open2_kernel, self.open2_kernel), np.uint8)
         self.prev_bounding = (0, 0, self.w, self.h)
 
     def resize(self, frame):
-        return self.resizer(frame)
+        if self._resize_is_noop:
+            return frame
+        return cv2.resize(frame, self.small_size, interpolation=cv2.INTER_NEAREST)
+
+    def _foreground_mask(self, small):
+        """Return the legacy difference test directly as an OpenCV uint8 mask."""
+        darker = cv2.compare(small, self._lower_limit, cv2.CMP_LE)
+        if self._has_lower_never:
+            darker[self._lower_never] = 0
+        if self._has_lower_always:
+            darker[self._lower_always] = 255
+        if self.difference_mode != "absolute":
+            return darker
+
+        brighter = cv2.compare(small, self._upper_limit, cv2.CMP_GT)
+        if self._has_upper_always:
+            brighter[self._upper_always] = 255
+        if self._has_upper_never:
+            brighter[self._upper_never] = 0
+        return cv2.bitwise_or(darker, brighter)
 
     @staticmethod
     def _contour_centroid(cnt):
@@ -101,19 +146,14 @@ class FindRatBoundingBox():
         else:
             gray = frame
 
-        small = self.resizer(gray)
-        diff = small - self.bg
-        if self.difference_mode == "absolute":
-            mask = np.abs(diff) > self.difference_threshold
-        else:  # "directional": subject darker than background
-            mask = diff < -self.difference_threshold
-        thresholded = (mask * 255).astype(np.uint8)
+        small = self.resize(gray)
+        thresholded = self._foreground_mask(small)
         opened = cv2.morphologyEx(thresholded, cv2.MORPH_OPEN,
-                                  np.ones((self.open1_kernel, self.open1_kernel), np.uint8))
+                                  self._open1_kernel)
         closed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE,
-                                  np.ones((self.close_kernel, self.close_kernel), np.uint8))
+                                  self._close_kernel)
         opened_again = cv2.morphologyEx(closed, cv2.MORPH_OPEN,
-                                        np.ones((self.open2_kernel, self.open2_kernel), np.uint8))
+                                        self._open2_kernel)
         contours, _ = cv2.findContours(opened_again, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if len(contours) > 0:
             cnt = self._select_contour(contours)
