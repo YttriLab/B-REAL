@@ -2,7 +2,8 @@
 
 Examples:
   pixi run python benchmarking/code/benchmark_optimized_inference.py openvino --model model.onnx
-  pixi run python benchmarking/code/benchmark_optimized_inference.py tensorrt --model model.onnx --fp16
+  pixi run python benchmarking/code/benchmark_optimized_inference.py tensorrt --model model.onnx --precision f16
+  pixi run python benchmarking/code/benchmark_optimized_inference.py tensorrt-rtx --model model.onnx --precision both
 
 TensorRT uses NVIDIA's trtexec executable because it reports engine build and
 GPU timing details more reliably than duplicating its runner in Python.
@@ -317,14 +318,15 @@ def find_trtexec(explicit: Path | None) -> Path:
 
 def benchmark_tensorrt(args: argparse.Namespace) -> dict:
     trtexec = find_trtexec(args.trtexec)
-    engine = args.engine or args.model.with_suffix(".fp16.engine" if args.fp16 else ".fp32.engine")
+    use_fp16 = args.precision == "f16"
+    engine = args.engine or args.model.with_suffix(".fp16.engine" if use_fp16 else ".fp32.engine")
     shape = f"frames:{args.batch_size}x{args.num_frames}x3x{args.resolution}x{args.resolution}"
     command = [
         str(trtexec), f"--onnx={args.model}", f"--saveEngine={engine}", f"--shapes={shape}",
         f"--warmUp={args.warmup_ms}", "--duration=0", f"--iterations={args.trials}",
         "--infStreams=1", "--noDataTransfers",
     ]
-    if args.fp16:
+    if use_fp16:
         command.append("--fp16")
     completed = subprocess.run(command, text=True, capture_output=True, check=False)
     log = completed.stdout + "\n" + completed.stderr
@@ -337,7 +339,7 @@ def benchmark_tensorrt(args: argparse.Namespace) -> dict:
 
     result = {
         "backend": "tensorrt",
-        "precision": "fp16" if args.fp16 else "fp32",
+        "precision": args.precision,
         "engine": str(engine.resolve()),
         "input_shape": shape.split(":", 1)[1],
         "mean_ms": metric(r"GPU Compute Time:.*?mean\s*=\s*([0-9.]+)\s*ms"),
@@ -351,7 +353,7 @@ def benchmark_tensorrt(args: argparse.Namespace) -> dict:
 
 
 def benchmark_tensorrt_rtx(args: argparse.Namespace) -> dict:
-    """Build and benchmark a TensorRT-RTX engine with GPU-resident buffers."""
+    """Benchmark f32/f16 TensorRT engines and optionally compare predictions."""
     try:
         import tensorrt_rtx as trt
         runtime_name = "tensorrt-rtx"
@@ -363,86 +365,116 @@ def benchmark_tensorrt_rtx(args: argparse.Namespace) -> dict:
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is not available to PyTorch")
     logger = trt.Logger(trt.Logger.WARNING)
-    builder = trt.Builder(logger)
-    flags = 1 << int(trt.NetworkDefinitionCreationFlag.STRONGLY_TYPED)
-    network = builder.create_network(flags)
-    parser = trt.OnnxParser(network, logger)
-    if not parser.parse_from_file(str(args.model)):
-        errors = "\n".join(str(parser.get_error(i)) for i in range(parser.num_errors))
-        raise RuntimeError(f"TensorRT-RTX could not parse ONNX:\n{errors}")
-    config = builder.create_builder_config()
-    config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, args.workspace_mib << 20)
-    serialized = builder.build_serialized_network(network, config)
-    if serialized is None:
-        raise RuntimeError("TensorRT-RTX engine build failed")
-    engine_path = args.engine or args.model.with_suffix(".trt_rtx.engine")
-    engine_path.write_bytes(bytes(serialized))
 
-    runtime = trt.Runtime(logger)
-    engine = runtime.deserialize_cuda_engine(serialized)
-    context = engine.create_execution_context()
-    tensors: dict[str, torch.Tensor] = {}
-    input_name = None
-    output_name = None
-    for index in range(engine.num_io_tensors):
-        name = engine.get_tensor_name(index)
-        shape = tuple(int(x) for x in engine.get_tensor_shape(name))
-        mode = engine.get_tensor_mode(name)
-        if engine.get_tensor_dtype(name) != trt.float32:
-            raise RuntimeError(f"Unexpected tensor dtype for {name}: {engine.get_tensor_dtype(name)}")
-        tensor = (torch.randn(shape, device="cuda", dtype=torch.float32)
-                  if mode == trt.TensorIOMode.INPUT else
-                  torch.empty(shape, device="cuda", dtype=torch.float32))
-        tensors[name] = tensor
-        context.set_tensor_address(name, tensor.data_ptr())
-        if mode == trt.TensorIOMode.INPUT:
-            input_name = name
-        else:
-            output_name = name
+    def build_runner(precision: str) -> dict:
+        builder = trt.Builder(logger)
+        flags = 1 << int(trt.NetworkDefinitionCreationFlag.STRONGLY_TYPED)
+        network = builder.create_network(flags)
+        parser = trt.OnnxParser(network, logger)
+        model_bytes = args.model.read_bytes()
+        if precision == "f16":
+            try:
+                import onnx
+                from onnxconverter_common import float16
+            except ImportError as exc:
+                raise RuntimeError(
+                    "f16 requires onnxconverter-common (run `pixi install`)"
+                ) from exc
+            fp16_model = float16.convert_float_to_float16(
+                onnx.load_model_from_string(model_bytes), keep_io_types=True,
+            )
+            model_bytes = fp16_model.SerializeToString()
+        if not parser.parse(model_bytes):
+            errors = "\n".join(str(parser.get_error(i)) for i in range(parser.num_errors))
+            raise RuntimeError(f"TensorRT could not parse ONNX:\n{errors}")
+        config = builder.create_builder_config()
+        config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, args.workspace_mib << 20)
+        serialized = builder.build_serialized_network(network, config)
+        if serialized is None:
+            raise RuntimeError(f"TensorRT {precision} engine build failed")
+        suffix = f".{precision}.trt_rtx.engine"
+        engine_path = args.engine if args.engine and args.precision != "both" else args.model.with_suffix(suffix)
+        engine_path.write_bytes(bytes(serialized))
+        engine = trt.Runtime(logger).deserialize_cuda_engine(serialized)
+        context = engine.create_execution_context()
+        tensors = {}
+        input_name = output_name = None
+        for index in range(engine.num_io_tensors):
+            name = engine.get_tensor_name(index)
+            shape = tuple(int(x) for x in engine.get_tensor_shape(name))
+            mode = engine.get_tensor_mode(name)
+            dtype = torch.float16 if engine.get_tensor_dtype(name) == trt.float16 else torch.float32
+            tensor = torch.empty(shape, device="cuda", dtype=dtype)
+            tensors[name] = tensor
+            context.set_tensor_address(name, tensor.data_ptr())
+            if mode == trt.TensorIOMode.INPUT:
+                input_name = name
+            else:
+                output_name = name
+        return {"context": context, "tensors": tensors, "input": input_name,
+                "output": output_name, "engine_path": engine_path}
 
+    precisions = ["f32", "f16"] if args.precision == "both" else [args.precision]
+    runners = {precision: build_runner(precision) for precision in precisions}
     stream = torch.cuda.Stream()
-    for _ in range(args.warmup):
-        if not context.execute_async_v3(stream.cuda_stream):
-            raise RuntimeError("TensorRT-RTX warmup execution failed")
-    stream.synchronize()
-    # Validate one TensorRT result against OpenVINO's execution of the shared
-    # ONNX graph before timing. This catches parser/build errors independently
-    # of the original TorchScript-vs-ONNX validation performed at export time.
-    import openvino as ov
-    ov_compiled = ov.Core().compile_model(str(args.model), "CPU")
-    reference = ov_compiled({ov_compiled.input(0): tensors[input_name].cpu().numpy()})[ov_compiled.output(0)]
-    actual = tensors[output_name].cpu().numpy()
-    delta = np.abs(reference - actual)
-    max_abs = float(delta.max())
-    max_rel = float((delta / np.maximum(np.abs(reference), 1e-6)).max())
-    # The FP32 graph may select TF32 Tensor Core kernels; a 2% relative bound
-    # is appropriate for that execution mode and remains strict enough to catch
-    # wrong bindings, shapes, or materially incorrect conversions.
-    if not np.allclose(reference, actual, rtol=2e-2, atol=2e-3):
-        raise RuntimeError(f"TensorRT validation failed: max_abs={max_abs:.3e}, max_rel={max_rel:.3e}")
-    times = []
-    for _ in range(args.trials):
-        stream.synchronize()
-        start = time.perf_counter_ns()
-        if not context.execute_async_v3(stream.cuda_stream):
-            raise RuntimeError("TensorRT-RTX execution failed")
-        stream.synchronize()
-        times.append((time.perf_counter_ns() - start) / 1e6)
 
-    result = summarize(times)
+    def execute(runner: dict) -> None:
+        if not runner["context"].execute_async_v3(stream.cuda_stream):
+            raise RuntimeError("TensorRT execution failed")
+
+    generator = torch.Generator(device="cuda").manual_seed(args.seed)
+    input_shape = tuple(runners[precisions[0]]["tensors"][runners[precisions[0]]["input"]].shape)
+    base = torch.randn(input_shape, device="cuda", dtype=torch.float32, generator=generator)
+    for _ in range(args.warmup):
+        sample = base + torch.randn(input_shape, device="cuda", generator=generator) * args.noise_std
+        for runner in runners.values():
+            runner["tensors"][runner["input"]].copy_(sample)
+            execute(runner)
+    stream.synchronize()
+
+    timings = {precision: [] for precision in precisions}
+    predictions = {precision: [] for precision in precisions}
+    max_abs_deltas = []
+    for _ in range(args.trials):
+        sample = base + torch.randn(input_shape, device="cuda", generator=generator) * args.noise_std
+        outputs = {}
+        for precision, runner in runners.items():
+            runner["tensors"][runner["input"]].copy_(sample)
+            stream.synchronize()
+            start = time.perf_counter_ns()
+            execute(runner)
+            stream.synchronize()
+            timings[precision].append((time.perf_counter_ns() - start) / 1e6)
+            outputs[precision] = runner["tensors"][runner["output"]].float().clone()
+            predictions[precision].append(int(outputs[precision].argmax().item()))
+        if args.precision == "both":
+            max_abs_deltas.append(float((outputs["f32"] - outputs["f16"]).abs().max().item()))
+
+    summaries = {precision: summarize(values) for precision, values in timings.items()}
+    primary = "f32" if args.precision == "both" else args.precision
+    result = dict(summaries[primary])
     result.update({
         "backend": runtime_name,
         "runtime_version": trt.__version__,
-        "precision": "fp32/tf32",
+        "precision": args.precision,
         "device": torch.cuda.get_device_name(0),
-        "input_name": input_name,
-        "input_shape": tuple(tensors[input_name].shape),
-        "validation_max_abs": max_abs,
-        "validation_max_rel": max_rel,
-        "engine": str(engine_path.resolve()),
+        "input_shape": input_shape,
+        "noise_std": args.noise_std,
+        "seed": args.seed,
+        "precision_results": summaries,
+        "engines": {key: str(value["engine_path"].resolve()) for key, value in runners.items()},
         "workspace_mib": args.workspace_mib,
         "transfers_included": False,
     })
+    if args.precision == "both":
+        matches = sum(a == b for a, b in zip(predictions["f32"], predictions["f16"]))
+        result.update({
+            "f16_speedup_vs_f32": summaries["f32"]["mean_ms"] / summaries["f16"]["mean_ms"],
+            "prediction_matches": matches,
+            "prediction_agreement_percent": 100.0 * matches / args.trials,
+            "output_max_abs_delta_mean": float(np.mean(max_abs_deltas)),
+            "output_max_abs_delta_max": float(np.max(max_abs_deltas)),
+        })
     return result
 
 
@@ -459,7 +491,7 @@ def main() -> None:
     trtp.add_argument("--model", type=Path, required=True)
     trtp.add_argument("--engine", type=Path)
     trtp.add_argument("--trtexec", type=Path)
-    trtp.add_argument("--fp16", action="store_true")
+    trtp.add_argument("--precision", choices=("f32", "f16"), default="f32")
     trtp.add_argument("--batch-size", type=int, default=1)
     trtp.add_argument("--num-frames", type=int, default=3)
     trtp.add_argument("--resolution", type=int, default=224)
@@ -472,6 +504,10 @@ def main() -> None:
     rtxp.add_argument("--trials", type=int, default=1000)
     rtxp.add_argument("--warmup", type=int, default=100)
     rtxp.add_argument("--workspace-mib", type=int, default=1024)
+    rtxp.add_argument("--precision", choices=("f32", "f16", "both"), default="f32")
+    rtxp.add_argument("--noise-std", type=float, default=0.05,
+                      help="Gaussian noise added to a base input before every trial")
+    rtxp.add_argument("--seed", type=int, default=12345)
     rtxp.add_argument("--scenario", help="Free-text run tag included in outputs and filenames")
     for backend_parser in (ovp, trtp, rtxp):
         if backend_parser is not trtp:

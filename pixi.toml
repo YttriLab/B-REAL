@@ -25,6 +25,7 @@ platforms = ["win-64", "linux-64"]   # add "osx-64" here too, then re-run `pixi 
 # [feature.backend], everything gui-specific under [feature.gui].
 python = "3.12.*"
 numpy = "*"
+onnxconverter-common = ">=1.16.0,<2"
 
 [feature.backend]
 [feature.backend.tasks]
