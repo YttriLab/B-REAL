@@ -154,11 +154,14 @@ def save_bar_plot(model_path: Path, result: dict, tested_at: datetime) -> Path:
 
     if result.get("mean_ms") is None:
         raise RuntimeError("Backend did not report a mean latency; cannot create plot")
-    stages = [
+    stages = []
+    if "frame_upload_mean_ms" in result:
+        stages.append(("Upload", result["frame_upload_mean_ms"], result["frame_upload_std_ms"]))
+    stages.extend([
         ("Crop", result["cropping_mean_ms"], result["cropping_std_ms"]),
         ("Preprocess", result["preprocessing_mean_ms"], result["preprocessing_std_ms"]),
         ("Inference", result["mean_ms"], result.get("std_ms") or 0.0),
-    ]
+    ])
     labels = [stage[0] for stage in stages]
     means = [stage[1] for stage in stages]
     stds = [stage[2] for stage in stages]
@@ -272,35 +275,193 @@ def benchmark_pipeline_stages(args: argparse.Namespace, device: str) -> dict:
     }
 
 
-def benchmark_openvino(model_path: Path, trials: int, warmup: int, threads: int | None) -> dict:
+def benchmark_gpu_crop_preprocess(args: argparse.Namespace) -> dict:
+    """Benchmark a live-camera-like pageable upload and CUDA preprocessing path.
+
+    The publishable synthetic workload contains one foreground component. Its
+    GPU mask centroid is validated against the production CPU contour cropper;
+    refusing failed validation is preferable to silently timing different work.
+    """
+    import torch
+    import torch.nn.functional as F
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("GPU benchmarking requires CUDA for cropping and preprocessing; no CPU fallback")
+    frame_np, background_np = _synthetic_crop_inputs(args.frame_height, args.frame_width)
+    background = torch.from_numpy(background_np).to("cuda")
+    mean = torch.tensor([0.485, 0.456, 0.406], device="cuda")[:, None, None]
+    std = torch.tensor([0.229, 0.224, 0.225], device="cuda")[:, None, None]
+    output_dtype = torch.float16 if args.precision == "f16" else torch.float32
+
+    def morph(mask: torch.Tensor, kernel: int, operation: str) -> torch.Tensor:
+        anchor = kernel // 2
+        padding = (anchor, kernel - 1 - anchor, anchor, kernel - 1 - anchor)
+
+        def dilate(value: torch.Tensor) -> torch.Tensor:
+            return F.max_pool2d(F.pad(value, padding, value=0.0), kernel, stride=1)
+
+        def erode(value: torch.Tensor) -> torch.Tensor:
+            return -F.max_pool2d(F.pad(-value, padding, value=-1.0), kernel, stride=1)
+
+        return dilate(erode(mask)) if operation == "open" else erode(dilate(mask))
+
+    def crop(frame: torch.Tensor) -> tuple[torch.Tensor, tuple[int, int, int, int]]:
+        gray = (frame[..., 0].float() * 0.114 + frame[..., 1].float() * 0.587
+                + frame[..., 2].float() * 0.299)
+        mask = (gray <= background - 5.0).float()[None, None]
+        mask = morph(mask, 4, "open")
+        mask = morph(mask, 15, "close")
+        mask = morph(mask, 10, "open")
+        ys, xs = torch.where(mask[0, 0] > 0.5)
+        if xs.numel() == 0:
+            raise RuntimeError("GPU cropper found no foreground; refusing CPU fallback")
+        cx = int(xs.float().mean().round().item())
+        cy = int(ys.float().mean().round().item())
+        x0 = max(0, min(cx - args.crop_size // 2, args.frame_width - args.crop_size))
+        y0 = max(0, min(cy - args.crop_size // 2, args.frame_height - args.crop_size))
+        bbox = (x0, y0, args.crop_size, args.crop_size)
+        return frame[y0:y0 + args.crop_size, x0:x0 + args.crop_size], bbox
+
+    def preprocess(cropped_bgr: torch.Tensor) -> torch.Tensor:
+        rgb = cropped_bgr.flip(-1)
+        image = rgb.permute(2, 0, 1).float().div_(255.0).unsqueeze(0)
+        image = F.interpolate(image, (args.resolution, args.resolution),
+                              mode="bilinear", align_corners=False)
+        image = (image.squeeze(0) - mean) / std
+        return image.unsqueeze(0).unsqueeze(0).expand(
+            1, args.num_frames, -1, -1, -1
+        ).to(output_dtype).contiguous()
+
+    # Validate spatial tracking and numerical preprocessing before timing.
+    cpu_cropper = FindRatBoundingBox(background_np, box_size=args.crop_size)
+    cpu_bbox, *_rest, cpu_bgr = cpu_cropper(frame_np)
+    frame_gpu = torch.from_numpy(frame_np).to("cuda")
+    gpu_bgr, gpu_bbox = crop(frame_gpu)
+    if gpu_bbox != cpu_bbox:
+        raise RuntimeError(f"GPU crop validation failed: GPU {gpu_bbox}, CPU {cpu_bbox}")
+    transform = _build_val_transform(args.resolution)
+    cpu_rgb = cpu_bgr[..., ::-1].copy()
+    cpu_tensor = _preprocess_clip([cpu_rgb] * args.num_frames, transform, torch.device("cpu"))
+    gpu_tensor = preprocess(gpu_bgr).float().cpu()
+    tensor_delta = (cpu_tensor - gpu_tensor).abs()
+
+    for _ in range(args.pipeline_warmup):
+        uploaded = torch.from_numpy(frame_np).to("cuda")
+        cropped, _ = crop(uploaded)
+        preprocess(cropped)
+    torch.cuda.synchronize()
+    upload_times = []
+    crop_times = []
+    preprocess_times = []
+    for _ in range(args.trials):
+        torch.cuda.synchronize()
+        start = time.perf_counter_ns()
+        uploaded = torch.from_numpy(frame_np).to("cuda")
+        torch.cuda.synchronize()
+        upload_times.append((time.perf_counter_ns() - start) / 1e6)
+
+        torch.cuda.synchronize()
+        start = time.perf_counter_ns()
+        cropped, _ = crop(uploaded)
+        torch.cuda.synchronize()
+        crop_times.append((time.perf_counter_ns() - start) / 1e6)
+
+        start = time.perf_counter_ns()
+        preprocess(cropped)
+        torch.cuda.synchronize()
+        preprocess_times.append((time.perf_counter_ns() - start) / 1e6)
+    upload = summarize(upload_times)
+    cropping = summarize(crop_times)
+    preprocessing = summarize(preprocess_times)
+    return {
+        "pipeline_mode": "pageable CPU frame upload + CUDA crop + CUDA preprocess",
+        "frame_upload_mean_ms": upload["mean_ms"],
+        "frame_upload_std_ms": upload["std_ms"],
+        "cropping_mean_ms": cropping["mean_ms"],
+        "cropping_std_ms": cropping["std_ms"],
+        "preprocessing_mean_ms": preprocessing["mean_ms"],
+        "preprocessing_std_ms": preprocessing["std_ms"],
+        "gpu_crop_validation_bbox": gpu_bbox,
+        "gpu_preprocess_validation_mean_abs": float(tensor_delta.mean()),
+        "gpu_preprocess_validation_max_abs": float(tensor_delta.max()),
+        "source_frame_shape": (args.frame_height, args.frame_width, 3),
+        "crop_size": args.crop_size,
+        "preprocessing_output_dtype": str(output_dtype),
+        "preprocessing_includes_device_transfer": False,
+    }
+
+
+def _fp16_onnx_bytes(model_path: Path, keep_io_types: bool) -> bytes:
+    """Convert an ONNX graph to f16 for strongly typed runtimes."""
+    import onnx
+    from onnxconverter_common import float16
+
+    model = float16.convert_float_to_float16(
+        onnx.load(str(model_path)), keep_io_types=keep_io_types,
+    )
+    return model.SerializeToString()
+
+
+def benchmark_openvino(args: argparse.Namespace) -> dict:
     import openvino as ov
 
     config: dict[str, object] = {"PERFORMANCE_HINT": "LATENCY", "NUM_STREAMS": "1"}
-    if threads:
-        config["INFERENCE_NUM_THREADS"] = threads
+    if args.threads:
+        config["INFERENCE_NUM_THREADS"] = args.threads
     core = ov.Core()
-    compiled = core.compile_model(str(model_path), "CPU", config)
-    input_port = compiled.input(0)
-    shape = tuple(int(x) for x in input_port.shape)
-    sample = np.random.default_rng(12345).standard_normal(shape, dtype=np.float32)
-    request = compiled.create_infer_request()
-    for _ in range(warmup):
-        request.infer({input_port: sample})
-    times = []
-    for _ in range(trials):
-        start = time.perf_counter_ns()
-        request.infer({input_port: sample})
-        times.append((time.perf_counter_ns() - start) / 1e6)
-    result = summarize(times)
+    precisions = ["f32", "f16"] if args.precision == "both" else [args.precision]
+    runners = {}
+    for precision in precisions:
+        model = (core.read_model(_fp16_onnx_bytes(args.model, keep_io_types=True))
+                 if precision == "f16" else core.read_model(str(args.model)))
+        compiled = core.compile_model(model, "CPU", config)
+        runners[precision] = (compiled, compiled.create_infer_request())
+    shape = tuple(int(x) for x in runners[precisions[0]][0].input(0).shape)
+    rng = np.random.default_rng(args.seed)
+    base = rng.standard_normal(shape, dtype=np.float32)
+    for _ in range(args.warmup):
+        sample = base + rng.standard_normal(shape, dtype=np.float32) * args.noise_std
+        for compiled, request in runners.values():
+            request.infer({compiled.input(0): sample})
+    timings = {precision: [] for precision in precisions}
+    predictions = {precision: [] for precision in precisions}
+    deltas = []
+    for _ in range(args.trials):
+        sample = base + rng.standard_normal(shape, dtype=np.float32) * args.noise_std
+        outputs = {}
+        for precision, (compiled, request) in runners.items():
+            start = time.perf_counter_ns()
+            output = request.infer({compiled.input(0): sample})[compiled.output(0)].copy()
+            timings[precision].append((time.perf_counter_ns() - start) / 1e6)
+            outputs[precision] = output
+            predictions[precision].append(int(output.argmax()))
+        if args.precision == "both":
+            deltas.append(float(np.max(np.abs(outputs["f32"] - outputs["f16"]))))
+    summaries = {precision: summarize(values) for precision, values in timings.items()}
+    primary = "f32" if args.precision == "both" else args.precision
+    result = dict(summaries[primary])
     result.update({
         "backend": "openvino",
         "runtime_version": ov.__version__,
-        "device": compiled.get_property("EXECUTION_DEVICES"),
+        "device": runners[primary][0].get_property("EXECUTION_DEVICES"),
         "input_shape": shape,
-        "threads": threads,
+        "threads": args.threads,
+        "precision": args.precision,
+        "precision_results": summaries,
+        "noise_std": args.noise_std,
+        "seed": args.seed,
         "performance_hint": "LATENCY",
         "num_streams": 1,
     })
+    if args.precision == "both":
+        matches = sum(a == b for a, b in zip(predictions["f32"], predictions["f16"]))
+        result.update({
+            "f16_speedup_vs_f32": summaries["f32"]["mean_ms"] / summaries["f16"]["mean_ms"],
+            "prediction_matches": matches,
+            "prediction_agreement_percent": 100.0 * matches / args.trials,
+            "output_max_abs_delta_mean": float(np.mean(deltas)),
+            "output_max_abs_delta_max": float(np.max(deltas)),
+        })
     return result
 
 
@@ -373,17 +534,7 @@ def benchmark_tensorrt_rtx(args: argparse.Namespace) -> dict:
         parser = trt.OnnxParser(network, logger)
         model_bytes = args.model.read_bytes()
         if precision == "f16":
-            try:
-                import onnx
-                from onnxconverter_common import float16
-            except ImportError as exc:
-                raise RuntimeError(
-                    "f16 requires onnxconverter-common (run `pixi install`)"
-                ) from exc
-            fp16_model = float16.convert_float_to_float16(
-                onnx.load_model_from_string(model_bytes), keep_io_types=True,
-            )
-            model_bytes = fp16_model.SerializeToString()
+            model_bytes = _fp16_onnx_bytes(args.model, keep_io_types=False)
         if not parser.parse(model_bytes):
             errors = "\n".join(str(parser.get_error(i)) for i in range(parser.num_errors))
             raise RuntimeError(f"TensorRT could not parse ONNX:\n{errors}")
@@ -475,6 +626,39 @@ def benchmark_tensorrt_rtx(args: argparse.Namespace) -> dict:
             "output_max_abs_delta_mean": float(np.mean(max_abs_deltas)),
             "output_max_abs_delta_max": float(np.max(max_abs_deltas)),
         })
+    if "f16" in runners and args.test_persistent_buffers:
+        runner = runners["f16"]
+        bound = runner["tensors"][runner["input"]]
+        staging = torch.empty_like(bound)
+        transient_times = []
+        persistent_times = []
+        for _ in range(args.trials):
+            staging.normal_()
+            # Best-case persistent path: upstream preprocessing writes directly
+            # into the already-bound engine tensor; time inference only.
+            bound.copy_(staging)
+            stream.synchronize()
+            start = time.perf_counter_ns()
+            execute(runner)
+            stream.synchronize()
+            persistent_times.append((time.perf_counter_ns() - start) / 1e6)
+
+            # Control: allocate a fresh input, rebind it, then infer.
+            stream.synchronize()
+            start = time.perf_counter_ns()
+            transient = staging.clone()
+            runner["context"].set_tensor_address(runner["input"], transient.data_ptr())
+            execute(runner)
+            stream.synchronize()
+            transient_times.append((time.perf_counter_ns() - start) / 1e6)
+            runner["context"].set_tensor_address(runner["input"], bound.data_ptr())
+        persistent = summarize(persistent_times)
+        transient = summarize(transient_times)
+        result["f16_buffer_results"] = {
+            "persistent_direct_write": persistent,
+            "transient_allocate_and_rebind": transient,
+            "persistent_speedup": transient["mean_ms"] / persistent["mean_ms"],
+        }
     return result
 
 
@@ -486,6 +670,9 @@ def main() -> None:
     ovp.add_argument("--trials", type=int, default=1000)
     ovp.add_argument("--warmup", type=int, default=100)
     ovp.add_argument("--threads", type=int)
+    ovp.add_argument("--precision", choices=("f32", "f16", "both"), default="f32")
+    ovp.add_argument("--noise-std", type=float, default=0.05)
+    ovp.add_argument("--seed", type=int, default=12345)
     ovp.add_argument("--scenario", help="Free-text run tag included in outputs and filenames")
     trtp = sub.add_parser("tensorrt")
     trtp.add_argument("--model", type=Path, required=True)
@@ -508,6 +695,7 @@ def main() -> None:
     rtxp.add_argument("--noise-std", type=float, default=0.05,
                       help="Gaussian noise added to a base input before every trial")
     rtxp.add_argument("--seed", type=int, default=12345)
+    rtxp.add_argument("--test-persistent-buffers", action="store_true")
     rtxp.add_argument("--scenario", help="Free-text run tag included in outputs and filenames")
     for backend_parser in (ovp, trtp, rtxp):
         if backend_parser is not trtp:
@@ -520,13 +708,26 @@ def main() -> None:
     args = parser.parse_args()
     args.model = args.model.resolve()
     if args.backend == "openvino":
-        result = benchmark_openvino(args.model, args.trials, args.warmup, args.threads)
+        result = benchmark_openvino(args)
     elif args.backend == "tensorrt-rtx":
         result = benchmark_tensorrt_rtx(args)
     else:
         result = benchmark_tensorrt(args)
-    pipeline_device = "cpu" if args.backend == "openvino" else "cuda:0"
-    result.update(benchmark_pipeline_stages(args, pipeline_device))
+    if args.backend == "openvino":
+        result.update(benchmark_pipeline_stages(args, "cpu"))
+        result["pipeline_mode"] = "CPU crop + CPU preprocess"
+    else:
+        result.update(benchmark_gpu_crop_preprocess(args))
+    stage_mean_keys = ["cropping_mean_ms", "preprocessing_mean_ms", "mean_ms"]
+    stage_std_keys = ["cropping_std_ms", "preprocessing_std_ms", "std_ms"]
+    if "frame_upload_mean_ms" in result:
+        stage_mean_keys.insert(0, "frame_upload_mean_ms")
+        stage_std_keys.insert(0, "frame_upload_std_ms")
+    result["estimated_pipeline_mean_ms"] = sum(result[key] for key in stage_mean_keys)
+    result["estimated_pipeline_std_ms"] = float(
+        np.sqrt(sum(result[key] ** 2 for key in stage_std_keys))
+    )
+    result["pipeline_total_note"] = "sum of independently timed stage means; std is root-sum-square"
     result["scenario"] = args.scenario
     # Query immediately after the timed loop, before plotting or file I/O, so
     # transient clocks/power are as representative of the selected mode as a
