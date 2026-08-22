@@ -268,39 +268,83 @@ def benchmark_pipeline_stages(args: argparse.Namespace, device: str) -> dict:
         "preprocessing_std_ms": preprocess_summary["std_ms"],
         "source_frame_shape": (args.frame_height, args.frame_width, 3),
         "crop_size": args.crop_size,
-        "preprocessing_includes_device_transfer": True,
+        "preprocessing_includes_device_transfer": torch_device.type != "cpu",
     }
 
 
-def benchmark_openvino(model_path: Path, trials: int, warmup: int, threads: int | None) -> dict:
+def benchmark_openvino(args: argparse.Namespace) -> dict:
     import openvino as ov
 
     config: dict[str, object] = {"PERFORMANCE_HINT": "LATENCY", "NUM_STREAMS": "1"}
-    if threads:
-        config["INFERENCE_NUM_THREADS"] = threads
+    if args.threads:
+        config["INFERENCE_NUM_THREADS"] = args.threads
     core = ov.Core()
-    compiled = core.compile_model(str(model_path), "CPU", config)
-    input_port = compiled.input(0)
-    shape = tuple(int(x) for x in input_port.shape)
-    sample = np.random.default_rng(12345).standard_normal(shape, dtype=np.float32)
-    request = compiled.create_infer_request()
-    for _ in range(warmup):
-        request.infer({input_port: sample})
-    times = []
-    for _ in range(trials):
-        start = time.perf_counter_ns()
-        request.infer({input_port: sample})
-        times.append((time.perf_counter_ns() - start) / 1e6)
-    result = summarize(times)
+    compare = args.precision == "compare-fp32-16"
+    precisions = ["f32", "f16"] if compare else [args.precision]
+    runners = {}
+    for precision in precisions:
+        if precision == "f16":
+            import onnx
+            from onnxconverter_common import float16
+
+            model = float16.convert_float_to_float16(
+                onnx.load(str(args.model)), keep_io_types=True,
+            )
+            ov_model = core.read_model(model.SerializeToString())
+        else:
+            ov_model = core.read_model(str(args.model))
+        compiled = core.compile_model(ov_model, "CPU", config)
+        runners[precision] = (compiled, compiled.create_infer_request())
+    shape = tuple(int(x) for x in runners[precisions[0]][0].input(0).shape)
+    rng = np.random.default_rng(args.seed)
+    base = rng.standard_normal(shape, dtype=np.float32)
+    for warmup_index in range(args.warmup):
+        sample = base + rng.standard_normal(shape, dtype=np.float32) * args.noise_std
+        order = precisions if warmup_index % 2 == 0 else list(reversed(precisions))
+        for precision in order:
+            compiled, request = runners[precision]
+            request.infer({compiled.input(0): sample})
+    timings = {precision: [] for precision in precisions}
+    predictions = {precision: [] for precision in precisions}
+    max_abs_deltas = []
+    for trial_index in range(args.trials):
+        sample = base + rng.standard_normal(shape, dtype=np.float32) * args.noise_std
+        outputs = {}
+        order = precisions if trial_index % 2 == 0 else list(reversed(precisions))
+        for precision in order:
+            compiled, request = runners[precision]
+            start = time.perf_counter_ns()
+            output = request.infer({compiled.input(0): sample})[compiled.output(0)].copy()
+            timings[precision].append((time.perf_counter_ns() - start) / 1e6)
+            outputs[precision] = output
+            predictions[precision].append(int(output.argmax()))
+        if compare:
+            max_abs_deltas.append(float(np.max(np.abs(outputs["f32"] - outputs["f16"]))))
+    summaries = {precision: summarize(values) for precision, values in timings.items()}
+    primary = "f32" if compare else args.precision
+    result = dict(summaries[primary])
     result.update({
         "backend": "openvino",
         "runtime_version": ov.__version__,
-        "device": compiled.get_property("EXECUTION_DEVICES"),
+        "device": runners[primary][0].get_property("EXECUTION_DEVICES"),
         "input_shape": shape,
-        "threads": threads,
+        "threads": args.threads,
+        "precision": args.precision,
+        "precision_results": summaries,
+        "noise_std": args.noise_std,
+        "seed": args.seed,
         "performance_hint": "LATENCY",
         "num_streams": 1,
     })
+    if compare:
+        matches = sum(a == b for a, b in zip(predictions["f32"], predictions["f16"]))
+        result.update({
+            "f16_speedup_vs_f32": summaries["f32"]["mean_ms"] / summaries["f16"]["mean_ms"],
+            "prediction_matches": matches,
+            "prediction_agreement_percent": 100.0 * matches / args.trials,
+            "output_max_abs_delta_mean": float(np.mean(max_abs_deltas)),
+            "output_max_abs_delta_max": float(np.max(max_abs_deltas)),
+        })
     return result
 
 
@@ -366,6 +410,8 @@ def benchmark_tensorrt_rtx(args: argparse.Namespace) -> dict:
         raise RuntimeError("CUDA is not available to PyTorch")
     logger = trt.Logger(trt.Logger.WARNING)
 
+    compare = args.precision in {"both", "compare-fp32-16"}
+
     def build_runner(precision: str) -> dict:
         builder = trt.Builder(logger)
         flags = 1 << int(trt.NetworkDefinitionCreationFlag.STRONGLY_TYPED)
@@ -393,7 +439,7 @@ def benchmark_tensorrt_rtx(args: argparse.Namespace) -> dict:
         if serialized is None:
             raise RuntimeError(f"TensorRT {precision} engine build failed")
         suffix = f".{precision}.trt_rtx.engine"
-        engine_path = args.engine if args.engine and args.precision != "both" else args.model.with_suffix(suffix)
+        engine_path = args.engine if args.engine and not compare else args.model.with_suffix(suffix)
         engine_path.write_bytes(bytes(serialized))
         engine = trt.Runtime(logger).deserialize_cuda_engine(serialized)
         context = engine.create_execution_context()
@@ -414,7 +460,7 @@ def benchmark_tensorrt_rtx(args: argparse.Namespace) -> dict:
         return {"context": context, "tensors": tensors, "input": input_name,
                 "output": output_name, "engine_path": engine_path}
 
-    precisions = ["f32", "f16"] if args.precision == "both" else [args.precision]
+    precisions = ["f32", "f16"] if compare else [args.precision]
     runners = {precision: build_runner(precision) for precision in precisions}
     stream = torch.cuda.Stream()
 
@@ -425,9 +471,11 @@ def benchmark_tensorrt_rtx(args: argparse.Namespace) -> dict:
     generator = torch.Generator(device="cuda").manual_seed(args.seed)
     input_shape = tuple(runners[precisions[0]]["tensors"][runners[precisions[0]]["input"]].shape)
     base = torch.randn(input_shape, device="cuda", dtype=torch.float32, generator=generator)
-    for _ in range(args.warmup):
+    for warmup_index in range(args.warmup):
         sample = base + torch.randn(input_shape, device="cuda", generator=generator) * args.noise_std
-        for runner in runners.values():
+        order = precisions if warmup_index % 2 == 0 else list(reversed(precisions))
+        for precision in order:
+            runner = runners[precision]
             runner["tensors"][runner["input"]].copy_(sample)
             execute(runner)
     stream.synchronize()
@@ -435,10 +483,12 @@ def benchmark_tensorrt_rtx(args: argparse.Namespace) -> dict:
     timings = {precision: [] for precision in precisions}
     predictions = {precision: [] for precision in precisions}
     max_abs_deltas = []
-    for _ in range(args.trials):
+    for trial_index in range(args.trials):
         sample = base + torch.randn(input_shape, device="cuda", generator=generator) * args.noise_std
         outputs = {}
-        for precision, runner in runners.items():
+        order = precisions if trial_index % 2 == 0 else list(reversed(precisions))
+        for precision in order:
+            runner = runners[precision]
             runner["tensors"][runner["input"]].copy_(sample)
             stream.synchronize()
             start = time.perf_counter_ns()
@@ -447,11 +497,11 @@ def benchmark_tensorrt_rtx(args: argparse.Namespace) -> dict:
             timings[precision].append((time.perf_counter_ns() - start) / 1e6)
             outputs[precision] = runner["tensors"][runner["output"]].float().clone()
             predictions[precision].append(int(outputs[precision].argmax().item()))
-        if args.precision == "both":
+        if compare:
             max_abs_deltas.append(float((outputs["f32"] - outputs["f16"]).abs().max().item()))
 
     summaries = {precision: summarize(values) for precision, values in timings.items()}
-    primary = "f32" if args.precision == "both" else args.precision
+    primary = "f32" if compare else args.precision
     result = dict(summaries[primary])
     result.update({
         "backend": runtime_name,
@@ -466,7 +516,7 @@ def benchmark_tensorrt_rtx(args: argparse.Namespace) -> dict:
         "workspace_mib": args.workspace_mib,
         "transfers_included": False,
     })
-    if args.precision == "both":
+    if compare:
         matches = sum(a == b for a, b in zip(predictions["f32"], predictions["f16"]))
         result.update({
             "f16_speedup_vs_f32": summaries["f32"]["mean_ms"] / summaries["f16"]["mean_ms"],
@@ -486,6 +536,9 @@ def main() -> None:
     ovp.add_argument("--trials", type=int, default=1000)
     ovp.add_argument("--warmup", type=int, default=100)
     ovp.add_argument("--threads", type=int)
+    ovp.add_argument("--precision", choices=("f32", "f16", "compare-fp32-16"), default="f32")
+    ovp.add_argument("--noise-std", type=float, default=0.05)
+    ovp.add_argument("--seed", type=int, default=12345)
     ovp.add_argument("--scenario", help="Free-text run tag included in outputs and filenames")
     trtp = sub.add_parser("tensorrt")
     trtp.add_argument("--model", type=Path, required=True)
@@ -504,7 +557,7 @@ def main() -> None:
     rtxp.add_argument("--trials", type=int, default=1000)
     rtxp.add_argument("--warmup", type=int, default=100)
     rtxp.add_argument("--workspace-mib", type=int, default=1024)
-    rtxp.add_argument("--precision", choices=("f32", "f16", "both"), default="f32")
+    rtxp.add_argument("--precision", choices=("f32", "f16", "compare-fp32-16"), default="f32")
     rtxp.add_argument("--noise-std", type=float, default=0.05,
                       help="Gaussian noise added to a base input before every trial")
     rtxp.add_argument("--seed", type=int, default=12345)
@@ -520,7 +573,7 @@ def main() -> None:
     args = parser.parse_args()
     args.model = args.model.resolve()
     if args.backend == "openvino":
-        result = benchmark_openvino(args.model, args.trials, args.warmup, args.threads)
+        result = benchmark_openvino(args)
     elif args.backend == "tensorrt-rtx":
         result = benchmark_tensorrt_rtx(args)
     else:
