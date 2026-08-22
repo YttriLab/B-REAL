@@ -469,32 +469,44 @@ def benchmark_tensorrt_rtx(args: argparse.Namespace) -> dict:
             raise RuntimeError("TensorRT execution failed")
 
     generator = torch.Generator(device="cuda").manual_seed(args.seed)
+    preparation_stream = torch.cuda.current_stream()
     input_shape = tuple(runners[precisions[0]]["tensors"][runners[precisions[0]]["input"]].shape)
     base = torch.randn(input_shape, device="cuda", dtype=torch.float32, generator=generator)
     for warmup_index in range(args.warmup):
         sample = base + torch.randn(input_shape, device="cuda", generator=generator) * args.noise_std
+        # PyTorch input generation/copies run on its current stream, whereas
+        # TensorRT executes on ``stream``. Populate every persistent input and
+        # explicitly finish that preparation before enqueueing inference. This
+        # prevents both a data race and preparation work leaking into timing.
+        for runner in runners.values():
+            runner["tensors"][runner["input"]].copy_(sample)
+        preparation_stream.synchronize()
         order = precisions if warmup_index % 2 == 0 else list(reversed(precisions))
         for precision in order:
             runner = runners[precision]
-            runner["tensors"][runner["input"]].copy_(sample)
             execute(runner)
-    stream.synchronize()
+        stream.synchronize()
 
     timings = {precision: [] for precision in precisions}
     predictions = {precision: [] for precision in precisions}
     max_abs_deltas = []
     for trial_index in range(args.trials):
         sample = base + torch.randn(input_shape, device="cuda", generator=generator) * args.noise_std
+        for runner in runners.values():
+            runner["tensors"][runner["input"]].copy_(sample)
+        preparation_stream.synchronize()
         outputs = {}
         order = precisions if trial_index % 2 == 0 else list(reversed(precisions))
         for precision in order:
             runner = runners[precision]
-            runner["tensors"][runner["input"]].copy_(sample)
             stream.synchronize()
             start = time.perf_counter_ns()
             execute(runner)
             stream.synchronize()
             timings[precision].append((time.perf_counter_ns() - start) / 1e6)
+        # Each engine owns a separate persistent output buffer, so defer all
+        # PyTorch output work until both timed executions have completed.
+        for precision, runner in runners.items():
             outputs[precision] = runner["tensors"][runner["output"]].float().clone()
             predictions[precision].append(int(outputs[precision].argmax().item()))
         if compare:
@@ -515,6 +527,8 @@ def benchmark_tensorrt_rtx(args: argparse.Namespace) -> dict:
         "engines": {key: str(value["engine_path"].resolve()) for key, value in runners.items()},
         "workspace_mib": args.workspace_mib,
         "transfers_included": False,
+        "input_preparation_synchronized": True,
+        "timing_scope": "TensorRT enqueue through completion; input preparation and output comparison excluded",
     })
     if compare:
         matches = sum(a == b for a, b in zip(predictions["f32"], predictions["f16"]))
