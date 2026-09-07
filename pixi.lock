@@ -1,6 +1,6 @@
 version: 7
 platforms:
-- name: p1
+- name: win-64-cuda-12-0
   subdir: win-64
   virtual-packages:
   - __cuda=12.0
@@ -13,7 +13,7 @@ environments:
     indexes:
     - https://pypi.org/simple
     packages:
-      p1:
+      win-64-cuda-12-0:
       - conda: https://conda.anaconda.org/conda-forge/noarch/_python_abi3_support-1.0-hd8ed1ab_3.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/albucore-0.0.24-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/albumentations-2.0.8-pyhd8ed1ab_0.conda
