@@ -1,4 +1,4 @@
-# RealtimeASOID
+# B-REAL
 
 A desktop application for building **real-time, clip-based animal behavior classifiers** — from hand-labeling video through training to active-learning refinement.
 
@@ -182,15 +182,15 @@ The resulting `.pt` is compatible with `Bonsai.ML.Torch`'s `LoadScriptModule` fo
 
 ### Selecting the backend Python interpreter (advanced)
 
-Normally the app auto-discovers the pixi env (`.pixi/envs/default/`). To force a different interpreter, set **`RTASOID_PYTHON`** (or `PYTHON`) before launching — it takes priority over the pixi env:
+Normally the app auto-discovers the pixi env (`.pixi/envs/default/`). To force a different interpreter, set **`BREAL_PYTHON`** (or `PYTHON`) before launching — it takes priority over the pixi env:
 
 ```powershell
 # Windows (PowerShell)
-$env:RTASOID_PYTHON = "C:\path\to\python.exe"; pixi run gui
+$env:BREAL_PYTHON = "C:\path\to\python.exe"; pixi run gui
 ```
 ```bash
 # macOS / Linux
-export RTASOID_PYTHON="/path/to/python"; pixi run gui
+export BREAL_PYTHON="/path/to/python"; pixi run gui
 ```
 
 The chosen interpreter is printed as `[backend] launching with interpreter: ...`, and `/api/health` reports its torch/CUDA status.

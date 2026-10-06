@@ -6,7 +6,7 @@ from torch import nn
 import torch.nn.functional as F
 from torchvision.ops import Conv2dNormActivation
 import lightning as L
-from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping, LearningRateFinder
+from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 from omegaconf import OmegaConf
 from torchvision import models
 from timm.layers import DropPath

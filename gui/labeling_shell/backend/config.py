@@ -16,7 +16,7 @@ DEFAULT_MODULE = "backend.server:app"
 
 
 def repo_root() -> Path:
-    """RealtimeASOID repo root (…/gui/labeling_shell/backend/config.py -> repo)."""
+    """B-REAL repo root (…/gui/labeling_shell/backend/config.py -> repo)."""
     return Path(__file__).resolve().parents[3]
 
 

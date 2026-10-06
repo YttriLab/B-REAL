@@ -43,7 +43,7 @@ gui/
     theme.qss / theme.py     #   dark QSS theme (applied once at QApplication level)
     backend/                 #   seam to the FastAPI backend (core/backend.js + main.js spawn)
       config.py / process.py / client.py / manager.py
-  plugins/                   # RealtimeASOID pipeline UI (successor to plugins/pipeline.js)
+  plugins/                   # B-REAL pipeline UI (successor to plugins/pipeline.js)
     pipeline_config.py       #   pure config marshalling (crop params, train config)
     pipeline_panel.py        #   Preprocess / Train / Export tabs
     active_learning_panel.py #   run inference + review (uncertainty, next-uncertain)

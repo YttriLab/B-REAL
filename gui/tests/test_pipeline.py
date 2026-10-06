@@ -168,7 +168,6 @@ def test_preprocess_preview_renders_the_three_panes():
     tab = PreprocessTab(FakeCtx())
     # a 2x2 red JPEG, base64 — stands in for the backend's encoded preview
     import base64
-    import io
     from PySide6 import QtGui
     img = QtGui.QImage(2, 2, QtGui.QImage.Format.Format_RGB888)
     img.fill(QtGui.QColor("red"))

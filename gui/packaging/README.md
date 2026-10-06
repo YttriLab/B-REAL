@@ -1,4 +1,4 @@
-# Packaging the RealtimeASOID GUI
+# Packaging the B-REAL GUI
 
 Cross-platform desktop bundles via **PyInstaller** (the SLEAP/DeepLabCut approach).
 The GUI bundle ships PySide6 + PyAV (with ffmpeg libs) but **not** the backend —
@@ -10,8 +10,8 @@ remote one (e.g. the 3090 rig), so torch/CUDA stay out of the GUI bundle.
 ```bash
 # From repo root — pyinstaller is a dependency of the gui pixi environment
 pixi install -e gui
-pixi run -e gui pyinstaller gui/packaging/realtimeasoid.spec
-# -> dist/RealtimeASOID/RealtimeASOID(.exe)
+pixi run -e gui pyinstaller gui/packaging/b-real.spec
+# -> dist/B-REAL/B-REAL(.exe)
 ```
 
 PyInstaller does not cross-compile: build the Windows bundle on Windows, the mac
@@ -24,7 +24,7 @@ bundle on macOS, the Linux bundle on Linux.
 - **macOS:** for a `.app` + notarization, add a `BUNDLE(...)` step and codesign;
   unsigned builds warn on first launch.
 - **Backend discovery:** the packaged app resolves the backend interpreter via
-  `RTASOID_PYTHON` / `PYTHON` / the project `.pixi` env (see
+  `BREAL_PYTHON` / `PYTHON` / the project `.pixi` env (see
   `labeling_shell/backend/process.py`). For a remote backend, use Backend →
   Connect Remote in the app.
 - The spec compiles as plain Python (PyInstaller injects `SPECPATH`, `Analysis`,

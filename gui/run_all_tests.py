@@ -11,7 +11,6 @@ from __future__ import annotations
 import glob
 import os
 import runpy
-import sys
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 

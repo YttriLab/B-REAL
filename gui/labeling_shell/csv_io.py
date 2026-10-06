@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from .bouts import Bout, LabelModel, normalize_behavior_name
+from .bouts import Bout, LabelModel
 from .timefmt import format_time, frame_to_ms, ms_to_frame, parse_time
 
 

@@ -69,11 +69,11 @@ def crop_video(video_path, output_dir, num_frames_crop, crop_parameters, desired
 
 def main():
     parser = argparse.ArgumentParser(description='Preprocess video into flat cropped frames')
-    parser.add_argument('--output-dir', type=str, default=None,
-                        help='Output directory')
-    parser.add_argument('--video', type=str, default=r"C:\Realtime\data\2026-02-23-12-02\video.mp4",
+    parser.add_argument('--output-dir', type=str, default='processed_frames',
+                        help='Output directory (default: ./processed_frames)')
+    parser.add_argument('--video', type=str, required=True,
                         help='Path to input video')
-    parser.add_argument('--bg', type=str, default=r"backgrounds\bg_20260223_114136.png",
+    parser.add_argument('--bg', type=str, required=True,
                         help='Path to cached background image')
     parser.add_argument('--framerate', type=int, default=30,
                         help='Desired output framerate (default: 30)')
@@ -86,7 +86,7 @@ def main():
         'difference_threshold': 5
     }
 
-    out_path = args.output_dir or r"C:\Users\Jimi\Desktop\Brayden\RealtimeLightning\RealtimeBehaviorClassification\processed_frames"
+    out_path = args.output_dir
 
     print(f"Output directory: {out_path}")
     if args.name:

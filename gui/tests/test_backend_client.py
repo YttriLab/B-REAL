@@ -139,11 +139,11 @@ def test_resolve_python_precedence(tmp_path=None):
     import tempfile
     d = tmp_path or tempfile.mkdtemp()
     cfg = BackendConfig(repo_root=str(d))
-    saved = {k: os.environ.get(k) for k in ("RTASOID_PYTHON", "PYTHON")}
+    saved = {k: os.environ.get(k) for k in ("BREAL_PYTHON", "PYTHON")}
     try:
-        os.environ["RTASOID_PYTHON"] = "X_INTERP"
+        os.environ["BREAL_PYTHON"] = "X_INTERP"
         assert resolve_python(cfg) == "X_INTERP"
-        os.environ.pop("RTASOID_PYTHON")
+        os.environ.pop("BREAL_PYTHON")
         os.environ.pop("PYTHON", None)
         cfg2 = BackendConfig(repo_root=str(d), python="Y_INTERP")
         assert resolve_python(cfg2) == "Y_INTERP"

@@ -4,7 +4,6 @@ import json
 import os
 import time
 
-import pytest
 
 from backend.services.training_service import (
     get_task,

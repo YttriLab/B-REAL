@@ -116,7 +116,7 @@ def build_train_config(
     boundary_smoothing_epsilon: float = 0.3,
     boundary_smoothing_window: int = 5,
     use_wandb: bool = False,
-    project_name: str = "realtime-asoid",
+    project_name: str = "b-real",
     wandb_api_key: Optional[str] = None,
     checkpoint_dir: Optional[str] = None,
     run_name: Optional[str] = None,

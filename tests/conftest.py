@@ -1,5 +1,5 @@
 """
-Shared fixtures for the RealtimeASOID test suite.
+Shared fixtures for the B-REAL test suite.
 
 Provides synthetic video frames, label CSVs, fake checkpoints,
 and a FastAPI test client — all without requiring GPU or real video files.
@@ -8,8 +8,6 @@ and a FastAPI test client — all without requiring GPU or real video files.
 import json
 import os
 import sys
-import tempfile
-import shutil
 
 import cv2
 import numpy as np
@@ -243,12 +241,19 @@ def client():
 
 @pytest.fixture(autouse=True)
 def clear_task_registries():
-    """Clear all service task registries before each test."""
+    """Cancel and clear all service task registries after each test."""
     yield
-    # Cleanup after test
+    # Cleanup after test. Cancel first so background work a test started
+    # stops instead of running on into the next test.
     from backend.services import (
         preprocess_service, training_service, tuning_service, inference_service,
     )
+    for svc in (tuning_service, preprocess_service, training_service,
+                inference_service):
+        try:
+            svc.cancel_all()
+        except Exception:
+            pass
     preprocess_service._tasks.clear()
     training_service._tasks.clear()
     tuning_service._tasks.clear()

@@ -27,7 +27,7 @@ The original Electron frontend (`LabelingApp/`) was removed once this replaced i
 ├── preprocess_video_train.py   # Video preprocessing CLI
 ├── tune_cropping.py       # Crop parameter tuning
 ├── config_tsm.yaml        # Training hyperparameters
-└── tests/                 # pytest suite (106 tests)
+└── tests/                 # pytest suite
 ```
 
 ## Running the App
@@ -41,7 +41,7 @@ pixi install
 pixi run gui
 ```
 
-The Backend menu spawns `uvicorn backend.server:app --port 8742` and tears it down on exit, resolving the interpreter in order: **`RTASOID_PYTHON`/`PYTHON` override → the project-local pixi env (`.pixi/envs/default/python.exe`) → bare `python`**. The pixi env is the supported path (no env var needed); the override is an advanced escape hatch. The chosen interpreter is logged as `[backend] launching with interpreter: ...`, and `GET /api/health` reports its torch/CUDA status (`device` block). `pixi.toml` is the source of truth for Python deps for both environments (`backend/requirements.txt` is a pip fallback for the backend only — nothing pip-installs the `gui` environment; that's pixi-only). Standalone backend: `pixi run backend`, tests: `pixi run test`, GUI tests: `pixi run -e gui python gui/run_all_tests.py`.
+The Backend menu spawns `uvicorn backend.server:app --port 8742` and tears it down on exit, resolving the interpreter in order: **`BREAL_PYTHON`/`PYTHON` override → the project-local pixi env (`.pixi/envs/default/python.exe`) → bare `python`**. The pixi env is the supported path (no env var needed); the override is an advanced escape hatch. The chosen interpreter is logged as `[backend] launching with interpreter: ...`, and `GET /api/health` reports its torch/CUDA status (`device` block). `pixi.toml` is the source of truth for Python deps for both environments (`backend/requirements.txt` is a pip fallback for the backend only — nothing pip-installs the `gui` environment; that's pixi-only). Standalone backend: `pixi run backend`, tests: `pixi run test`, GUI tests: `pixi run -e gui python gui/run_all_tests.py`.
 
 ## Running the Backend Standalone
 
@@ -141,7 +141,7 @@ is shared code rather than two copies, and it is what the sharing rests on.
 
 | Route | Method | Purpose |
 |-------|--------|---------|
-| `/api/health` | GET | Health check (used by Electron startup) |
+| `/api/health` | GET | Health check (polled by the GUI when it spawns the backend) |
 | `/api/preprocess/background` | POST | Compute background frame |
 | `/api/preprocess/preview` | POST | Preview cropped frame |
 | `/api/preprocess/run` | POST | Start video preprocessing |

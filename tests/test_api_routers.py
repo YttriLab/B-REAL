@@ -6,9 +6,7 @@ and error handling. Heavy operations (video I/O, model loading) are mocked.
 """
 
 import asyncio
-import json
 import os
-import time
 
 import pytest
 import pytest_asyncio
@@ -448,8 +446,15 @@ class TestTuningRouter:
         assert resp.status_code == 503
 
     @pytest.mark.asyncio
-    async def test_categorical_space_accepted(self, ac):
+    async def test_categorical_space_accepted(self, ac, monkeypatch):
         pytest.importorskip("openvino")
+        # The sweep runs in a background thread. A real latency gate would
+        # export ONNX there, racing torch's process-global ONNX export flag in
+        # whichever test runs next, so stub it — and wait for the sweep to end
+        # below, since monkeypatch restores the real one at teardown.
+        from backend.services import tuning_service
+        monkeypatch.setattr(tuning_service, "_measure_latency",
+                            lambda cfg, latency: {"ms_per_batch_p99": 1e9})
         resp = await ac.post("/api/tuning/start", json={
             "base": self.BASE, "n_trials": 1,
             "variant": {"choices": ["b0", "b4"]},
@@ -460,6 +465,11 @@ class TestTuningRouter:
                         "target": "openvino"},
         })
         assert resp.status_code == 200
+        task = tuning_service.get_task(resp.json()["task_id"])
+        for _ in range(600):
+            if task["status"] in ("completed", "error", "cancelled"):
+                break
+            await asyncio.sleep(0.1)
 
     @pytest.mark.asyncio
     async def test_status_404_for_unknown_task(self, ac):

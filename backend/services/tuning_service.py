@@ -233,7 +233,7 @@ def start_tuning(
     direction = _DIRECTION.get(objective_metric, "maximize")
 
     task_id = str(uuid.uuid4())
-    tmp_dir = tempfile.mkdtemp(prefix="asoid_tune_")
+    tmp_dir = tempfile.mkdtemp(prefix="breal_tune_")
     results_path = os.path.join(tmp_dir, "results.jsonl")
     open(results_path, "w", encoding="utf-8").close()
 

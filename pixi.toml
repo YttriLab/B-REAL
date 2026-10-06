@@ -13,7 +13,7 @@
 # CPU-only machine? Swap `pytorch-gpu` for `pytorch-cpu` under [feature.backend.dependencies].
 
 [project]
-name = "realtimeasoid"
+name = "b-real"
 version = "0.1.0"
 description = "Real-time clip-based animal behavior classifier (PySide6 GUI + FastAPI/PyTorch backend)."
 channels = ["conda-forge"]

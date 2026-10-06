@@ -29,12 +29,12 @@ def resolve_python(config: BackendConfig) -> str:
     """Choose the interpreter to run the backend.
 
     Resolution order (mirrors the Electron app):
-      1. RTASOID_PYTHON / PYTHON env override.
+      1. BREAL_PYTHON / PYTHON env override.
       2. config.python explicit override.
       3. Project-local pixi env at <repo>/.pixi/envs/default.
       4. Bare python / python3 on PATH.
     """
-    override = os.environ.get("RTASOID_PYTHON") or os.environ.get("PYTHON")
+    override = os.environ.get("BREAL_PYTHON") or os.environ.get("PYTHON")
     if override and override.strip():
         return override.strip()
     if config.python:

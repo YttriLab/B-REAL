@@ -16,7 +16,7 @@ from __future__ import annotations
 import bisect
 import re
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 # Number-row keys, in the order behaviors are auto-assigned (10th is "0").

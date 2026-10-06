@@ -1,4 +1,4 @@
-"""RealtimeASOID desktop app (PySide6) — main window.
+"""B-REAL desktop app (PySide6) — main window.
 
 The all-Python successor to the Electron shell. Left: frame-accurate video
 player. Right: a tabbed panel — "Label" (behaviors + bouts) plus the pipeline
@@ -42,7 +42,7 @@ EDITABLE = (QtWidgets.QLineEdit, QtWidgets.QAbstractSpinBox, QtWidgets.QComboBox
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, autostart_backend: bool = True):
         super().__init__()
-        self.setWindowTitle("RealtimeASOID — Labeler")
+        self.setWindowTitle("B-REAL — Labeler")
         self.model = LabelModel()
         self.project: ProjectStore | None = None
         self.current_video_id: str | None = None

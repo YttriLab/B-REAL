@@ -257,7 +257,7 @@ def main():
     if config.get("use_wandb", False):
         from lightning.pytorch.loggers.wandb import WandbLogger
         wandb_kwargs = dict(
-            project=config.get("project_name", "realtime-asoid"),
+            project=config.get("project_name", "b-real"),
             name=config.get("run_name", "training"),
             config=OmegaConf.to_container(config, resolve=True),
         )
@@ -323,7 +323,7 @@ def start_training(config: dict) -> str:
     task_id = str(uuid.uuid4())
 
     # Write config to temp file
-    tmp_dir = tempfile.mkdtemp(prefix="asoid_train_")
+    tmp_dir = tempfile.mkdtemp(prefix="breal_train_")
     config_path = os.path.join(tmp_dir, "config.yaml")
     metrics_path = os.path.join(tmp_dir, "metrics.jsonl")
     script_path = os.path.join(tmp_dir, "train_subprocess.py")

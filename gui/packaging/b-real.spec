@@ -1,12 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for the RealtimeASOID desktop GUI (gui/app.py).
+"""PyInstaller spec for the B-REAL desktop GUI (gui/app.py).
 
 Build from the repo root — pyinstaller is a dependency of the gui pixi env:
 
     pixi install -e gui
-    pixi run -e gui pyinstaller gui/packaging/realtimeasoid.spec
+    pixi run -e gui pyinstaller gui/packaging/b-real.spec
 
-Output: dist/RealtimeASOID/ (onedir). Run PyInstaller on each target OS
+Output: dist/B-REAL/ (onedir). Run PyInstaller on each target OS
 separately — a build is not cross-compiling.
 
 Notes:
@@ -43,7 +43,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="RealtimeASOID",
+    name="B-REAL",
     console=False,
 )
-coll = COLLECT(exe, a.binaries, a.datas, name="RealtimeASOID")
+coll = COLLECT(exe, a.binaries, a.datas, name="B-REAL")

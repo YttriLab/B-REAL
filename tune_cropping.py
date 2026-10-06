@@ -398,15 +398,15 @@ class ParameterTuner:
         print("\n" + "="*60)
         print("CURRENT PARAMETERS:")
         print("="*60)
-        print(f"FindRatBoundingBox(")
-        print(f"    bg,")
+        print("FindRatBoundingBox(")
+        print("    bg,")
         print(f"    difference_threshold={self.params['difference_threshold']},")
         print(f"    box_size={self.params['box_size']},")
         print(f"    downsample_factor={self.params['downsample_factor']},")
         print(f"    open1_kernel={self.params['open1_kernel']},")
         print(f"    close_kernel={self.params['close_kernel']},")
         print(f"    open2_kernel={self.params['open2_kernel']}")
-        print(f")")
+        print(")")
         print("="*60 + "\n")
 
 if __name__ == "__main__":

@@ -1,7 +1,5 @@
 """Tests for backend.services.inference_service."""
 
-import math
-import os
 
 import cv2
 import numpy as np

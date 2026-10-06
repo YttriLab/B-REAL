@@ -65,7 +65,7 @@ class TrainingConfig(BaseModel):
 
     # Logging
     use_wandb: bool = False
-    project_name: str = "realtime-asoid"
+    project_name: str = "b-real"
     run_name: Optional[str] = None
     wandb_api_key: Optional[str] = None
 

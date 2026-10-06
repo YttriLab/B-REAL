@@ -447,7 +447,7 @@ class TrainTab(_Base):
         wb_box = QtWidgets.QGroupBox("Weights && Biases")
         wb_form = QtWidgets.QFormLayout(wb_box)
         self.wandb_enabled = QtWidgets.QCheckBox("Log this run to W&&B")
-        self.wandb_project = QtWidgets.QLineEdit("realtime-asoid")
+        self.wandb_project = QtWidgets.QLineEdit("b-real")
         self.wandb_run = QtWidgets.QLineEdit()
         self.wandb_run.setPlaceholderText("auto-generated if empty")
         self.wandb_key = QtWidgets.QLineEdit()
@@ -561,7 +561,7 @@ class TrainTab(_Base):
             boundary_smoothing_epsilon=self.bs_epsilon.value(),
             boundary_smoothing_window=self.bs_window.value(),
             use_wandb=self.wandb_enabled.isChecked(),
-            project_name=self.wandb_project.text().strip() or "realtime-asoid",
+            project_name=self.wandb_project.text().strip() or "b-real",
             run_name=self.wandb_run.text().strip() or None,
             wandb_api_key=self.wandb_key.text().strip() or None,
             checkpoint_dir=self.ctx.checkpoint_dir(),

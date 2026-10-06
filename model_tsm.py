@@ -26,7 +26,6 @@ from omegaconf import OmegaConf
 from torchvision import models
 from lightning.pytorch.loggers.wandb import WandbLogger
 from lightning.pytorch.tuner import Tuner
-import os
 import cv2
 import wandb
 

@@ -253,8 +253,13 @@ def build_tensorrt(onnx_path: str, engine_path: str, *, precision: str = "fp32",
         # pybind11 surfaces a null builder as a TypeError with no useful text.
         raise RuntimeUnavailable(
             f"TensorRT could not create a builder on this GPU: {e}") from e
+    # TRT 10+ dropped implicit-batch mode entirely, so EXPLICIT_BATCH no longer
+    # exists on NetworkDefinitionCreationFlag — create_network() defaults to
+    # explicit batch (flags=0) on those versions. Only pass the flag on older
+    # TRT where it's still required.
+    explicit_batch_flag = getattr(trt.NetworkDefinitionCreationFlag, "EXPLICIT_BATCH", None)
     network = builder.create_network(
-        1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+        1 << int(explicit_batch_flag) if explicit_batch_flag is not None else 0
     )
     parser = trt.OnnxParser(network, logger)
     with open(onnx_path, "rb") as f:
@@ -397,7 +402,7 @@ def benchmark_optimized(
         return result
 
     owns_dir = work_dir is None
-    work_dir = work_dir or tempfile.mkdtemp(prefix="asoid_opt_")
+    work_dir = work_dir or tempfile.mkdtemp(prefix="breal_opt_")
     try:
         # ONNX export runs on CPU: TRT consumes the graph, not the torch device.
         wrapper = build_wrapper(

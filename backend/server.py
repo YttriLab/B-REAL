@@ -1,12 +1,12 @@
 """
-FastAPI backend for RealtimeASOID.
+FastAPI backend for B-REAL.
 
 Provides endpoints for video preprocessing, model training, and inference
-with active learning support. Designed to be spawned by the Electron app.
+with active learning support. Spawned by the PySide6 GUI (gui/app.py).
 
 Usage:
     python -m uvicorn backend.server:app --port 8742
-    (run from C:\\AdenCode\\RealtimeASOID)
+    (run from the repo root)
 """
 
 import sys
@@ -65,7 +65,7 @@ async def lifespan(app: FastAPI):
     inference_cancel()
 
 
-app = FastAPI(title="RealtimeASOID Backend", lifespan=lifespan)
+app = FastAPI(title="B-REAL Backend", lifespan=lifespan)
 
 # Allow requests from Electron renderer (any localhost port)
 app.add_middleware(

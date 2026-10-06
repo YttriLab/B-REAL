@@ -1,6 +1,5 @@
 """Project router: export/import .rlt files, inspect contents."""
 
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel

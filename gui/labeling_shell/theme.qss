@@ -1,4 +1,4 @@
-/* RealtimeASOID dark theme.
+/* B-REAL dark theme.
  *
  * Applied once at QApplication level (see theme.py). Palette:
  *   bg-base    #1e1f22   window background
