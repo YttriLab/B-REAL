@@ -28,6 +28,7 @@ The original Electron frontend (`LabelingApp/`) was removed once this replaced i
 ├── tune_cropping.py       # Background-subtraction cropper (FindRatBoundingBox)
 ├── localizer.py           # SAM2-distilled localizer network + LocalizerCropper
 ├── video_decode.py        # cv2 / NVDEC frame source, bit-identical to cv2
+├── trt_engines.py         # auto-built, cached TensorRT engines (localizer + TSM) for inference
 ├── config_tsm.yaml        # Training hyperparameters
 └── tests/                 # pytest suite
 ```
@@ -172,6 +173,8 @@ is shared code rather than two copies, and it is what the sharing rests on.
 **Crop methods** (`crop_params.method`, `backend/services/cropping.py::FrameCropper` — the one place preprocessing and inference both crop through, so train/inference parity is structural; `tests/test_inference_service.py` checks it frame-for-frame): `"background"` (default, `FindRatBoundingBox`), `"localizer"` (SAM2-distilled ResNet18 heatmap + presence head, `localizer.py`; needs `crop_params.localizer_path`; reuses `box_size`/`smoothing`/`deadband`; holds the box when presence < `presence_threshold`), `"none"` (whole frame; the legacy `crop=False`). `resize_factor` applies to all three. Smoothing restarts at every gap in the extracted/inferred frame indices, in both services.
 
 **Decoders** (`decoder`: `"auto"`/`"nvdec"`/`"cpu"`, `video_decode.py`): NVDEC via PyNvVideoCodec yields 2-D gray frames equal to every channel of cv2's BGR frame, via a LUT on the luma plane — valid only for monochrome video (chroma 128). `"auto"` checks the first 16 frames against cv2 and falls back to cv2 otherwise, so it never changes a pixel. Croppers and `cropping.to_rgb` accept both layouts; a gray PNG reads back as the same BGR image.
+
+**TensorRT runtime** (`trt_engines.py`): inference `runtime` (`"auto"`/`"tensorrt"`/`"torch"`, API default `"auto"`, service default `"torch"`) + `precision` (`fp16`/`fp32`) for the classifier; the localizer's is the crop setting `crop_params.localizer_runtime` (+ `localizer_precision`) so preprocessing and inference locate with the same engine (the GUI sends `"auto"`). Engines are built on first use from the loaded model and cached under `BREAL_TRT_CACHE` / the OS cache dir, keyed by weights content hash + shapes/overrides + precision + max batch + GPU arch + TRT version; builds are atomic and serialized per engine. **TensorRT 11 is strongly typed only** (no `BuilderFlag.FP16`, no `platform_has_fast_fp16`): fp16 is put in the ONNX graph (`optimized_runtime.half_features` for TSM, `trt_engines._half_localizer`) with casts so normalisation/softmax/pooling/heads stay fp32. `optimized_runtime.build_tensorrt` builds strongly typed where available, takes `max_batch` for dynamic-batch graphs. TSM export swaps `TemporalShift.forward` for a concat version on the copy being exported (checked equal first). `auto` falls back to PyTorch if TRT is unusable or a build fails; explicit `tensorrt` raises. Preview always uses the PyTorch localizer (needs the heatmap).
 
 **Frame-index invariant:** native video frame number is the single canonical index across labels (`time` column), extracted frame filenames, and inference output. There is no framerate downsampling.
 

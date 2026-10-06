@@ -93,7 +93,9 @@ The localizer copes with what background subtraction can't: a drifting backgroun
 In the **Train** tab: add data sources (frame dir + label CSV), set hyperparameters, and start training. Watch live loss/accuracy. Optionally enable **Weights & Biases** logging (project name, run name, and API key — the key is passed to the training process via environment variable and never written to disk). When a project is open, the best checkpoint is saved into it and recorded automatically.
 
 ### 7. Infer & refine (Active Learning)
-In the **Active Learning** tab: select a checkpoint and run inference — it scores the **current video on the fly** (no frame directory needed), so it can flag uncertain regions you haven't labeled yet. Decoding runs ahead on its own thread — on the GPU (NVDEC) when that reproduces OpenCV's frames bit-for-bit, which it does for monochrome h264/hevc video (the **Decoder** setting; *Auto* checks and falls back to OpenCV) — and clips go through the model in batches. A per-frame **uncertainty heatmap** (green → red) plus **misclassification markers** appear on the timeline. Jump to the next uncertain segment / misclassified frame, fix the label, and iterate.
+In the **Active Learning** tab: select a checkpoint and run inference — it scores the **current video on the fly** (no frame directory needed), so it can flag uncertain regions you haven't labeled yet. Decoding runs ahead on its own thread — on the GPU (NVDEC) when that reproduces OpenCV's frames bit-for-bit, which it does for monochrome h264/hevc video (the **Decoder** setting; *Auto* checks and falls back to OpenCV) — and clips go through the model in batches.
+
+**TensorRT, automatically.** With **Runtime: Auto** (the default) the classifier and — in localizer crop mode — the localizer each run as a TensorRT engine compiled for your GPU. Nothing to export by hand: the first run builds both engines from the checkpoint/weights (~0.5–2 min each; the status bar says so) and caches them, keyed by the weights' content, the input shapes, the GPU and the TensorRT version, so retraining or upgrading rebuilds automatically and everything else is instant. fp16 is the default (conv trunks in fp16, softmax/pooling/heads in fp32). Without a supported GPU (compute capability 7.5+) Auto quietly uses PyTorch. Engines live in `~/.cache/b-real/trt` (`%LOCALAPPDATA%\B-REAL\trt` on Windows); set `BREAL_TRT_CACHE` to move them. A per-frame **uncertainty heatmap** (green → red) plus **misclassification markers** appear on the timeline. Jump to the next uncertain segment / misclassified frame, fix the label, and iterate.
 
 ---
 
@@ -241,6 +243,7 @@ pixi run -e gui python gui/run_all_tests.py
 ├── tune_cropping.py    # cropping/background utilities
 ├── localizer.py        # SAM2-distilled localizer network + crop stabilisation
 ├── video_decode.py     # cv2 / NVDEC frame source (bit-identical), prefetching
+├── trt_engines.py      # automatic TensorRT engines for the localizer + classifier
 ├── config_tsm.yaml     # training defaults
 └── tests/              # pytest suite
 ```

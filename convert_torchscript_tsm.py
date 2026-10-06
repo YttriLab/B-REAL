@@ -28,6 +28,9 @@ class TSMInferenceWrapper(nn.Module):
         self.backbone = lightning_model.backbone
         self.head = lightning_model.head
         self.num_frames = lightning_model.num_frames
+        self.temporal_pool = lightning_model.hparams.get("temporal_pool", "last")
+        if self.temporal_pool not in ("last", "avg", "max"):
+            raise ValueError(f"Unknown temporal_pool: {self.temporal_pool}")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -50,8 +53,14 @@ class TSMInferenceWrapper(nn.Module):
         # Reshape back: (B, T, feature_dim)
         x = x.view(B, T, -1)
 
-        # Take last frame's features
-        x = x[:, -1, :]  # (B, feature_dim)
+        # Temporal pooling, as TSMClassifier.forward does it. A plain string
+        # attribute, so tracing bakes in the one branch this model uses.
+        if self.temporal_pool == "avg":
+            x = x.mean(dim=1)
+        elif self.temporal_pool == "max":
+            x = x.max(dim=1).values
+        else:
+            x = x[:, -1, :]  # (B, feature_dim)
 
         logits = self.head(x)
         return logits

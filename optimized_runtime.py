@@ -151,32 +151,72 @@ def build_wrapper(
     return wrapper
 
 
+# ── Precision ──────────────────────────────────────────────────────────────
+
+def is_fp16(precision) -> bool:
+    return str(precision).lower() in ("fp16", "half", "16")
+
+
+class Cast(torch.nn.Module):
+    """Cast to a fixed dtype — exported as an ONNX Cast node."""
+
+    def __init__(self, dtype: torch.dtype):
+        super().__init__()
+        self.dtype = dtype
+
+    def forward(self, x):
+        return x.to(self.dtype)
+
+
+def half_features(model):
+    """Run ``model.backbone.features`` (the conv trunk, nearly all the compute)
+    in fp16, in place: fp32 in, fp32 out, so pooling, the head and the logits
+    stay fp32 — the same split autocast makes. Works on TSMClassifier and
+    TSMInferenceWrapper alike. Use on a copy.
+
+    TensorRT 10.12+ deprecates and 11 removes the FP16 builder flag: networks
+    are strongly typed, so fp16 has to be in the ONNX graph itself."""
+    feats = model.backbone.features
+    model.backbone.features = torch.nn.Sequential(
+        Cast(torch.float16), feats.half(), Cast(torch.float32))
+    return model
+
+
 # ── ONNX ───────────────────────────────────────────────────────────────────
 
 def export_onnx(
-    wrapper: TSMInferenceWrapper,
+    wrapper: torch.nn.Module,
     output_path: str,
     *,
     num_frames: int = 3,
     image_size: int = 224,
     batch_size: int = 1,
     opset: int = 17,
+    half: bool = False,
+    dynamic_batch: bool = False,
 ) -> str:
-    """Trace the wrapper to ONNX at a fixed input shape.
+    """Trace the wrapper to ONNX.
 
-    Shapes are static on purpose: TensorRT builds a faster engine for a fixed
-    profile, and a deployment rig scores a fixed clip shape anyway.
+    Shapes are static by default on purpose: TensorRT builds a faster engine
+    for a fixed profile, and a deployment rig scores a fixed clip shape anyway.
+    ``dynamic_batch`` leaves the batch dimension free (offline video
+    inference, where the last batch is short). ``half`` exports the conv trunk
+    in fp16 (see :func:`half_features`); the wrapper itself is not modified.
     """
+    import copy
     _require("onnx")
     os.makedirs(os.path.dirname(os.path.abspath(output_path)) or ".", exist_ok=True)
 
+    if half:
+        wrapper = half_features(copy.deepcopy(wrapper))
     dummy = torch.randn(batch_size, num_frames, 3, image_size, image_size,
                         device=next(wrapper.parameters()).device)
+    axes = {"clip": {0: "batch"}, "logits": {0: "batch"}} if dynamic_batch else None
     with torch.no_grad():
         torch.onnx.export(
             wrapper, (dummy,), output_path,
             input_names=["clip"], output_names=["logits"],
-            opset_version=opset, dynamo=False,
+            opset_version=opset, dynamo=False, dynamic_axes=axes,
         )
     return output_path
 
@@ -238,11 +278,17 @@ def _benchmark_openvino(onnx_path, *, precision, batch_size, num_frames,
 # ── TensorRT (GPU) ─────────────────────────────────────────────────────────
 
 def build_tensorrt(onnx_path: str, engine_path: str, *, precision: str = "fp32",
-                   workspace_gb: float = 4.0) -> str:
+                   workspace_gb: float = 4.0, max_batch: int | None = None) -> str:
     """Build a serialized TensorRT engine from ONNX.
 
     This is the slow step (tens of seconds to minutes, depending on the variant)
     because TRT profiles kernels for the actual GPU. Callers cache the result.
+
+    Precision comes from the graph: export with ``half=True`` for fp16. The
+    network is built strongly typed where TensorRT supports it (9.1+; the only
+    mode in 11), so it runs in exactly the types the graph declares; older
+    TensorRT gets the FP16 builder flag instead. Inputs with a dynamic batch
+    dimension get an optimization profile for batches 1..``max_batch``.
     """
     trt = _require("tensorrt")
     check_tensorrt_gpu()
@@ -253,14 +299,15 @@ def build_tensorrt(onnx_path: str, engine_path: str, *, precision: str = "fp32",
         # pybind11 surfaces a null builder as a TypeError with no useful text.
         raise RuntimeUnavailable(
             f"TensorRT could not create a builder on this GPU: {e}") from e
-    # TRT 10+ dropped implicit-batch mode entirely, so EXPLICIT_BATCH no longer
-    # exists on NetworkDefinitionCreationFlag — create_network() defaults to
-    # explicit batch (flags=0) on those versions. Only pass the flag on older
-    # TRT where it's still required.
-    explicit_batch_flag = getattr(trt.NetworkDefinitionCreationFlag, "EXPLICIT_BATCH", None)
-    network = builder.create_network(
-        1 << int(explicit_batch_flag) if explicit_batch_flag is not None else 0
-    )
+    flags = trt.NetworkDefinitionCreationFlag
+    strongly_typed = hasattr(flags, "STRONGLY_TYPED")
+    if strongly_typed:
+        network = builder.create_network(1 << int(flags.STRONGLY_TYPED))
+    else:
+        # TRT 10 dropped implicit-batch mode, and with it EXPLICIT_BATCH; only
+        # pass the flag on older TRT where it's still required.
+        explicit = getattr(flags, "EXPLICIT_BATCH", None)
+        network = builder.create_network(1 << int(explicit) if explicit is not None else 0)
     parser = trt.OnnxParser(network, logger)
     with open(onnx_path, "rb") as f:
         if not parser.parse(f.read()):
@@ -271,18 +318,29 @@ def build_tensorrt(onnx_path: str, engine_path: str, *, precision: str = "fp32",
     config.set_memory_pool_limit(
         trt.MemoryPoolType.WORKSPACE, int(workspace_gb * (1 << 30))
     )
-    if str(precision).lower() in ("fp16", "half", "16"):
-        if not builder.platform_has_fast_fp16:
-            raise RuntimeUnavailable("This GPU has no fast FP16; benchmark in fp32.")
+    if is_fp16(precision) and not strongly_typed:
         config.set_flag(trt.BuilderFlag.FP16)
+
+    dynamic = [network.get_input(i) for i in range(network.num_inputs)
+               if network.get_input(i).shape[0] == -1]
+    if dynamic:
+        if not max_batch:
+            raise ValueError("this ONNX graph has a dynamic batch dimension; pass max_batch")
+        profile = builder.create_optimization_profile()
+        for inp in dynamic:
+            rest = tuple(inp.shape)[1:]
+            profile.set_shape(inp.name, (1, *rest), (max_batch, *rest), (max_batch, *rest))
+        config.add_optimization_profile(profile)
 
     serialized = builder.build_serialized_network(network, config)
     if serialized is None:
         raise RuntimeUnavailable("TensorRT engine build failed (no engine produced).")
 
     os.makedirs(os.path.dirname(os.path.abspath(engine_path)) or ".", exist_ok=True)
-    with open(engine_path, "wb") as f:
+    tmp = engine_path + ".tmp"
+    with open(tmp, "wb") as f:
         f.write(serialized)
+    os.replace(tmp, engine_path)  # a killed build never leaves a truncated engine
     return engine_path
 
 
@@ -298,8 +356,8 @@ def _benchmark_tensorrt(onnx_path, engine_path, *, precision, batch_size,
     context = engine.create_execution_context()
 
     # Bind torch tensors directly — they carry device pointers TRT can consume,
-    # so there's no extra host copy in the timed region.
-    dtype = torch.float16 if str(precision).lower() in ("fp16", "half", "16") else torch.float32
+    # so there's no extra host copy in the timed region. The graph takes and
+    # returns fp32 at either precision (the fp16 trunk casts inside).
     inp = torch.randn(batch_size, num_frames, 3, image_size, image_size,
                       device="cuda", dtype=torch.float32)
     outputs = {}
@@ -310,8 +368,7 @@ def _benchmark_tensorrt(onnx_path, engine_path, *, precision, batch_size,
             context.set_tensor_address(name, inp.data_ptr())
         else:
             shape = tuple(context.get_tensor_shape(name))
-            out = torch.empty(shape, device="cuda",
-                              dtype=torch.float16 if dtype == torch.float16 else torch.float32)
+            out = torch.empty(shape, device="cuda", dtype=torch.float32)
             outputs[name] = out
             context.set_tensor_address(name, out.data_ptr())
 
@@ -413,6 +470,8 @@ def benchmark_optimized(
         onnx_path = export_onnx(
             wrapper, os.path.join(work_dir, "model.onnx"),
             num_frames=num_frames, image_size=image_size, batch_size=batch_size,
+            # OpenVINO compresses to fp16 itself; TensorRT needs it in the graph.
+            half=resolved == "tensorrt" and is_fp16(precision),
         )
 
         if resolved == "openvino":
@@ -436,7 +495,7 @@ def benchmark_optimized(
         "target": resolved,
         "device": "cuda" if resolved == "tensorrt" else "cpu",
         "device_name": device_name,
-        "precision": "fp16" if str(precision).lower() in ("fp16", "half", "16") else "fp32",
+        "precision": "fp16" if is_fp16(precision) else "fp32",
         "variant": variant,
         "num_frames": num_frames,
         "tsm_stages": tsm_stages,
@@ -478,6 +537,7 @@ def export_optimized(
     onnx_path = export_onnx(
         wrapper, os.path.join(output_dir, f"{output_name}.onnx"),
         num_frames=frames, image_size=image_size, batch_size=batch_size,
+        half=fmt == "tensorrt" and is_fp16(precision),
     )
     files = [onnx_path]
     output_path = onnx_path

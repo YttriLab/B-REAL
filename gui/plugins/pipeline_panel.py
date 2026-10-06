@@ -279,6 +279,9 @@ class PreprocessTab(_Base):
         out["method"] = self.method()
         if out["method"] == "localizer":
             out["localizer_path"] = self.loc_edit.text().strip() or None
+            # A TensorRT engine when the GPU supports it (built once, cached).
+            # A crop setting, so preprocessing and Active Learning match.
+            out["localizer_runtime"] = "auto"
         return out
 
     def _compute_background(self) -> None:
@@ -389,6 +392,8 @@ class PreprocessTab(_Base):
                 self.progress.setValue(prog)
             if ev.get("status") in ("completed", "error", "cancelled"):
                 self.ctx.status(f"Preprocess {ev.get('status')}.")
+            elif ev.get("message"):
+                self.ctx.status(ev["message"])
 
         def start(res: dict):
             task_id = res.get("task_id")

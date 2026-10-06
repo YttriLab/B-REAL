@@ -36,6 +36,11 @@ class InferenceRequest(BaseModel):
     decoder: Literal["auto", "nvdec", "cpu"] = "auto"
     # Clips per model forward pass.
     batch_size: int = Field(32, ge=1, le=1024)
+    # Video path only. "auto" = the classifier as a TensorRT engine (built from
+    # the checkpoint and cached on first use) when the GPU supports it, else
+    # PyTorch. The localizer's runtime is crop_params.localizer_runtime.
+    runtime: Literal["auto", "tensorrt", "torch"] = "auto"
+    precision: Literal["fp16", "fp32"] = "fp16"
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────
@@ -58,6 +63,8 @@ async def api_run_inference(req: InferenceRequest):
             frame_ranges=req.frame_ranges,
             decoder=req.decoder,
             batch_size=req.batch_size,
+            runtime=req.runtime,
+            precision=req.precision,
         )
         return {"task_id": task_id}
     except Exception as e:
@@ -78,6 +85,7 @@ async def api_inference_status(task_id: str):
                 "progress": task["progress"],
                 "total": task["total"],
                 "error": task["error"],
+                "message": task.get("message"),
             })
             yield f"data: {data}\n\n"
             if task["status"] in ("completed", "error", "cancelled"):

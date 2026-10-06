@@ -19,12 +19,15 @@ starts from a fresh centre rather than one carried over from a distant bout.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 import cv2
 import numpy as np
 
 METHODS = ("background", "localizer", "none")
 # crop_params keys that aren't FindRatBoundingBox kwargs
-_NON_BG_KEYS = ("method", "localizer_path", "presence_threshold")
+_NON_BG_KEYS = ("method", "localizer_path", "presence_threshold", "localizer_runtime",
+                "localizer_precision")
 
 
 def split_crop_params(crop_params: dict | None, crop: bool = True):
@@ -42,11 +45,15 @@ def split_crop_params(crop_params: dict | None, crop: bool = True):
 class FrameCropper:
     def __init__(self, crop_params: dict | None, *, video_path: str | None = None,
                  bg_path: str | None = None, num_frames_bg: int = 500, crop: bool = True,
-                 localizer=None):
-        """``localizer``: an already-built LocalizerCropper (tests, or reuse)."""
+                 localizer=None, on_status=None):
+        """``localizer``: an already-built LocalizerCropper (tests, or reuse).
+        ``on_status(msg)``: progress notes (e.g. a one-time TensorRT build)."""
         from tune_cropping import FindRatBoundingBox, get_background_avg, resize_frame
 
         self.method, self.resize_factor, extras, rest = split_crop_params(crop_params, crop)
+        # Per-frame work that doesn't depend on crop state (the full-frame
+        # resize) runs here, a batch ahead; see prepare().
+        self._pool = ThreadPoolExecutor(8)
         self.bg = None
         self._bg_cropper = None
         self._loc = None
@@ -82,7 +89,11 @@ class FrameCropper:
                     setattr(localizer, k, v)
                 self._loc = localizer
             else:
-                self._loc = LocalizerCropper(path, **loc_kw)
+                # The runtime is a crop setting, not an inference one, so
+                # preprocessing and inference locate with the same engine.
+                self._loc = LocalizerCropper(
+                    path, **loc_kw, runtime=extras.get("localizer_runtime", "torch"),
+                    precision=extras.get("localizer_precision", "fp16"), on_status=on_status)
 
     # -- helpers --------------------------------------------------------------
     def _resize(self, frame: np.ndarray) -> np.ndarray:
@@ -103,15 +114,21 @@ class FrameCropper:
             self._loc.reset()
 
     def close(self) -> None:
+        self._pool.shutdown(wait=False)
         if self._loc is not None:
             self._loc.close()
 
     # -- main entry point -----------------------------------------------------
     def prepare(self, frames: list):
-        """Start any per-frame work that doesn't depend on crop state, for a
-        batch that will be passed to :meth:`crop_batch` next. Lets callers
-        overlap it with the current batch's model work."""
-        return self._loc.prepare(frames) if self.method == "localizer" else None
+        """Start the per-frame work that doesn't depend on crop state — the
+        full-frame resize, and the localizer's input downscale — on thread
+        pools, for a batch that will be passed to :meth:`crop_batch` next. Lets
+        callers overlap it with the current batch's model work. Same calls,
+        same pixels; only where and when they run changes."""
+        resized = ([self._pool.submit(self._resize, f) for f in frames]
+                   if self.resize_factor != 1.0 else None)
+        loc = self._loc.prepare(frames) if self.method == "localizer" else None
+        return resized, loc
 
     def crop_batch(self, frames: list, resets: list | None = None, prepared=None) -> list:
         """Crop consecutive *wanted* frames. ``resets[i]`` True resets the
@@ -120,15 +137,16 @@ class FrameCropper:
         Returns crops in the frames' own layout (BGR, or 2-D gray from the
         NVDEC decoder)."""
         resets = resets or [False] * len(frames)
+        resized_f, loc_prepared = prepared if prepared is not None else (None, None)
         if self.method == "localizer":
             # The network is stateless, so locate the whole batch at once; only
             # the smoothing below is sequential.
-            centers, pres = self._loc.locate(frames, prepared=prepared)
+            centers, pres = self._loc.locate(frames, prepared=loc_prepared)
         out = []
         for i, frame in enumerate(frames):
             if resets[i]:
                 self.reset()
-            resized = self._resize(frame)
+            resized = resized_f[i].result() if resized_f is not None else self._resize(frame)
             if self.method == "none":
                 out.append(resized)
             elif self.method == "background":

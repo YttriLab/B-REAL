@@ -20,6 +20,7 @@ present.
 
 from __future__ import annotations
 
+import os
 from concurrent.futures import ThreadPoolExecutor
 
 import cv2
@@ -72,7 +73,6 @@ def load_localizer(path: str, device: str | torch.device | None = None) -> Local
     """Load weights onto ``device``. Cached per (file, mtime, device): the
     preview endpoint asks for the same model on every frame step, and an eval
     model is stateless so sharing one between requests is safe."""
-    import os
     device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     key = (os.path.abspath(path), os.path.getmtime(path), str(device))
     if key not in _CACHE:
@@ -106,15 +106,43 @@ class LocalizerCropper:
     def __init__(self, weights_path: str, box_size: int = 220, smoothing: float = 0.5,
                  deadband: float = 0.0, presence_threshold: float = 0.5,
                  device: str | None = None, model: Localizer | None = None,
-                 workers: int = 8):
+                 workers: int = 8, runtime: str = "torch", precision: str = "fp16",
+                 max_batch: int = 32, on_status=None):
+        """``runtime``: "torch", "tensorrt" or "auto" (TensorRT when usable;
+        the engine is built and cached on first use, see trt_engines.py)."""
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
-        self.model = model if model is not None else load_localizer(weights_path, self.device)
+        self.weights_path = weights_path
+        self.engine = None
+        if model is None and runtime != "torch":
+            import trt_engines
+            rt, reason = trt_engines.resolve_runtime(runtime)
+            if rt == "tensorrt":
+                try:
+                    self.engine = trt_engines.localizer_engine(
+                        weights_path, precision=precision, max_batch=max_batch,
+                        on_status=on_status)
+                    self.device = torch.device("cuda")
+                    reason = f"TensorRT {precision} ({os.path.basename(self.engine.path)})"
+                except Exception as e:
+                    if runtime == "tensorrt":
+                        raise
+                    reason = f"PyTorch (TensorRT engine build failed: {type(e).__name__}: {e})"
+            print(f"[localizer] runtime: {reason}", flush=True)
+        self._model = model
         self.box_size = int(box_size)
         self.smoothing = max(0.0, min(1.0, float(smoothing)))
         self.deadband = float(deadband)
         self.presence_threshold = float(presence_threshold)
         self.smoothed_center = None  # (cx, cy) in cropped-frame px
         self._pool = ThreadPoolExecutor(workers)
+
+    @property
+    def model(self) -> Localizer:
+        """The PyTorch network — loaded lazily, so a TensorRT run never pays
+        for it unless something asks for the heatmap."""
+        if self._model is None:
+            self._model = load_localizer(self.weights_path, self.device)
+        return self._model
 
     def close(self) -> None:
         self._pool.shutdown(wait=False)
@@ -137,9 +165,13 @@ class LocalizerCropper:
                 if return_heatmap else empty
         small = [f.result() for f in (prepared if prepared is not None else self.prepare(frames))]
         x = torch.from_numpy(np.stack(small)).to(self.device)
-        with torch.autocast(self.device.type, dtype=torch.bfloat16,
-                            enabled=self.device.type == "cuda"):
-            xy, lg, pl = self.model(x)
+        if self.engine is not None and not return_heatmap:
+            xy, pl = self.engine(x)
+            lg = None
+        else:
+            with torch.autocast(self.device.type, dtype=torch.bfloat16,
+                                enabled=self.device.type == "cuda"):
+                xy, lg, pl = self.model(x)
         xy = xy.float().cpu().numpy()
         scale = np.array([[f.shape[1] / IN_W, f.shape[0] / IN_H] for f in frames], np.float32)
         centers = xy * scale

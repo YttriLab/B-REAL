@@ -73,7 +73,9 @@ def _box_thickness(frame: np.ndarray) -> int:
 def _preview_localizer(video_path, frame_index, crop_params, prev_center) -> dict:
     """Localizer-mode preview: the box, the network's heatmap, and the crop."""
     frame = _read_frame(video_path, frame_index)
-    cropper = FrameCropper(crop_params)
+    # PyTorch even when crops use TensorRT: the preview shows the heatmap,
+    # which the engines don't output, and must not wait on a first-time build.
+    cropper = FrameCropper({**crop_params, "localizer_runtime": "torch"})
     try:
         if prev_center and len(prev_center) == 2:
             cropper._loc.smoothed_center = (float(prev_center[0]), float(prev_center[1]))
@@ -203,6 +205,7 @@ def crop_video_flat(
     crop: bool = True,
     decoder: str = "auto",
     batch_size: int = 32,
+    on_status: Callable[[str], None] | None = None,
 ) -> str:
     """
     Extract frames from a video, each saved as a flat PNG named by its
@@ -236,9 +239,11 @@ def crop_video_flat(
     os.makedirs(out_sub_dir, exist_ok=True)
 
     cropper = FrameCropper(crop_params, video_path=video_path, bg_path=bg_path,
-                           num_frames_bg=num_frames_bg, crop=crop)
+                           num_frames_bg=num_frames_bg, crop=crop, on_status=on_status)
     dec, reason = video_decode.resolve_decoder(decoder, video_path)
     print(f"[preprocess] decoder: {reason}", flush=True)
+    if on_status:
+        on_status(f"Preprocessing ({cropper.method} crop, {dec} decode)…")
 
     cap = cv2.VideoCapture(video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -293,6 +298,7 @@ def start_preprocessing(
         "cancel": False,
         "error": None,
         "output_dir": None,
+        "message": None,
     }
     _tasks[task_id] = task
 
@@ -314,6 +320,7 @@ def start_preprocessing(
                 cancel_flag=lambda: task["cancel"],
                 crop=crop,
                 decoder=decoder,
+                on_status=lambda m: task.__setitem__("message", m),
             )
             if task["cancel"]:
                 task["status"] = "cancelled"

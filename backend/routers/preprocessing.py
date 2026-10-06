@@ -47,6 +47,11 @@ class CropParams(BaseModel):
     localizer_path: Optional[str] = None
     # Below this localizer presence probability the box holds still.
     presence_threshold: float = 0.5
+    # How the localizer runs: "auto" = a TensorRT engine (built + cached on
+    # first use) when the GPU supports it, else PyTorch. Part of the crop
+    # settings so preprocessing and inference locate identically.
+    localizer_runtime: Literal["auto", "tensorrt", "torch"] = "torch"
+    localizer_precision: Literal["fp16", "fp32"] = "fp16"
 
 
 Decoder = Literal["auto", "nvdec", "cpu"]
@@ -150,6 +155,7 @@ async def api_preprocess_status(task_id: str):
                 "total": task["total"],
                 "error": task["error"],
                 "output_dir": task["output_dir"],
+                "message": task.get("message"),
             })
             yield f"data: {data}\n\n"
             if task["status"] in ("completed", "error", "cancelled"):

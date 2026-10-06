@@ -67,6 +67,14 @@ CROP_KEYS_BY_METHOD = {
 # EMA the localizer pipeline was validated with (label_video: 0.5).
 LOCALIZER_SMOOTHING = 0.5
 
+# (label, runtime, precision) for the classifier at inference — see trt_engines.py
+INFERENCE_RUNTIMES = [
+    ("Auto (TensorRT fp16 if available)", "auto", "fp16"),
+    ("TensorRT fp16", "tensorrt", "fp16"),
+    ("TensorRT fp32", "tensorrt", "fp32"),
+    ("PyTorch", "torch", "fp16"),
+]
+
 # (label, decoder) — see video_decode.py
 DECODERS = [
     ("Auto (GPU if bit-exact)", "auto"),

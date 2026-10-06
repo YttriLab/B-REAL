@@ -188,6 +188,7 @@ def test_preprocess_localizer_mode():
     params = tab.build_crop_params()
     assert params["method"] == "localizer"
     assert params["localizer_path"] == "/w/loc2_final.pt"
+    assert params["localizer_runtime"] == "auto"  # TensorRT when available
 
 
 def test_preprocess_localizer_preview_sends_no_background():

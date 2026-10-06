@@ -18,7 +18,7 @@ from labeling_shell.active_learning import AlState
 from labeling_shell.no_wheel import NoWheelComboBox
 from labeling_shell.theme import mark_accent
 
-from .pipeline_config import DECODERS
+from .pipeline_config import DECODERS, INFERENCE_RUNTIMES
 from .pipeline_panel import _Base
 
 
@@ -45,6 +45,14 @@ class ActiveLearningPanel(_Base):
             "Auto: decode on the GPU (NVDEC) when it reproduces OpenCV's frames "
             "bit-for-bit on this video — monochrome videos — otherwise OpenCV.")
         form.addRow("Decoder", self.decoder)
+
+        self.runtime = NoWheelComboBox()
+        for label, rt, prec in INFERENCE_RUNTIMES:
+            self.runtime.addItem(label, (rt, prec))
+        self.runtime.setToolTip(
+            "TensorRT compiles the classifier for this GPU: built from the "
+            "checkpoint on first use (~0.5-2 min) and cached, then reused.")
+        form.addRow("Runtime", self.runtime)
 
         self.threshold = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.threshold.setRange(0, 100)
@@ -99,6 +107,8 @@ class ActiveLearningPanel(_Base):
             if total:
                 self.progress.setMaximum(total)
                 self.progress.setValue(prog)
+            if ev.get("message") and ev.get("status") == "running":
+                self.ctx.status(ev["message"])
 
         def on_stream_done():
             if self._task_id:
@@ -114,6 +124,7 @@ class ActiveLearningPanel(_Base):
         # Snapshot on the GUI thread; the lambda runs on a worker.
         crop_params = self.ctx.crop_params()
         decoder = self.decoder.currentData()
+        runtime, precision = self.runtime.currentData()
         self.ctx.status("Running inference…")
         self._spawn_call(
             lambda: client.run_inference(
@@ -122,7 +133,7 @@ class ActiveLearningPanel(_Base):
                 crop_params=crop_params,
                 frames_per_group=self.ctx.frames_per_group(),
                 frame_ranges=None,
-                decoder=decoder),
+                decoder=decoder, runtime=runtime, precision=precision),
             start,
         )
 

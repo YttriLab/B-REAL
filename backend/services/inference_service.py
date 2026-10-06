@@ -195,6 +195,9 @@ def run_inference_video(
     decoder: str = "auto",
     batch_size: int = 32,
     crop: bool = True,
+    runtime: str = "torch",
+    precision: str = "fp16",
+    on_status: callable = None,
 ) -> dict:
     """
     Run per-frame inference by decoding + cropping the video on the fly — no
@@ -209,6 +212,12 @@ def run_inference_video(
     batches, each frame is transformed once and reused by the T clips that
     contain it, and clips go through the model ``batch_size`` at a time.
 
+    ``runtime`` "tensorrt" (or "auto", when the GPU supports it) runs the
+    classifier as a TensorRT engine at ``precision``, built from the
+    checkpoint and cached on first use (trt_engines.py). The localizer's
+    runtime is a crop setting (``crop_params["localizer_runtime"]``), so
+    preprocessing locates with the same engine.
+
     If ``frame_ranges`` (inclusive [start, end] native-index pairs) is given,
     predictions are emitted only for those frames — used by Active Learning to
     scope inference to a segment or to the already-labeled frames. Decoding still
@@ -221,30 +230,52 @@ def run_inference_video(
     from backend.services.cropping import FrameCropper, iter_wanted, to_rgb
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    T = frames_per_group
+    batch_size = max(1, int(batch_size))
+
+    rt, rt_reason = "torch", "PyTorch (requested)"
+    if runtime != "torch":
+        import trt_engines
+        rt, rt_reason = trt_engines.resolve_runtime(runtime)
 
     load_kwargs = model_config or {}
     model = TSMClassifier.load_from_checkpoint(
-        checkpoint_path, map_location=device, strict=False, **load_kwargs
+        checkpoint_path, map_location="cpu" if rt == "tensorrt" else device,
+        strict=False, **load_kwargs
     )
-    model.to(device)
     model.eval()
+    classify = model
+    if rt == "tensorrt":
+        try:
+            classify = trt_engines.tsm_engine(
+                model, checkpoint_path, T, image_size, precision=precision,
+                max_batch=batch_size, model_config=load_kwargs, on_status=on_status)
+            rt_reason = f"TensorRT {precision} ({os.path.basename(classify.path)})"
+            device = "cuda"
+        except Exception as e:
+            if runtime == "tensorrt":
+                raise
+            rt_reason = f"PyTorch (TensorRT engine build failed: {type(e).__name__}: {e})"
+    if classify is model:
+        model.to(device)
 
     num_classes = model.num_classes
     class_names = model.class_names
     max_entropy = math.log(num_classes)
 
     cropper = FrameCropper(crop_params, video_path=video_path, bg_path=bg_path,
-                           num_frames_bg=num_frames_bg, crop=crop)
+                           num_frames_bg=num_frames_bg, crop=crop, on_status=on_status)
     dec, reason = video_decode.resolve_decoder(decoder, video_path)
-    print(f"[inference] crop: {cropper.method}; decoder: {reason}", flush=True)
+    print(f"[inference] crop: {cropper.method}; decoder: {reason}; classifier: {rt_reason}",
+          flush=True)
+    if on_status:
+        engine = f"TensorRT {precision}" if classify is not model else "PyTorch"
+        on_status(f"Running inference ({cropper.method} crop, {dec} decode, {engine})…")
 
     transform = _build_val_transform(image_size)
     cap = cv2.VideoCapture(video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.release()
-
-    T = frames_per_group
-    batch_size = max(1, int(batch_size))
 
     # Optional scoping: only emit predictions for frames in `wanted`.
     wanted = _wanted_set(frame_ranges)
@@ -272,7 +303,7 @@ def run_inference_video(
             return
         clips = torch.stack(pending_clips).to(device)
         with torch.no_grad():
-            probs = F.softmax(model(clips).float(), dim=1)
+            probs = F.softmax(classify(clips).float(), dim=1)
         entropy = -(probs * torch.log(probs + 1e-10)).sum(1)
         norm = (entropy / max_entropy) if max_entropy > 0 else torch.zeros_like(entropy)
         for idx, p, u, c in zip(pending_idx, probs.cpu().tolist(), norm.cpu().tolist(),
@@ -342,6 +373,8 @@ def start_inference(
     frame_ranges: list | None = None,
     decoder: str = "auto",
     batch_size: int = 32,
+    runtime: str = "torch",
+    precision: str = "fp16",
 ) -> str:
     """
     Launch inference in a background thread. Returns task_id.
@@ -360,6 +393,7 @@ def start_inference(
         "cancel": False,
         "error": None,
         "results": None,
+        "message": None,
     }
     _tasks[task_id] = task
 
@@ -383,6 +417,9 @@ def start_inference(
                     cancel_flag=lambda: task["cancel"],
                     decoder=decoder,
                     batch_size=batch_size,
+                    runtime=runtime,
+                    precision=precision,
+                    on_status=lambda m: task.__setitem__("message", m),
                 )
             else:
                 result = run_inference(
