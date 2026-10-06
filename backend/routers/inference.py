@@ -2,11 +2,11 @@
 
 import asyncio
 import json
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.services.inference_service import (
     start_inference,
@@ -31,6 +31,11 @@ class InferenceRequest(BaseModel):
     # Optional scoping (video path only): inclusive [start, end] native-index
     # pairs. Omit/None to run on the entire video.
     frame_ranges: Optional[list] = None
+    # Video path only. "auto" = NVDEC when it reproduces cv2 bit-for-bit on
+    # this video, else cv2 (see video_decode.py).
+    decoder: Literal["auto", "nvdec", "cpu"] = "auto"
+    # Clips per model forward pass.
+    batch_size: int = Field(32, ge=1, le=1024)
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────
@@ -51,6 +56,8 @@ async def api_run_inference(req: InferenceRequest):
             bg_path=req.bg_path,
             crop_params=req.crop_params,
             frame_ranges=req.frame_ranges,
+            decoder=req.decoder,
+            batch_size=req.batch_size,
         )
         return {"task_id": task_id}
     except Exception as e:

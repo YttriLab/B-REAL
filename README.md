@@ -13,7 +13,7 @@ It pairs a PySide6 labeling UI with a Python (FastAPI + PyTorch Lightning) backe
 A complete pipeline in one app:
 
 1. **Label** — Load videos, define behaviors, and mark temporal *bouts* (start/end intervals) frame-by-frame.
-2. **Preprocess** — Background subtraction + animal-centered cropping → flat frame images for training.
+2. **Preprocess** — Find the animal (background subtraction, or a SAM2-distilled localizer network) and crop around it → flat frame images for training.
 3. **Train** — Train a Temporal Shift Module (TSM) classifier on an EfficientNet backbone (b0–b7), with live metrics.
 4. **Tune** — Optuna hyperparameter sweeps, optionally constrained to architectures that meet a p99 inference-latency budget in the deployment runtime.
 5. **Active Learning** — Run inference, see an uncertainty heatmap and misclassification markers on the timeline, and jump to the frames most worth relabeling.
@@ -79,13 +79,21 @@ In the **Label** tab, add behaviors (e.g. *grooming*, *walking*). Each is auto-a
 Play or step through the video and press a behavior's number key **once to start** a bout and **again to end** it. Bouts appear in the scrollable list, where you can edit times, reassign behaviors, or jump to a bout's start/end.
 
 ### 5. Preprocess
-In the **Preprocess** tab: compute a background, tune the crop preview, then run preprocessing. It extracts **only the labeled frames** (plus a short clip lead-in), cropped to the animal, into the project — so label first, then preprocess.
+In the **Preprocess** tab: pick a **crop method**, tune the crop preview, then run preprocessing. It extracts **only the labeled frames** (plus a short clip lead-in), cropped to the animal, into the project — so label first, then preprocess.
+
+| Crop method | Finds the animal by | Needs |
+|---|---|---|
+| **Background subtraction** (default) | thresholding the difference from an averaged background | a background (**Compute background**) |
+| **SAM2 localizer** | a ResNet18 heatmap network distilled from SAM2 body masks, run in batches on the GPU; it also predicts whether an animal is present, and holds the box still when it isn't | the localizer weights (`.pt`) |
+| **None** | — (whole frames) | nothing |
+
+The localizer copes with what background subtraction can't: a drifting background, long stillness, an empty arena, or a hand in the cage. Its weights are trained per rig — they are not shipped with B-REAL. Active Learning crops with the same settings as this tab, so keep them matching what the model was trained on.
 
 ### 6. Train
 In the **Train** tab: add data sources (frame dir + label CSV), set hyperparameters, and start training. Watch live loss/accuracy. Optionally enable **Weights & Biases** logging (project name, run name, and API key — the key is passed to the training process via environment variable and never written to disk). When a project is open, the best checkpoint is saved into it and recorded automatically.
 
 ### 7. Infer & refine (Active Learning)
-In the **Active Learning** tab: select a checkpoint and run inference — it scores the **current video on the fly** (no frame directory needed), so it can flag uncertain regions you haven't labeled yet. A per-frame **uncertainty heatmap** (green → red) plus **misclassification markers** appear on the timeline. Jump to the next uncertain segment / misclassified frame, fix the label, and iterate.
+In the **Active Learning** tab: select a checkpoint and run inference — it scores the **current video on the fly** (no frame directory needed), so it can flag uncertain regions you haven't labeled yet. Decoding runs ahead on its own thread — on the GPU (NVDEC) when that reproduces OpenCV's frames bit-for-bit, which it does for monochrome h264/hevc video (the **Decoder** setting; *Auto* checks and falls back to OpenCV) — and clips go through the model in batches. A per-frame **uncertainty heatmap** (green → red) plus **misclassification markers** appear on the timeline. Jump to the next uncertain segment / misclassified frame, fix the label, and iterate.
 
 ---
 
@@ -231,6 +239,8 @@ pixi run -e gui python gui/run_all_tests.py
 ├── convert_torchscript_tsm.py
 ├── optimized_runtime.py  # ONNX -> OpenVINO / TensorRT export + latency benchmarking
 ├── tune_cropping.py    # cropping/background utilities
+├── localizer.py        # SAM2-distilled localizer network + crop stabilisation
+├── video_decode.py     # cv2 / NVDEC frame source (bit-identical), prefetching
 ├── config_tsm.yaml     # training defaults
 └── tests/              # pytest suite
 ```

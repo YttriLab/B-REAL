@@ -125,6 +125,53 @@ class TestPreprocessingRouter:
 
 # ── Training router ──────────────────────────────────────────────────────
 
+class TestCropMethodAndDecoder:
+    """The localizer crop method and the decoder choice, at the HTTP layer."""
+
+    @pytest.mark.asyncio
+    async def test_localizer_preview_needs_weights_not_a_background(self, ac, synthetic_video):
+        resp = await ac.post("/api/preprocess/preview", json={
+            "video_path": synthetic_video[0], "frame_index": 0,
+            "crop_params": {"method": "localizer"},
+        })
+        assert resp.status_code == 422 and "localizer_path" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_localizer_preview(self, ac, synthetic_video, stub_localizer):
+        resp = await ac.post("/api/preprocess/preview", json={
+            "video_path": synthetic_video[0], "frame_index": 5,
+            "crop_params": {"method": "localizer", "localizer_path": stub_localizer,
+                            "box_size": 24},
+        })
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["cropped"] and data["mask"] and data["original_bbox"]
+        assert data["presence"] > 0.5 and len(data["center"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_background_preview_still_needs_a_background(self, ac, synthetic_video):
+        resp = await ac.post("/api/preprocess/preview", json={
+            "video_path": synthetic_video[0], "frame_index": 0,
+        })
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_run_rejects_unknown_method_and_decoder(self, ac, synthetic_video, tmp_path):
+        base = {"video_path": synthetic_video[0], "output_dir": str(tmp_path)}
+        r1 = await ac.post("/api/preprocess/run", json={**base, "crop_params": {"method": "sam3"}})
+        r2 = await ac.post("/api/preprocess/run", json={**base, "decoder": "vaapi"})
+        r3 = await ac.post("/api/preprocess/run", json={**base, "crop_params": {"method": "localizer"}})
+        assert (r1.status_code, r2.status_code, r3.status_code) == (422, 422, 422)
+
+    @pytest.mark.asyncio
+    async def test_inference_accepts_decoder_and_batch_size(self, ac, synthetic_video):
+        base = {"checkpoint_path": "x.ckpt", "video_path": synthetic_video[0]}
+        bad = await ac.post("/api/inference/run", json={**base, "decoder": "vaapi"})
+        assert bad.status_code == 422
+        bad = await ac.post("/api/inference/run", json={**base, "batch_size": 0})
+        assert bad.status_code == 422
+
+
 class TestTrainingRouter:
     @pytest.mark.asyncio
     async def test_start_returns_task_id(self, ac, tmp_path):

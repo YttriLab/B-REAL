@@ -15,8 +15,10 @@ from __future__ import annotations
 from PySide6 import QtCore, QtWidgets
 
 from labeling_shell.active_learning import AlState
+from labeling_shell.no_wheel import NoWheelComboBox
 from labeling_shell.theme import mark_accent
 
+from .pipeline_config import DECODERS
 from .pipeline_panel import _Base
 
 
@@ -33,6 +35,16 @@ class ActiveLearningPanel(_Base):
         crow.addWidget(self.ckpt, 1)
         crow.addWidget(browse)
         form.addRow("Checkpoint", crow)
+
+        # Crops come from the Preprocess tab's settings (method, box, ...), so
+        # inference sees what training saw; only the decoder is chosen here.
+        self.decoder = NoWheelComboBox()
+        for label, dec in DECODERS:
+            self.decoder.addItem(label, dec)
+        self.decoder.setToolTip(
+            "Auto: decode on the GPU (NVDEC) when it reproduces OpenCV's frames "
+            "bit-for-bit on this video — monochrome videos — otherwise OpenCV.")
+        form.addRow("Decoder", self.decoder)
 
         self.threshold = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.threshold.setRange(0, 100)
@@ -99,14 +111,18 @@ class ActiveLearningPanel(_Base):
                 self._spawn_stream(
                     lambda: client.inference_status(self._task_id), on_event, on_stream_done)
 
+        # Snapshot on the GUI thread; the lambda runs on a worker.
+        crop_params = self.ctx.crop_params()
+        decoder = self.decoder.currentData()
         self.ctx.status("Running inference…")
         self._spawn_call(
             lambda: client.run_inference(
                 self.ckpt.text(), video_path=video,
                 bg_path=self.ctx.current_bg_path(),
-                crop_params=self.ctx.crop_params(),
+                crop_params=crop_params,
                 frames_per_group=self.ctx.frames_per_group(),
-                frame_ranges=None),
+                frame_ranges=None,
+                decoder=decoder),
             start,
         )
 

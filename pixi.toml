@@ -89,6 +89,10 @@ simsimd = "*"
 # here. The -cu12 variant matches the CUDA 12 runtime pytorch-gpu brings in;
 # tensorrt-cu13 would load a second, conflicting CUDA into the same process.
 tensorrt-cu12 = "*"
+# NVDEC hardware video decoding for inference/preprocessing (video_decode.py).
+# Optional at runtime: decoder="auto" falls back to cv2 if it's missing or the
+# GPU has no NVDEC. Uses the driver's libnvcuvid and bundles its own demuxer.
+PyNvVideoCodec = "*"
 
 # The PySide6 desktop app. No torch, no CUDA — this environment installs (and
 # solves) on a machine with no GPU at all, which matters for anyone running the

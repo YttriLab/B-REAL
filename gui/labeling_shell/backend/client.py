@@ -112,7 +112,7 @@ class BackendClient:
             "video_path": video_path, "num_frames": num_frames, "output_dir": output_dir,
         })
 
-    def preview_frame(self, video_path: str, bg_path: str, frame_index: int,
+    def preview_frame(self, video_path: str, bg_path: Optional[str], frame_index: int,
                       crop_params: Optional[dict] = None,
                       prev_center: Optional[list] = None) -> dict:
         body = {"video_path": video_path, "bg_path": bg_path,
@@ -126,12 +126,13 @@ class BackendClient:
                           frame_ranges: Optional[list] = None,
                           bg_path: Optional[str] = None, num_frames_bg: int = 500,
                           output_name: Optional[str] = None,
-                          crop: bool = True) -> dict:
-        """`crop=False` extracts whole frames and skips background subtraction."""
+                          crop: bool = True, decoder: str = "auto") -> dict:
+        """`crop=False` extracts whole frames and skips background subtraction.
+        `decoder`: "auto" | "nvdec" | "cpu"."""
         body = {"video_path": video_path, "output_dir": output_dir,
                 "frame_ranges": frame_ranges, "bg_path": bg_path,
                 "num_frames_bg": num_frames_bg, "output_name": output_name,
-                "crop": crop}
+                "crop": crop, "decoder": decoder}
         if crop_params is not None:
             body["crop_params"] = crop_params
         return self._post("/api/preprocess/run", body)
@@ -207,12 +208,14 @@ class BackendClient:
                       video_path: Optional[str] = None, bg_path: Optional[str] = None,
                       crop_params: Optional[dict] = None, frames_per_group: int = 3,
                       image_size: int = 224, extra_model_config: Optional[dict] = None,
-                      frame_ranges: Optional[list] = None) -> dict:
+                      frame_ranges: Optional[list] = None, decoder: str = "auto",
+                      batch_size: int = 32) -> dict:
         return self._post("/api/inference/run", {
             "checkpoint_path": checkpoint_path, "frame_dir": frame_dir,
             "video_path": video_path, "bg_path": bg_path, "crop_params": crop_params,
             "frames_per_group": frames_per_group, "image_size": image_size,
             "extra_model_config": extra_model_config, "frame_ranges": frame_ranges,
+            "decoder": decoder, "batch_size": batch_size,
         })
 
     def inference_status(self, task_id: str) -> Iterator[dict]:

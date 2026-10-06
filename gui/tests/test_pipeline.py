@@ -109,7 +109,7 @@ def test_build_train_config():
 def test_preprocess_build_crop_params_defaults():
     _app()
     tab = PreprocessTab(FakeCtx())
-    assert tab.build_crop_params() == CROP_DEFAULTS
+    assert tab.build_crop_params() == {**CROP_DEFAULTS, "method": "background"}
 
 
 def test_compute_background_sends_frame_count_and_project_dir():
@@ -148,19 +148,76 @@ def test_preprocess_raw_mode_disables_crop_controls():
     meaningless, but resize_factor still resizes what gets written."""
     _app()
     tab = PreprocessTab(FakeCtx())
-    assert tab.crop_enabled.isChecked()
+    assert tab.method() == "background"
     assert tab.crop_widgets["box_size"].isEnabled()
     assert tab.bg_edit.isEnabled()
+    assert not tab.loc_edit.isEnabled()
 
-    tab.crop_enabled.setChecked(False)
+    _set_method(tab, "none")
     assert not tab.crop_widgets["box_size"].isEnabled()
     assert not tab.bg_edit.isEnabled()
     assert not tab.preview_box.isEnabled()
     assert tab.crop_widgets["resize_factor"].isEnabled()  # still applies
+    assert tab.build_crop_params()["method"] == "none"
 
-    tab.crop_enabled.setChecked(True)
+    _set_method(tab, "background")
     assert tab.crop_widgets["box_size"].isEnabled()
     assert tab.preview_box.isEnabled()
+
+
+def _set_method(tab, method):
+    tab.crop_method.setCurrentIndex(tab.crop_method.findData(method))
+
+
+def test_preprocess_localizer_mode():
+    """The localizer needs its weights instead of a background, reads only the
+    box + stabilisation knobs, and starts from the validated smoothing."""
+    _app()
+    tab = PreprocessTab(FakeCtx())
+    _set_method(tab, "localizer")
+    assert tab.loc_edit.isEnabled()
+    assert not tab.bg_edit.isEnabled()
+    assert tab.preview_box.isEnabled()
+    for key in ("box_size", "resize_factor", "smoothing", "deadband"):
+        assert tab.crop_widgets[key].isEnabled(), key
+    for key in ("difference_threshold", "close_kernel", "min_contour_area"):
+        assert not tab.crop_widgets[key].isEnabled(), key
+    assert tab.crop_widgets["smoothing"].value() == 0.5
+
+    tab.loc_edit.setText("/w/loc2_final.pt")
+    params = tab.build_crop_params()
+    assert params["method"] == "localizer"
+    assert params["localizer_path"] == "/w/loc2_final.pt"
+
+
+def test_preprocess_localizer_preview_sends_no_background():
+    _app()
+    ctx = FakeCtx()
+    calls = []
+
+    class StubClient:
+        def preview_frame(self, video, bg, frame, crop_params=None, prev_center=None):
+            calls.append({"bg": bg, "crop_params": crop_params})
+            return {"presence": 0.9}
+
+    ctx._client = StubClient()
+    tab = PreprocessTab(ctx)
+    tab.bg_edit.setText("/p/bg.png")
+    _set_method(tab, "localizer")
+
+    tab._preview(reset_center=True)  # no weights yet: refuses, says why
+    assert not calls and "localizer" in tab.preview_info.text().lower()
+
+    tab.loc_edit.setText("/w/loc.pt")
+    tab._preview(reset_center=True)
+    app = QtWidgets.QApplication.instance()
+    for _ in range(200):
+        if calls:
+            break
+        app.processEvents()
+        QtCore.QThread.msleep(10)
+    assert calls and calls[-1]["bg"] is None
+    assert calls[-1]["crop_params"]["localizer_path"] == "/w/loc.pt"
 
 
 def test_preprocess_preview_renders_the_three_panes():

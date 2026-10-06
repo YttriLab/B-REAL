@@ -1,13 +1,16 @@
 """
 Inference service: loads a trained TSMClassifier checkpoint and runs per-frame
-inference on preprocessed flat frame directories. Computes normalized entropy
-for active learning uncertainty estimation.
+inference, either on a video (decoded + cropped on the fly, see
+run_inference_video) or on a preprocessed flat frame directory. Computes
+normalized entropy for active learning uncertainty estimation.
 """
 
 import math
 import os
 import threading
 import uuid
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 import cv2
@@ -189,13 +192,22 @@ def run_inference_video(
     frame_ranges: list | None = None,
     on_progress: callable = None,
     cancel_flag: callable = None,
+    decoder: str = "auto",
+    batch_size: int = 32,
+    crop: bool = True,
 ) -> dict:
     """
     Run per-frame inference by decoding + cropping the video on the fly — no
-    pre-extracted frame directory. Frames are cropped with the SAME pipeline as
-    training (FindRatBoundingBox + background), so the model sees the same
-    distribution. Results are indexed by native frame number, matching the
-    label/timeline index space.
+    pre-extracted frame directory. Frames are cropped with the SAME code as
+    preprocessing (backend/services/cropping.py: background subtraction, the
+    SAM2-distilled localizer, or no crop, per ``crop_params["method"]``), so
+    the model sees the distribution it was trained on. Results are indexed by
+    native frame number, matching the label/timeline index space.
+
+    Throughput: decoding runs ahead on a background thread (NVDEC when
+    ``decoder`` resolves to it, see video_decode.py), the localizer runs in
+    batches, each frame is transformed once and reused by the T clips that
+    contain it, and clips go through the model ``batch_size`` at a time.
 
     If ``frame_ranges`` (inclusive [start, end] native-index pairs) is given,
     predictions are emitted only for those frames — used by Active Learning to
@@ -204,8 +216,9 @@ def run_inference_video(
     model forward are skipped for frames outside the clip lookback of any wanted
     frame, and decoding stops once the last wanted frame is passed.
     """
+    import video_decode
     from model_tsm import TSMClassifier
-    from tune_cropping import FindRatBoundingBox, get_background_avg, pop_resize_factor, resize_frame
+    from backend.services.cropping import FrameCropper, iter_wanted, to_rgb
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -218,30 +231,20 @@ def run_inference_video(
 
     num_classes = model.num_classes
     class_names = model.class_names
+    max_entropy = math.log(num_classes)
 
-    bg = None
-    if bg_path:
-        loaded = cv2.imread(bg_path, cv2.IMREAD_GRAYSCALE)
-        if loaded is not None:
-            bg = loaded.astype(np.float32)
-        else:
-            # cv2.imread silently returns None for a missing/unreadable file;
-            # fall back to computing the background from the video itself rather
-            # than crashing with "'NoneType' object has no attribute 'astype'".
-            print(f"[inference] background not readable at {bg_path}; "
-                  f"computing it from the video instead.", flush=True)
-    if bg is None:
-        bg = get_background_avg(video_path, num_frames_bg)
-    # Apply the same full-frame pre-resize used in training so crops match.
-    crop_params, resize_factor = pop_resize_factor(crop_params)
-    bg = resize_frame(bg, resize_factor)
-    cropper = FindRatBoundingBox(bg, **crop_params)
+    cropper = FrameCropper(crop_params, video_path=video_path, bg_path=bg_path,
+                           num_frames_bg=num_frames_bg, crop=crop)
+    dec, reason = video_decode.resolve_decoder(decoder, video_path)
+    print(f"[inference] crop: {cropper.method}; decoder: {reason}", flush=True)
 
     transform = _build_val_transform(image_size)
     cap = cv2.VideoCapture(video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    cap.release()
 
     T = frames_per_group
+    batch_size = max(1, int(batch_size))
 
     # Optional scoping: only emit predictions for frames in `wanted`.
     wanted = _wanted_set(frame_ranges)
@@ -260,68 +263,67 @@ def run_inference_video(
         # Wanted frames before index T-1 can't form a full clip, so they're not emitted.
         target_total = sum(1 for i in wanted if i >= T - 1)
 
-    window = []  # rolling window of the last T cropped RGB frames
+    window = deque(maxlen=T)  # transformed tensors of the last T contiguous needed frames
+    pending_idx, pending_clips = [], []
     results = []
-    frame_index = 0
 
-    with torch.no_grad():
-        while True:
+    def flush():
+        if not pending_clips:
+            return
+        clips = torch.stack(pending_clips).to(device)
+        with torch.no_grad():
+            probs = F.softmax(model(clips).float(), dim=1)
+        entropy = -(probs * torch.log(probs + 1e-10)).sum(1)
+        norm = (entropy / max_entropy) if max_entropy > 0 else torch.zeros_like(entropy)
+        for idx, p, u, c in zip(pending_idx, probs.cpu().tolist(), norm.cpu().tolist(),
+                                probs.argmax(1).cpu().tolist()):
+            results.append({"index": idx, "predictions": p, "uncertainty": u,
+                            "predicted_class": c})
+        pending_idx.clear()
+        pending_clips.clear()
+        if on_progress:
+            on_progress(len(results), target_total)
+
+    def to_tensor(c):
+        return transform(image=to_rgb(c))["image"]
+
+    stop_after = (wanted_max + 1) if wanted else None
+    decoded = 0  # frames actually read (CAP_PROP_FRAME_COUNT is only an estimate)
+
+    def counted(batches):
+        nonlocal decoded
+        for b in batches:
+            decoded += len(b)
+            yield b
+
+    pool = ThreadPoolExecutor(4)
+    try:
+        batches = counted(video_decode.iter_batches(video_path, dec, batch_size=32,
+                                                    max_frames=stop_after))
+        # A gap (reset) restarts the clip and the crop-centre smoothing so the
+        # next region begins cleanly.
+        for idxs, frames, resets, prepared in iter_wanted(batches, _is_needed, cropper):
             if cancel_flag and cancel_flag():
                 break
-            ret, frame = cap.read()
-            if not ret:
-                break
-            if wanted is not None and frame_index > wanted_max:
-                break  # past the last wanted frame — nothing more to predict
+            tensors = pool.map(to_tensor, cropper.crop_batch(frames, resets, prepared))
+            for idx, reset, t in zip(idxs, resets, tensors):
+                if reset:
+                    window.clear()
+                window.append(t)
+                if len(window) == T and (wanted is None or idx in wanted):
+                    pending_idx.append(idx)
+                    pending_clips.append(torch.stack(tuple(window)))
+                    if len(pending_clips) >= batch_size:
+                        flush()
+        flush()
+    finally:
+        pool.shutdown(wait=False)
+        cropper.close()
 
-            if _is_needed(frame_index):
-                if resize_factor != 1.0:
-                    frame = cv2.resize(frame, (bg.shape[1], bg.shape[0]), interpolation=cv2.INTER_AREA)
-                # Crop, then match _load_frame's BGR->RGB conversion exactly.
-                *_, cropped = cropper(frame)
-                rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
-                window.append(rgb)
-                if len(window) > T:
-                    window.pop(0)
-            else:
-                # Gap before the next wanted frame: restart the clip and the
-                # crop-center smoothing so the next region begins cleanly.
-                window = []
-                cropper.smoothed_center = None
-
-            emit = wanted is None or frame_index in wanted
-            if emit and len(window) == T:
-                targets = {"image": window[0]}
-                for i in range(1, T):
-                    targets[f"image{i}"] = window[i]
-                transformed = transform(**targets)
-                tensors = [transformed["image"]]
-                for i in range(1, T):
-                    tensors.append(transformed[f"image{i}"])
-                clip = torch.stack(tensors).unsqueeze(0).to(device)
-
-                logits = model(clip)
-                probs = F.softmax(logits, dim=1).squeeze(0)
-                entropy = -(probs * torch.log(probs + 1e-10)).sum()
-                max_entropy = math.log(num_classes)
-                normalized_entropy = (entropy / max_entropy).item() if max_entropy > 0 else 0.0
-
-                results.append({
-                    "index": frame_index,
-                    "predictions": probs.cpu().tolist(),
-                    "uncertainty": normalized_entropy,
-                    "predicted_class": probs.argmax().item(),
-                })
-                if on_progress:
-                    on_progress(len(results), target_total)
-
-            frame_index += 1
-
-    cap.release()
     return {
         "frames": results,
         "class_names": class_names,
-        "total_frames": frame_index,
+        "total_frames": decoded,
         "frames_per_group": T,
     }
 
@@ -338,6 +340,8 @@ def start_inference(
     bg_path: str | None = None,
     crop_params: dict | None = None,
     frame_ranges: list | None = None,
+    decoder: str = "auto",
+    batch_size: int = 32,
 ) -> str:
     """
     Launch inference in a background thread. Returns task_id.
@@ -377,6 +381,8 @@ def start_inference(
                     frame_ranges=frame_ranges,
                     on_progress=on_progress,
                     cancel_flag=lambda: task["cancel"],
+                    decoder=decoder,
+                    batch_size=batch_size,
                 )
             else:
                 result = run_inference(

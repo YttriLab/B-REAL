@@ -144,6 +144,67 @@ def synthetic_background(tmp_path, synthetic_video):
     return bg_path
 
 
+@pytest.fixture
+def mono_h264_video(tmp_path):
+    """A monochrome h264 .mkv (yuv420p, chroma 128) — the kind of file the
+    NVDEC path handles. 40 frames, 96x80, a dark blob moving on a lit floor.
+    Returns (video_path, num_frames); skips if ffmpeg/libx264 is unavailable."""
+    import shutil
+    import subprocess
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        pytest.skip("ffmpeg not available")
+    n, h, w = 40, 80, 96
+    rng = np.random.RandomState(3)
+    floor = rng.randint(150, 210, (h, w), dtype=np.uint8)
+    frames = []
+    for i in range(n):
+        f = floor.copy()
+        cv2.circle(f, (20 + i, 30 + (i % 10)), 9, 25, -1)
+        frames.append(f)
+    path = str(tmp_path / "mono.mkv")
+    proc = subprocess.run(
+        [ffmpeg, "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "gray", "-s", f"{w}x{h}",
+         "-r", "30", "-i", "-", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", path],
+        input=np.stack(frames).tobytes(), capture_output=True)
+    if proc.returncode != 0:
+        pytest.skip(f"ffmpeg/libx264 failed: {proc.stderr.decode()[-200:]}")
+    return path, n
+
+
+class DarkCentroidLocalizer(__import__("torch").nn.Module):
+    """Stands in for the SAM2-distilled localizer network: same input/output
+    contract, but the centre is just the centroid of the dark pixels, and the
+    animal is "present" when there are any."""
+
+    def forward(self, x_u8):
+        import torch
+        x = x_u8.float()
+        dark = (x < 100).float()
+        B, H, W = x.shape
+        mass = dark.sum((1, 2))
+        xs = torch.arange(W).float() + 0.5
+        ys = torch.arange(H).float() + 0.5
+        cx = (dark.sum(1) * xs).sum(1) / mass.clamp(min=1)
+        cy = (dark.sum(2) * ys).sum(1) / mass.clamp(min=1)
+        heat = torch.zeros(B, H // 8, W // 8)
+        presence_logit = torch.where(mass > 0, torch.tensor(10.0), torch.tensor(-10.0))
+        return torch.stack([cx, cy], 1), heat, presence_logit
+
+
+@pytest.fixture
+def stub_localizer(monkeypatch, tmp_path):
+    """Route every localizer load to DarkCentroidLocalizer (on CPU) and return
+    a weights path to put in crop_params — the file only has to exist."""
+    import localizer
+    model = DarkCentroidLocalizer()
+    monkeypatch.setattr(localizer, "load_localizer", lambda path, device=None: model)
+    monkeypatch.setattr(localizer.torch.cuda, "is_available", lambda: False)
+    path = tmp_path / "loc_stub.pt"
+    path.write_bytes(b"")
+    return str(path)
+
+
 # ── Sample project fixture (for .rlt / project router tests) ──────────────
 
 @pytest.fixture

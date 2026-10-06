@@ -31,7 +31,8 @@ from labeling_shell.no_wheel import (
 from labeling_shell.theme import mark_accent
 
 from .pipeline_config import (
-    BATCH_CHOICES, CROP_DEFAULTS, EXPORT_FORMATS, FRAMES_CHOICES,
+    BATCH_CHOICES, CROP_DEFAULTS, CROP_KEYS_BY_METHOD, CROP_METHODS,
+    EXPORT_FORMATS, FRAMES_CHOICES, LOCALIZER_SMOOTHING,
     IMAGE_SIZE_CHOICES, OBJECTIVES, POOLS, PRECISIONS, TARGET_LABELS, TARGETS,
     VARIANT_NATIVE_SIZE, VARIANTS,
     build_train_config, build_tuning_request, choice_spec, latency_spec,
@@ -94,16 +95,33 @@ class PreprocessTab(_Base):
         self.video_label = QtWidgets.QLabel("—")
         form.addRow("Video", self.video_label)
 
-        # Cropping is the default, but a rig with no static background (moving
-        # camera, or the animal filling the frame) has nothing to subtract —
-        # then raw whole frames are the right input.
-        self.crop_enabled = QtWidgets.QCheckBox("Crop to the animal")
-        self.crop_enabled.setChecked(True)
-        self.crop_enabled.setToolTip(
-            "Off: write whole frames and skip background subtraction entirely. "
-            "resize_factor still applies.")
-        self.crop_enabled.toggled.connect(self._on_crop_toggled)
-        form.addRow(self.crop_enabled)
+        # How the animal is found. Background subtraction is the default; the
+        # SAM2-distilled localizer copes with a drifting background or an
+        # empty arena; a rig with no static background (moving camera, or the
+        # animal filling the frame) can skip cropping and use whole frames.
+        # Active Learning crops with the same settings, so they must match
+        # what the model was trained on.
+        self.crop_method = NoWheelComboBox()
+        for label, method in CROP_METHODS:
+            self.crop_method.addItem(label, method)
+        self.crop_method.setToolTip(
+            "Background subtraction: needs a background image.\n"
+            "SAM2 localizer: a network finds the animal; needs its weights (.pt), "
+            "no background.\n"
+            "None: write whole frames. resize_factor still applies.")
+        self.crop_method.currentIndexChanged.connect(
+            lambda _i: self._on_method_changed(self.method()))
+        form.addRow("Crop method", self.crop_method)
+
+        self.loc_edit = QtWidgets.QLineEdit()
+        self.loc_edit.setPlaceholderText("localizer weights (.pt)")
+        self.loc_btn = QtWidgets.QPushButton("Browse…")
+        self.loc_btn.clicked.connect(self._pick_localizer)
+        loc_row = QtWidgets.QHBoxLayout()
+        loc_row.addWidget(self.loc_edit, 1)
+        loc_row.addWidget(self.loc_btn)
+        self.loc_row_label = QtWidgets.QLabel("Localizer")
+        form.addRow(self.loc_row_label, self._wrap(loc_row))
 
         self.bg_edit = QtWidgets.QLineEdit()
         self.bg_frames = NoWheelSpinBox()
@@ -205,7 +223,7 @@ class PreprocessTab(_Base):
 
         # Smoothed crop centre carried between previewed frames.
         self._preview_center = None
-        self._on_crop_toggled(True)
+        self._on_method_changed(self.method())
 
     @staticmethod
     def _wrap(layout) -> QtWidgets.QWidget:
@@ -213,20 +231,38 @@ class PreprocessTab(_Base):
         w.setLayout(layout)
         return w
 
-    def _on_crop_toggled(self, on: bool) -> None:
-        """Everything background/crop-related is meaningless in raw mode —
-        except resize_factor, which still resizes the written frames."""
+    def method(self) -> str:
+        return self.crop_method.currentData()
+
+    def _on_method_changed(self, method: str) -> None:
+        """Enable only the knobs the chosen crop method reads: the background
+        and detection settings are background-only, the box and its
+        stabilisation are shared with the localizer, and resize_factor applies
+        to every method (it still resizes whole frames)."""
         for key, w in self.crop_widgets.items():
-            enabled = on or key == "resize_factor"
+            enabled = key in CROP_KEYS_BY_METHOD[method]
             w.setEnabled(enabled)
             self.crop_labels[key].setEnabled(enabled)
         for w in (self.bg_edit, self.bg_btn, self.bg_frames, self.bg_row_label):
-            w.setEnabled(on)
-        self.preview_box.setEnabled(on)
-        if not on:
+            w.setEnabled(method == "background")
+        for w in (self.loc_edit, self.loc_btn, self.loc_row_label):
+            w.setEnabled(method == "localizer")
+        self.preview_box.setEnabled(method != "none")
+        if method == "none":
             self.preview_info.setText(
                 "Raw mode: whole frames are written, no background subtraction. "
                 "Nothing to preview.")
+        elif method == "localizer" and self.crop_widgets["smoothing"].value() == 0:
+            # Unsmoothed localizer centres jitter by a few px frame to frame;
+            # 0.5 is the EMA the localizer pipeline was validated with.
+            self.crop_widgets["smoothing"].setValue(LOCALIZER_SMOOTHING)
+            self.ctx.status(f"Localizer: smoothing set to {LOCALIZER_SMOOTHING}.")
+
+    def _pick_localizer(self) -> None:
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Localizer weights", "", "PyTorch weights (*.pt *.pth);;All files (*)")
+        if path:
+            self.loc_edit.setText(path)
 
     def refresh(self) -> None:
         self.video_label.setText(self.ctx.video_path() or "—")
@@ -240,6 +276,9 @@ class PreprocessTab(_Base):
                 out[key] = w.currentText()
             else:
                 out[key] = w.value()
+        out["method"] = self.method()
+        if out["method"] == "localizer":
+            out["localizer_path"] = self.loc_edit.text().strip() or None
         return out
 
     def _compute_background(self) -> None:
@@ -279,11 +318,17 @@ class PreprocessTab(_Base):
         if not client or not video:
             self.ctx.status("Load a video first.")
             return
-        bg = self.bg_edit.text().strip() or self.ctx.current_bg_path()
-        if not bg:
-            self.preview_info.setText(
-                "No background yet — click Compute background first.")
-            return
+        bg = None
+        if self.method() == "localizer":
+            if not self.loc_edit.text().strip():
+                self.preview_info.setText("Choose the localizer weights (.pt) first.")
+                return
+        else:
+            bg = self.bg_edit.text().strip() or self.ctx.current_bg_path()
+            if not bg:
+                self.preview_info.setText(
+                    "No background yet — click Compute background first.")
+                return
         if reset_center:
             self._preview_center = None
 
@@ -323,6 +368,8 @@ class PreprocessTab(_Base):
         if proc != src:
             note += f" · processed {proc}"
         note += f" · crop {box}×{box} px"
+        if res.get("presence") is not None:
+            note += f" · animal present p={res['presence']:.2f}"
         self.preview_info.setText(note)
 
     def _run(self) -> None:
@@ -348,14 +395,19 @@ class PreprocessTab(_Base):
             if task_id:
                 self._spawn_stream(lambda: client.preprocess_status(task_id), on_event)
 
-        crop = self.crop_enabled.isChecked()
+        method = self.method()
+        if method == "localizer" and not self.loc_edit.text().strip():
+            self.ctx.status("Choose the localizer weights (.pt) first.")
+            return
+        crop = method != "none"
+        params = self.build_crop_params()
         self.ctx.status("Extracting frames…" if not crop else "Preprocessing…")
         self._spawn_call(
             lambda: client.run_preprocessing(
-                video, out_dir, crop_params=self.build_crop_params(),
+                video, out_dir, crop_params=params,
                 frame_ranges=ranges,
-                # No background is read in raw mode, so don't send a stale one.
-                bg_path=(self.bg_edit.text() or None) if crop else None,
+                # Only background mode reads a background; don't send a stale one.
+                bg_path=(self.bg_edit.text() or None) if method == "background" else None,
                 # Only used when no bg_path is given and the backend has to
                 # build one itself — same frame count either way.
                 num_frames_bg=self.bg_frames.value(),

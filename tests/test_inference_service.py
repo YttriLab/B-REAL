@@ -311,3 +311,107 @@ class TestStartInference:
         task = get_task(task_id)
         assert task is not None
         assert task["status"] in ("running", "completed")
+
+
+# ── batched video pipeline: batching, crop methods, train/inference parity ─
+
+class _RecordingModel(torch.nn.Module):
+    """Logits depend on the clip's content (so batching mistakes show up), and
+    every clip the model sees is recorded."""
+    num_classes = 3
+    class_names = ["a", "b", "c"]
+
+    def __init__(self):
+        super().__init__()
+        self.seen = []
+
+    def forward(self, x):  # (B, T, C, H, W)
+        self.seen.extend(x.detach().clone())
+        m = x.mean(dim=(2, 3, 4))  # (B, T)
+        return torch.stack([m[:, 0], m[:, -1], m.std(1) * 10], 1)
+
+    def eval(self):
+        return self
+
+    def to(self, device):
+        return self
+
+
+@pytest.fixture
+def recording_model(monkeypatch):
+    import model_tsm
+    model = _RecordingModel()
+    monkeypatch.setattr(model_tsm.TSMClassifier, "load_from_checkpoint",
+                        staticmethod(lambda *a, **k: model))
+    return model
+
+
+def _run_video(video, bg, crop_params, **kw):
+    from backend.services.inference_service import run_inference_video
+    kw.setdefault("decoder", "cpu")
+    return run_inference_video("fake.ckpt", video, bg, dict(crop_params),
+                               frames_per_group=3, image_size=32, **kw)
+
+
+class TestBatchedVideoInference:
+    BG_PARAMS = {"box_size": 24, "difference_threshold": 30, "smoothing": 0.5}
+
+    def test_batch_size_does_not_change_results(self, synthetic_video, synthetic_background,
+                                                recording_model):
+        video, _ = synthetic_video
+        runs = [_run_video(video, synthetic_background, self.BG_PARAMS, batch_size=b,
+                           frame_ranges=[[2, 9], [15, 27]])["frames"]
+                for b in (1, 4, 64)]
+        for other in runs[1:]:
+            assert [f["index"] for f in other] == [f["index"] for f in runs[0]]
+            for a, b in zip(runs[0], other):
+                assert a["predicted_class"] == b["predicted_class"]
+                assert np.allclose(a["predictions"], b["predictions"], atol=1e-6)
+
+    @pytest.mark.parametrize("method", ["background", "localizer", "none"])
+    def test_inference_sees_exactly_the_preprocessed_crops(
+            self, method, synthetic_video, synthetic_background, recording_model,
+            stub_localizer, tmp_path):
+        """The model must be evaluated on what it was trained on: for every crop
+        method, the clips inference builds equal the training transform applied
+        to the PNGs preprocessing writes, frame for frame, across range gaps."""
+        from backend.services.inference_service import _build_val_transform, _load_frame
+        from backend.services.preprocess_service import crop_video_flat
+
+        video, _ = synthetic_video
+        params = dict(self.BG_PARAMS, method=method, localizer_path=stub_localizer,
+                      resize_factor=0.75)
+        ranges = [[3, 10], [14, 20], [22, 29]]  # gaps restart the smoothing
+        out = crop_video_flat(video, str(tmp_path / "frames"), dict(params),
+                              frame_ranges=ranges, bg_path=synthetic_background,
+                              decoder="cpu")
+        # ranges already include the T-1 lead-in, as the GUI sends them
+        wanted = [[s + 2, e] for s, e in ranges]
+        res = _run_video(video, synthetic_background, params, frame_ranges=wanted,
+                         batch_size=5)
+
+        transform = _build_val_transform(32)
+        emitted = [f["index"] for f in res["frames"]]
+        assert emitted == [i for s, e in wanted for i in range(s, e + 1)]
+        assert len(recording_model.seen) == len(emitted)
+        for idx, clip in zip(emitted, recording_model.seen):
+            ref = torch.stack([transform(image=_load_frame(f"{out}/{i}.png"))["image"]
+                               for i in (idx - 2, idx - 1, idx)])
+            assert torch.equal(clip, ref), f"clip ending at frame {idx} differs"
+
+    def test_whole_frame_method_ignores_the_background(self, synthetic_video,
+                                                       recording_model):
+        video, _ = synthetic_video
+        res = _run_video(video, None, {"method": "none"}, frame_ranges=[[2, 4]])
+        assert [f["index"] for f in res["frames"]] == [2, 3, 4]
+
+    def test_payload_contract(self, synthetic_video, synthetic_background, recording_model):
+        """Both apps' Active Learning panels read this shape — don't change it."""
+        video, n = synthetic_video
+        res = _run_video(video, synthetic_background, self.BG_PARAMS)
+        assert set(res) == {"frames", "class_names", "total_frames", "frames_per_group"}
+        assert res["total_frames"] == n
+        assert [f["index"] for f in res["frames"]] == list(range(2, n))
+        f = res["frames"][0]
+        assert set(f) == {"index", "predictions", "uncertainty", "predicted_class"}
+        assert 0.0 <= f["uncertainty"] <= 1.0

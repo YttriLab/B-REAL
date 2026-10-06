@@ -1,7 +1,7 @@
 """Preprocessing router: background computation, frame preview, full video preprocessing."""
 
 import asyncio
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -40,11 +40,22 @@ class CropParams(BaseModel):
     smoothing: float = 0.0          # EMA weight on previous center, 0..1
     deadband: float = 0.0           # px (small space) before the box moves
     min_contour_area: float = 0.0   # ignore blobs smaller than this
+    # How the animal is found (backend/services/cropping.py): background
+    # subtraction, the SAM2-distilled localizer network, or no crop at all.
+    method: Literal["background", "localizer", "none"] = "background"
+    # Localizer weights (.pt state dict) — required when method="localizer".
+    localizer_path: Optional[str] = None
+    # Below this localizer presence probability the box holds still.
+    presence_threshold: float = 0.5
+
+
+Decoder = Literal["auto", "nvdec", "cpu"]
 
 
 class PreviewRequest(BaseModel):
     video_path: str
-    bg_path: str
+    # Required for method="background"; unused by the localizer.
+    bg_path: Optional[str] = None
     frame_index: int
     crop_params: CropParams = CropParams()
     # Smoothed center [cx, cy] (small space) carried from the previous previewed
@@ -63,8 +74,10 @@ class RunRequest(BaseModel):
     output_name: Optional[str] = None
     # False writes whole frames and skips background subtraction entirely — for
     # rigs with no static background, or when the animal already fills the
-    # frame. crop_params.resize_factor still applies.
+    # frame. crop_params.resize_factor still applies. Same as method="none".
     crop: bool = True
+    # "auto" = NVDEC when it reproduces cv2 bit-for-bit on this video, else cv2.
+    decoder: Decoder = "auto"
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────
@@ -82,6 +95,10 @@ async def api_compute_background(req: BackgroundRequest):
 @router.post("/preview")
 async def api_preview_frame(req: PreviewRequest):
     """Return base64-encoded preview images for a single frame."""
+    if req.crop_params.method == "background" and not req.bg_path:
+        raise HTTPException(status_code=422, detail="bg_path is required for background cropping")
+    if req.crop_params.method == "localizer" and not req.crop_params.localizer_path:
+        raise HTTPException(status_code=422, detail="crop_params.localizer_path is required for the localizer")
     try:
         result = preview_frame(
             video_path=req.video_path,
@@ -98,6 +115,8 @@ async def api_preview_frame(req: PreviewRequest):
 @router.post("/run")
 async def api_run_preprocessing(req: RunRequest):
     """Start full video preprocessing in background. Returns task_id."""
+    if req.crop and req.crop_params.method == "localizer" and not req.crop_params.localizer_path:
+        raise HTTPException(status_code=422, detail="crop_params.localizer_path is required for the localizer")
     try:
         task_id = start_preprocessing(
             video_path=req.video_path,
@@ -108,6 +127,7 @@ async def api_run_preprocessing(req: RunRequest):
             num_frames_bg=req.num_frames_bg,
             output_name=req.output_name,
             crop=req.crop,
+            decoder=req.decoder,
         )
         return {"task_id": task_id}
     except Exception as e:

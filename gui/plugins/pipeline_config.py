@@ -52,6 +52,28 @@ CROP_DEFAULTS = {
     "min_contour_area": 0.0,
 }
 
+# (label, crop_params["method"]) — see backend/services/cropping.py
+CROP_METHODS = [
+    ("Background subtraction", "background"),
+    ("SAM2 localizer", "localizer"),
+    ("None (whole frame)", "none"),
+]
+# Which CROP_DEFAULTS knobs each method reads.
+CROP_KEYS_BY_METHOD = {
+    "background": set(CROP_DEFAULTS),
+    "localizer": {"box_size", "resize_factor", "smoothing", "deadband"},
+    "none": {"resize_factor"},
+}
+# EMA the localizer pipeline was validated with (label_video: 0.5).
+LOCALIZER_SMOOTHING = 0.5
+
+# (label, decoder) — see video_decode.py
+DECODERS = [
+    ("Auto (GPU if bit-exact)", "auto"),
+    ("GPU (NVDEC)", "nvdec"),
+    ("CPU (OpenCV)", "cpu"),
+]
+
 
 def parse_stages(text: str) -> list[int]:
     """'5,6,7' -> [5,6,7] (ignores blanks/junk)."""
