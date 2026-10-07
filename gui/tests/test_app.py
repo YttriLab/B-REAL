@@ -27,6 +27,15 @@ def _app():
     return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
 
+def _wait_until(cond, timeout=20.0):
+    import time
+    end = time.monotonic() + timeout
+    while not cond() and time.monotonic() < end:
+        QtWidgets.QApplication.processEvents()
+        time.sleep(0.01)
+    return cond()
+
+
 def test_behaviors_panel_add_remove():
     _app()
     m = LabelModel()
@@ -71,7 +80,7 @@ def test_mainwindow_key_toggle_creates_bout():
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
         path = os.path.join(d, "clip.mp4")
         write_index_video(path, 60, fps=30, gop=12)
-        win.load_video(path)
+        win.load_video(path, wait=True)
         win.behaviors_panel.add_behavior("groom")  # key "1"
 
         win._seek(10)
@@ -97,7 +106,7 @@ def test_mainwindow_project_autosave_roundtrip():
         win.project.create("t")
         path = os.path.join(d, "clip.mp4")
         write_index_video(path, 60, fps=30, gop=12)
-        win.load_video(path)
+        win.load_video(path, wait=True)
         win.behaviors_panel.add_behavior("groom")
         win._seek(5)
         win._handle_key("1", 0)
@@ -113,6 +122,36 @@ def test_mainwindow_project_autosave_roundtrip():
             win.player.reader.close()
 
 
+def test_open_project_lists_videos_and_reopens_the_last_one():
+    _app()
+    from app import MainWindow
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        proj = os.path.join(d, "proj")
+        a, b = os.path.join(d, "a.mp4"), os.path.join(d, "b.mp4")
+        write_index_video(a, 30, fps=30, gop=12)
+        write_index_video(b, 30, fps=30, gop=12)
+        win = MainWindow(autostart_backend=False)
+        win.project = ProjectStore(proj)
+        win.project.create("t")
+        win.load_video(a, wait=True)
+        win.load_video(b, wait=True)
+        win.project.register_video("gone.mp4", "gone.mp4", os.path.join(d, "gone.mp4"))
+        win.player.reader.close()
+
+        win2 = MainWindow(autostart_backend=False)
+        win2.open_project_dir(proj)
+        assert _wait_until(lambda: not win2.player.loading)
+        assert win2.current_video_id == safe_id("b.mp4")  # last opened, not first
+        texts = [win2.videos_panel.list.item(i).text() for i in range(win2.videos_panel.list.count())]
+        assert texts == ["a.mp4", "b.mp4", "gone.mp4  (missing)"]
+
+        win2.videos_panel.list.itemClicked.emit(win2.videos_panel.list.item(0))
+        assert _wait_until(lambda: not win2.player.loading)
+        assert win2.current_video_id == safe_id("a.mp4")
+        assert win2.project.last_video() == safe_id("a.mp4")
+        win2.player.reader.close()
+
+
 def test_mainwindow_al_results_drive_timeline_and_hud():
     _app()
     from app import MainWindow
@@ -122,7 +161,7 @@ def test_mainwindow_al_results_drive_timeline_and_hud():
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
         path = os.path.join(d, "clip.mp4")
         write_index_video(path, 60, fps=30, gop=12)
-        win.load_video(path)
+        win.load_video(path, wait=True)
         a = win.model.add_behavior("groom")
         win.model.insert_bout_sorted(Bout(a.id, a.name, 12, 12))  # label frame 12 groom
 
@@ -155,7 +194,7 @@ def test_snap_back_seeks_to_the_last_bout_end():
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
         path = os.path.join(d, "clip.mp4")
         write_index_video(path, 60, fps=30, gop=12)
-        win.load_video(path)
+        win.load_video(path, wait=True)
         a = win.model.add_behavior("groom")
 
         # no bouts yet -> back to the start

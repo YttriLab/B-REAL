@@ -33,6 +33,7 @@ from labeling_shell.active_learning import hud_info  # noqa: E402
 from labeling_shell.theme import apply_theme  # noqa: E402
 from labeling_shell.timeline_widget import UncertaintyTimeline  # noqa: E402
 from labeling_shell.video_widget import PlayerWidget  # noqa: E402
+from labeling_shell.videos_panel import VideosPanel  # noqa: E402
 from plugins.pipeline_panel import PipelinePanel  # noqa: E402
 
 EDITABLE = (QtWidgets.QLineEdit, QtWidgets.QAbstractSpinBox, QtWidgets.QComboBox,
@@ -47,6 +48,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.project: ProjectStore | None = None
         self.current_video_id: str | None = None
         self._video_path: str | None = None
+        self._pending_video_id: str | None = None  # id for the load in flight
         self.backend: Backend | None = None
         self._bg_workers: set = set()
         self._al_state = None
@@ -55,17 +57,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self.player = PlayerWidget()
         self.player.frameChanged.connect(self._on_frame)
         self.player.snapBackRequested.connect(self.snap_back)
+        self.player.loaded.connect(self._on_video_loaded)
+        self.player.loadFailed.connect(self._on_video_load_failed)
         self.behaviors_panel = BehaviorsPanel(self.model)
         self.bouts_panel = BoutsPanel(self.model, self._fps)
         self.behaviors_panel.changed.connect(self._on_model_changed)
         self.bouts_panel.changed.connect(self._on_model_changed)
         self.bouts_panel.seekRequested.connect(self._seek)
+        self.videos_panel = VideosPanel()
+        self.videos_panel.videoRequested.connect(self.open_project_video)
+        self.videos_panel.addRequested.connect(self.open_video)
         self.pipeline = PipelinePanel(self)  # MainWindow is the pipeline ctx
 
         label_tab = QtWidgets.QWidget()
         ll = QtWidgets.QVBoxLayout(label_tab)
+        ll.addWidget(self.videos_panel)
         ll.addWidget(self.behaviors_panel, 1)
-        ll.addWidget(self.bouts_panel, 2)
+        ll.addWidget(self.bouts_panel, 1)
 
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.addTab(label_tab, "Label")
@@ -131,6 +139,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.bouts_panel.model = self.model
 
     def _refresh_all(self) -> None:
+        self.videos_panel.set_videos(
+            self.project.list_videos() if self.project else [], self.current_video_id)
         self.behaviors_panel.refresh()
         self.bouts_panel.refresh()
         self.pipeline.refresh()
@@ -219,7 +229,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def project_videos(self):
         """The project's registered videos: [{id, name, path, frame_count}]."""
-        return list(self.project.load_manifest().get("videos", [])) if self.project else []
+        return list(self.project.list_videos()) if self.project else []
 
     def localizer_dir(self):
         """Where Train Localizer saves (models/localizer: a full .rlt packages it)."""
@@ -320,19 +330,61 @@ class MainWindow(QtWidgets.QMainWindow):
         if path:
             self.load_video(path)
 
-    def load_video(self, path: str) -> None:
+    def load_video(self, path: str, video_id: str | None = None, wait: bool = False) -> None:
+        """Open `path`. `video_id` keeps an existing project entry's id when its
+        file was relinked under a different name; otherwise it comes from the name.
+
+        The file is indexed on a worker thread behind a loading overlay, and the
+        switch to it happens in `_on_video_loaded`; until then the current video
+        and its labels stay active. `wait=True` loads on this thread instead.
+        """
         self._autosave()
-        self.player.load(path)
+        self._pending_video_id = video_id or safe_id(Path(path).name)
+        if wait:
+            self.player.load(path)  # emits loaded -> _on_video_loaded
+        else:
+            self._status(f"Loading {Path(path).name}…")
+            self.player.load_async(path)
+
+    def _on_video_loaded(self, path: str) -> None:
         self._video_path = path
         name = Path(path).name
-        self.current_video_id = safe_id(name)
+        self.current_video_id = self._pending_video_id or safe_id(name)
+        self._pending_video_id = None
         if self.project:
             self.model = self.project.load_into_model(self.current_video_id)
             self._rebind_model()
             self.project.register_video(
                 self.current_video_id, name, path, self.player.reader.num_frames)
+            self.project.set_last_video(self.current_video_id)
         self._refresh_all()
         self._status(f"Loaded {name} — {self.player.reader.num_frames} frames")
+
+    def _on_video_load_failed(self, path: str, msg: str) -> None:
+        self._pending_video_id = None
+        self._refresh_all()  # drop the list selection back to the open video
+        QtWidgets.QMessageBox.warning(
+            self, "Could not open video", f"{path}\n\n{msg}")
+
+    def open_project_video(self, video_id: str) -> None:
+        """Open a video from the project list, asking where it went if it moved."""
+        if not self.project or video_id == self.current_video_id:
+            return
+        rec = next((v for v in self.project.list_videos() if v.get("id") == video_id), None)
+        if rec is None:
+            return
+        path = rec.get("path") or ""
+        if not os.path.exists(path):
+            QtWidgets.QMessageBox.information(
+                self, "Video not found",
+                f"{rec.get('name') or video_id} is no longer at\n{path}\n\nLocate it to continue.")
+            path, _ = QtWidgets.QFileDialog.getOpenFileName(
+                self, f"Locate {rec.get('name') or video_id}", "",
+                "Videos (*.mp4 *.mkv *.avi *.webm *.mov);;All files (*)")
+            if not path:
+                self._refresh_all()  # drop the list selection back to the open video
+                return
+        self.load_video(path, video_id)
 
     # --------------------------------------------------------------- keyboard
     def eventFilter(self, obj, event):
@@ -344,6 +396,9 @@ class MainWindow(QtWidgets.QMainWindow):
         return super().eventFilter(obj, event)
 
     def _handle_key(self, text: str, key: int) -> bool:
+        if self.player.loading:  # swallow labeling/transport keys mid-load
+            return text in KEY_ORDER or key in (
+                QtCore.Qt.Key.Key_Space, QtCore.Qt.Key.Key_Left, QtCore.Qt.Key.Key_Right)
         if text in KEY_ORDER:
             self._toggle_behavior(text)
             return True
@@ -421,16 +476,20 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.project = ProjectStore(d)
         self.project.create(name or Path(d).name)
+        self._refresh_all()
         self._status(f"Project created at {d}")
 
     def open_project(self) -> None:
         d = QtWidgets.QFileDialog.getExistingDirectory(self, "Open project folder")
-        if not d:
-            return
+        if d:
+            self.open_project_dir(d)
+
+    def open_project_dir(self, d) -> None:
         store = ProjectStore(d)
         if not store.exists():
             QtWidgets.QMessageBox.warning(self, "Not a project", "No project.json found.")
             return
+        self._autosave()
         self.project = store
         self.model = LabelModel()
         self.model.behaviors = [Behavior(**b) for b in store.load_manifest().get("behaviors", [])]
@@ -438,6 +497,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._rebind_model()
         self._refresh_all()
         self._status(f"Opened project {store.load_manifest().get('name')}")
+        # Reopen where the user left off, else the first video still on disk.
+        videos = [v for v in store.list_videos() if os.path.exists(v.get("path") or "")]
+        last = store.last_video()
+        pick = next((v for v in videos if v.get("id") == last), videos[0] if videos else None)
+        if pick:
+            self.load_video(pick["path"], pick["id"])
 
     # --------------------------------------------------------------- backend
     def _spawn_bg(self, fn, on_done):
@@ -486,6 +551,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._status("Backend disconnected.")
 
     def closeEvent(self, event) -> None:
+        self.player.shutdown()
         self._autosave()
         self.disconnect_backend()
         super().closeEvent(event)

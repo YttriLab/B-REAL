@@ -28,6 +28,7 @@ stepping frame-by-frame. Indexing by frame keeps stepping and labeling exact.
 from __future__ import annotations
 
 import bisect
+import os
 from collections import OrderedDict
 
 import av
@@ -41,9 +42,12 @@ class VideoReader:
         path: path to a video file (any container libav can demux).
         cache_size: number of decoded RGB frames to keep in an LRU cache
             (mirrors the Electron app's 300-bitmap cache).
+        progress: optional callable(fraction) reporting the index pass, which
+            reads the whole file and dominates open time on large videos. An
+            exception it raises aborts the open (how a background load cancels).
     """
 
-    def __init__(self, path, cache_size: int = 300):
+    def __init__(self, path, cache_size: int = 300, progress=None):
         self.path = str(path)
         self._container = av.open(self.path)
         if not self._container.streams.video:
@@ -56,7 +60,11 @@ class VideoReader:
         # Display-order index: pts of every frame + whether it is a keyframe.
         self._pts_list: list[int] = []
         self._is_keyframe: list[bool] = []
-        self._build_index()
+        try:
+            self._build_index(progress)
+        except BaseException:
+            self._container.close()
+            raise
 
         self._detected_fps = self._detect_fps()
         self._fps_override: float | None = None
@@ -70,7 +78,7 @@ class VideoReader:
         self._gen_pos: int | None = None
 
     # ------------------------------------------------------------------ index
-    def _build_index(self) -> None:
+    def _build_index(self, progress=None) -> None:
         """One demux-only pass to enumerate frames in display order.
 
         Demuxing (no decoding) is fast: one compressed packet == one coded
@@ -78,9 +86,15 @@ class VideoReader:
         order. Keyframe flags travel with their pts.
         """
         entries: list[tuple[int, bool]] = []
+        size = os.path.getsize(self.path) if progress else 0
+        step = max(size // 200, 1)  # report every 0.5% of the file
+        next_report = 0
         for packet in self._container.demux(self._stream):
             if packet.size == 0:
                 continue  # flush/sentinel packet
+            if progress and packet.pos is not None and packet.pos >= next_report:
+                progress(min(packet.pos / size, 1.0))
+                next_report = packet.pos + step
             pts = packet.pts if packet.pts is not None else packet.dts
             if pts is None:
                 continue

@@ -12,6 +12,8 @@ same separation the JS app uses (DOM/z-index over the video).
 
 from __future__ import annotations
 
+import os
+
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from .qt_image import ndarray_to_qimage
@@ -59,6 +61,89 @@ class VideoView(QtWidgets.QWidget):
             painter.drawImage(self._fit_rect(), self._image)
 
 
+class _LoadCancelled(Exception):
+    pass
+
+
+class _ReaderLoader(QtCore.QThread):
+    """Open a VideoReader off the UI thread.
+
+    Opening scans the whole file to index its frames — seconds for a
+    multi-gigabyte video, longer over a network share — which would otherwise
+    freeze the window with nothing painted.
+    """
+
+    progress = QtCore.Signal(float)
+    done = QtCore.Signal(object)  # VideoReader
+    failed = QtCore.Signal(str)
+
+    def __init__(self, path: str, parent=None):
+        super().__init__(parent)
+        self.path = path
+        self._cancel = False
+
+    def cancel(self) -> None:
+        self._cancel = True
+
+    def _report(self, fraction: float) -> None:
+        if self._cancel:
+            raise _LoadCancelled
+        self.progress.emit(fraction)
+
+    def run(self) -> None:
+        try:
+            reader = VideoReader(self.path, progress=self._report)
+        except _LoadCancelled:
+            return
+        except Exception as e:  # noqa: BLE001
+            self.failed.emit(f"{type(e).__name__}: {e}")
+            return
+        if self._cancel:
+            reader.close()
+            return
+        self.done.emit(reader)
+
+
+class LoadingOverlay(QtWidgets.QWidget):
+    """Dimmed panel over the video while a file is opening."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.label = QtWidgets.QLabel()
+        self.label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self.label.setWordWrap(True)
+        self.label.setStyleSheet("color: white; background: transparent;")
+        self.bar = QtWidgets.QProgressBar()
+        self.bar.setRange(0, 1000)
+        self.bar.setTextVisible(False)
+        self.bar.setFixedWidth(260)
+        box = QtWidgets.QVBoxLayout(self)
+        box.addStretch(1)
+        box.addWidget(self.label)
+        box.addWidget(self.bar, 0, QtCore.Qt.AlignmentFlag.AlignHCenter)
+        box.addStretch(1)
+        parent.installEventFilter(self)
+        self.hide()
+
+    def start(self, name: str) -> None:
+        self.label.setText(f"Loading {name}…")
+        self.bar.setValue(0)
+        self.setGeometry(self.parentWidget().rect())
+        self.raise_()
+        self.show()
+
+    def set_progress(self, fraction: float) -> None:
+        self.bar.setValue(int(fraction * 1000))
+
+    def eventFilter(self, obj, event) -> bool:
+        if obj is self.parentWidget() and event.type() == QtCore.QEvent.Type.Resize:
+            self.setGeometry(obj.rect())
+        return False
+
+    def paintEvent(self, event) -> None:
+        QtGui.QPainter(self).fillRect(self.rect(), QtGui.QColor(0, 0, 0, 170))
+
+
 class PlayerWidget(QtWidgets.QWidget):
     """Video view + transport controls, backed by a VideoReader."""
 
@@ -66,13 +151,18 @@ class PlayerWidget(QtWidgets.QWidget):
     # The player has no view of the label model, so it asks the host to work out
     # where "back" is (the end of the last bout) and seek there.
     snapBackRequested = QtCore.Signal()
+    loaded = QtCore.Signal(str)           # path, once its reader is installed
+    loadFailed = QtCore.Signal(str, str)  # path, error
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.reader: VideoReader | None = None
         self.index = 0
+        self._loader: _ReaderLoader | None = None
+        self._loaders: set = set()  # incl. cancelled ones still winding down
 
         self.view = VideoView()
+        self.overlay = LoadingOverlay(self.view)
         self._timer = QtCore.QTimer(self)
         self._timer.timeout.connect(self._on_tick)
 
@@ -108,15 +198,79 @@ class PlayerWidget(QtWidgets.QWidget):
         self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
 
     # ------------------------------------------------------------------ load
+    @property
+    def loading(self) -> bool:
+        return self._loader is not None
+
     def load(self, path: str) -> None:
+        """Open `path` on this thread (blocks until indexed)."""
+        self._cancel_load()
+        self._install(VideoReader(path), path)
+
+    def load_async(self, path: str) -> None:
+        """Open `path` on a worker thread behind a loading overlay.
+
+        The current video stays up (and covered) until the new one is ready.
+        A later load supersedes this one. Emits `loaded` or `loadFailed`.
+        """
+        self.pause()
+        self._cancel_load()
+        loader = _ReaderLoader(path)
+        loader.progress.connect(self.overlay.set_progress)
+        loader.done.connect(lambda r, ld=loader: self._on_loader_done(ld, r))
+        loader.failed.connect(lambda msg, ld=loader: self._on_loader_failed(ld, msg))
+        loader.finished.connect(lambda ld=loader: self._loaders.discard(ld))
+        self._loader = loader
+        self._loaders.add(loader)
+        self.overlay.start(os.path.basename(path))
+        self._set_transport_enabled(False)
+        loader.start()
+
+    def shutdown(self) -> None:
+        """Stop any background load; call before the widget goes away."""
+        self._cancel_load()
+        for loader in list(self._loaders):
+            loader.wait()
+
+    def _cancel_load(self) -> None:
+        if self._loader is not None:
+            self._loader.cancel()
+            self._loader = None
+            self.overlay.hide()
+            self._set_transport_enabled(True)
+
+    def _on_loader_done(self, loader, reader) -> None:
+        if loader is not self._loader:  # superseded while it finished
+            reader.close()
+            return
+        self._loader = None
+        self.overlay.hide()
+        self._set_transport_enabled(True)
+        self._install(reader, loader.path)
+
+    def _on_loader_failed(self, loader, msg: str) -> None:
+        if loader is not self._loader:
+            return
+        self._loader = None
+        self.overlay.hide()
+        self._set_transport_enabled(True)
+        self.loadFailed.emit(loader.path, msg)
+
+    def _set_transport_enabled(self, on: bool) -> None:
+        for w in (self.play_btn, self.prev_btn, self.next_btn, self.snap_btn):
+            w.setEnabled(on)
+        self.slider.setEnabled(on and self.reader is not None)
+
+    def _install(self, reader: VideoReader, path: str) -> None:
         self.pause()
         if self.reader is not None:
             self.reader.close()
-        self.reader = VideoReader(path)
+        self.reader = reader
         self.index = 0
         self.slider.setEnabled(True)
         self.slider.setRange(0, max(0, self.reader.num_frames - 1))
         self._show(0)
+        self.loaded.emit(path)
 
     # -------------------------------------------------------------- transport
     def toggle_play(self) -> None:
@@ -188,6 +342,8 @@ class PlayerWidget(QtWidgets.QWidget):
 
     # --------------------------------------------------------------- keyboard
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        if self.loading:
+            return
         key = event.key()
         if key == QtCore.Qt.Key.Key_Space:
             self.toggle_play()

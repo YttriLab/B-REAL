@@ -74,6 +74,19 @@ class ProjectStore:
             videos.append(record)
         self._write_manifest(manifest)
 
+    def list_videos(self) -> list:
+        return self.load_manifest().get("videos", []) or []
+
+    def set_last_video(self, video_id) -> None:
+        """Remember the open video so reopening the project returns to it."""
+        manifest = self.load_manifest()
+        if manifest.get("last_video") != video_id:
+            manifest["last_video"] = video_id
+            self._write_manifest(manifest)
+
+    def last_video(self):
+        return self.load_manifest().get("last_video")
+
     def label_csv_path(self, video_id) -> Path:
         return self.labels_dir / f"{video_id}_labels.csv"
 

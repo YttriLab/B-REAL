@@ -69,7 +69,7 @@ def main() -> None:
 
     sample = os.path.join(tempfile.gettempdir(), "screenshot_sample.mp4")
     write_index_video(sample, 300, w=640, h=480, fps=30)
-    win.load_video(sample)
+    win.load_video(sample, wait=True)
 
     a = win.behaviors_panel.model.add_behavior("groom")
     b = win.behaviors_panel.model.add_behavior("rear")

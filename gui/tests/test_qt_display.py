@@ -39,6 +39,76 @@ def test_qimage_roundtrip_is_lossless():
         assert read_index_frame(back) == i
 
 
+def _wait_until(cond, timeout=20.0):
+    import time
+    end = time.monotonic() + timeout
+    while not cond() and time.monotonic() < end:
+        QtWidgets.QApplication.processEvents()
+        time.sleep(0.01)
+    return cond()
+
+
+def test_async_load_shows_overlay_then_installs_reader():
+    _app()
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        path = os.path.join(d, "clip.mp4")
+        write_index_video(path, N, fps=30, gop=12)
+        player = PlayerWidget()
+        loaded, progress = [], []
+        player.loaded.connect(loaded.append)
+        player.overlay.bar.valueChanged.connect(progress.append)
+        player.load_async(path)
+        assert player.loading
+        assert not player.overlay.isHidden()
+        assert not player.play_btn.isEnabled()
+
+        assert _wait_until(lambda: loaded), "load never finished"
+        assert loaded == [path]
+        assert player.reader.num_frames == N
+        assert not player.loading and player.overlay.isHidden()
+        assert player.play_btn.isEnabled()
+        assert progress, "overlay never reported progress"
+        player.reader.close()
+
+
+def test_async_load_superseded_by_a_later_one():
+    _app()
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        a, b = os.path.join(d, "a.mp4"), os.path.join(d, "b.mp4")
+        write_index_video(a, N, fps=30, gop=12)
+        write_index_video(b, 40, fps=30, gop=12)
+        player = PlayerWidget()
+        loaded = []
+        player.loaded.connect(loaded.append)
+        player.load_async(a)
+        player.load_async(b)
+        assert _wait_until(lambda: loaded)
+        player.shutdown()  # let the cancelled loader wind down
+        QtWidgets.QApplication.processEvents()
+        assert loaded == [b]
+        assert player.reader.num_frames == 40
+        player.reader.close()
+
+
+def test_async_load_failure_keeps_the_current_video():
+    _app()
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        good, bad = os.path.join(d, "clip.mp4"), os.path.join(d, "bad.mp4")
+        write_index_video(good, N, fps=30, gop=12)
+        with open(bad, "wb") as f:
+            f.write(b"not a video")
+        player = PlayerWidget()
+        player.load(good)
+        failed = []
+        player.loadFailed.connect(lambda p, msg: failed.append(p))
+        player.load_async(bad)
+        assert _wait_until(lambda: failed)
+        assert failed == [bad]
+        assert player.reader.num_frames == N
+        assert not player.loading and player.overlay.isHidden()
+        player.reader.close()
+
+
 def test_player_displays_exact_frame():
     _app()
     # ignore_cleanup_errors: on Windows PyAV may still hold the file briefly.
@@ -92,6 +162,9 @@ def _main() -> int:
     failures = []
     for fn in (test_qimage_roundtrip_is_lossless,
                test_player_displays_exact_frame,
+               test_async_load_shows_overlay_then_installs_reader,
+               test_async_load_superseded_by_a_later_one,
+               test_async_load_failure_keeps_the_current_video,
                test_format_time):
         try:
             fn()
