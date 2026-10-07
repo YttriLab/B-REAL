@@ -21,6 +21,7 @@ HDF5 layout:
     /predictions/{video_id}         (dataset: UTF-8 JSON string)       [package]
     /models/checkpoints/{name}      (dataset: uint8 binary blob)       [package]
     /models/exports/{name}          (dataset: uint8 binary blob)       [package]
+    /models/localizer/{name}        (dataset: uint8 binary blob)       [package]
 """
 
 import json
@@ -75,6 +76,7 @@ def export_rlt(
         "predictions": 0,
         "checkpoints": 0,
         "exports": 0,
+        "localizers": 0,
         "packaged": package,
     }
 
@@ -139,7 +141,10 @@ def export_rlt(
 
         # ── Models (package only) ─────────────────────────────────────
         models_grp = hf.create_group("models")
-        for sub, key in (("checkpoints", "checkpoints"), ("exports", "exports")):
+        # models/localizer: weights trained in-app (Train Localizer) + their
+        # cards; its sam2_labels/ cache is a subdirectory, so it is left out.
+        for sub, key in (("checkpoints", "checkpoints"), ("exports", "exports"),
+                         ("localizer", "localizers")):
             grp = models_grp.create_group(sub)
             mdir = project_dir / "models" / sub
             if mdir.is_dir():
@@ -191,7 +196,8 @@ def import_rlt(
 
         for sub in ("labels", "frames", "backgrounds", "predictions",
                     os.path.join("models", "checkpoints"),
-                    os.path.join("models", "exports")):
+                    os.path.join("models", "exports"),
+                    os.path.join("models", "localizer")):
             (output_dir / sub).mkdir(parents=True, exist_ok=True)
 
         # Labels
@@ -230,6 +236,8 @@ def import_rlt(
                 _write_blobs(hf["models"]["checkpoints"], output_dir / "models" / "checkpoints", lambda k: k)
             if "exports" in hf["models"]:
                 _write_blobs(hf["models"]["exports"], output_dir / "models" / "exports", lambda k: k)
+            if "localizer" in hf["models"]:
+                _write_blobs(hf["models"]["localizer"], output_dir / "models" / "localizer", lambda k: k)
 
         (output_dir / "project.json").write_text(
             json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -261,4 +269,5 @@ def inspect_rlt(rlt_path: str) -> dict:
             "predictions": len(hf["predictions"]) if "predictions" in hf else 0,
             "checkpoints": len(hf["models"]["checkpoints"]) if "models" in hf and "checkpoints" in hf["models"] else 0,
             "exports": len(hf["models"]["exports"]) if "models" in hf and "exports" in hf["models"] else 0,
+            "localizers": len(hf["models"]["localizer"]) if "models" in hf and "localizer" in hf["models"] else 0,
         }

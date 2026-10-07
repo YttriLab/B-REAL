@@ -22,7 +22,7 @@ PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from backend.routers import preprocessing, training, tuning, inference, project  # noqa: E402
+from backend.routers import preprocessing, training, tuning, inference, project, localizer  # noqa: E402
 
 
 def device_info() -> dict:
@@ -58,11 +58,13 @@ async def lifespan(app: FastAPI):
     from backend.services.training_service import cancel_all as training_cancel
     from backend.services.tuning_service import cancel_all as tuning_cancel
     from backend.services.inference_service import cancel_all as inference_cancel
+    from backend.services.localizer_service import cancel_all as localizer_cancel
     preprocess_cancel()
     # Sweeps first: each holds a live training subprocess of its own.
     tuning_cancel()
     training_cancel()
     inference_cancel()
+    localizer_cancel()
 
 
 app = FastAPI(title="B-REAL Backend", lifespan=lifespan)
@@ -82,6 +84,7 @@ app.include_router(training.router, prefix="/api/training", tags=["training"])
 app.include_router(tuning.router, prefix="/api/tuning", tags=["tuning"])
 app.include_router(inference.router, prefix="/api/inference", tags=["inference"])
 app.include_router(project.router, prefix="/api/project", tags=["project"])
+app.include_router(localizer.router, prefix="/api/localizer", tags=["localizer"])
 
 
 @app.get("/api/health")

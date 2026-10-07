@@ -12,6 +12,7 @@ h5py
 wandb
 torchmetrics
 timm
+transformers>=4.56
 matplotlib
 pyyaml
 scipy

@@ -100,10 +100,21 @@ class TestCrop:
 
 
 class TestFrameCropper:
-    def test_localizer_method_needs_weights(self):
+    def test_localizer_defaults_to_the_bundled_weights(self, tmp_path):
+        import localizer
         from backend.services.cropping import FrameCropper
-        with pytest.raises(ValueError, match="localizer_path"):
-            FrameCropper({"method": "localizer"})
+        fc = FrameCropper({"method": "localizer"})
+        assert fc._loc.weights_path == localizer.DEFAULT_WEIGHTS
+        assert fc._loc.presence_threshold == localizer.PRESENCE_THRESHOLD
+        fc.close()
+        with pytest.raises(FileNotFoundError):
+            FrameCropper({"method": "localizer", "localizer_path": str(tmp_path / "missing.pt")})
+
+    def test_bundled_weights_load(self):
+        import localizer
+        model = localizer.load_localizer(localizer.DEFAULT_WEIGHTS, "cpu")
+        xy, heat, pres = model(torch.zeros(1, localizer.IN_H, localizer.IN_W, dtype=torch.uint8))
+        assert xy.shape == (1, 2) and heat.shape == (1, 44, 48) and pres.shape == (1,)
 
     def test_unknown_method(self):
         from backend.services.cropping import FrameCropper

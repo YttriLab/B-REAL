@@ -208,6 +208,22 @@ class TestPackageExport:
         orig = os.path.join(project_dir, "frames", "vid_a", "0.png")
         assert open(orig, "rb").read() == (dest / "frames" / "vid_a" / "0.png").read_bytes()
 
+    def test_trained_localizer_travels_but_not_its_label_cache(self, sample_project, tmp_path):
+        project_dir, _ = sample_project
+        loc = os.path.join(project_dir, "models", "localizer")
+        os.makedirs(os.path.join(loc, "sam2_labels"))
+        for name, data in (("rig.pt", b"weights"), ("rig.json", b"{}"),
+                           (os.path.join("sam2_labels", "clip.npz"), b"big")):
+            with open(os.path.join(loc, name), "wb") as f:
+                f.write(data)
+        rlt = str(tmp_path / "pkg.rlt")
+        assert export_rlt(project_dir, rlt, package=True)["localizers"] == 2
+        assert inspect_rlt(rlt)["localizers"] == 2
+        dest = tmp_path / "imported"
+        import_rlt(rlt, str(dest))
+        assert (dest / "models" / "localizer" / "rig.pt").read_bytes() == b"weights"
+        assert not (dest / "models" / "localizer" / "sam2_labels").exists()
+
     def test_inspect_reports_package(self, sample_project, tmp_path):
         project_dir, _ = sample_project
         rlt = str(tmp_path / "pkg.rlt")

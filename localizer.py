@@ -10,7 +10,9 @@ doesn't drag the box away.
 ResNet18 (ImageNet) through layer3 with a layer2 skip -> heatmap head; a small
 MLP on pooled features -> presence. Weights are a plain state dict
 (``torch.save(model.state_dict())``), compatible with the label_video
-pipeline's ``Localizer2`` checkpoints.
+pipeline's ``Localizer2`` checkpoints. ``DEFAULT_WEIGHTS`` (bundled, see
+weights/localizer/README.md) is used when no path is given; train one for a new
+rig with localizer_train.py (Pipeline -> Train Localizer in the app).
 
 ``LocalizerCropper`` turns centres into fixed-size crops with the same
 stabilisation rules as ``tune_cropping.FindRatBoundingBox`` (EMA ``smoothing``
@@ -31,6 +33,20 @@ import torch.nn.functional as F
 
 IN_H, IN_W = 352, 384  # network input (rows, cols); any source resolution is resized to this
 STRIDE = 8
+DEFAULT_WEIGHTS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "weights", "localizer", "mouse_topdown.pt")
+# Below this presence probability the box holds still. 0.1, not 0.5: the
+# bundled network's presence drops to ~0.2-0.4 for an animal at the arena edge
+# or half hidden, and those frames still have a usable centre.
+PRESENCE_THRESHOLD = 0.1
+
+
+def resolve_weights(path: str | None) -> str:
+    """``path``, or the bundled default when none is given."""
+    path = path or DEFAULT_WEIGHTS
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"localizer weights not found: {path}")
+    return path
 
 
 class Localizer(nn.Module):
@@ -104,14 +120,14 @@ class LocalizerCropper:
     """
 
     def __init__(self, weights_path: str, box_size: int = 220, smoothing: float = 0.5,
-                 deadband: float = 0.0, presence_threshold: float = 0.5,
+                 deadband: float = 0.0, presence_threshold: float = PRESENCE_THRESHOLD,
                  device: str | None = None, model: Localizer | None = None,
                  workers: int = 8, runtime: str = "torch", precision: str = "fp16",
                  max_batch: int = 32, on_status=None):
         """``runtime``: "torch", "tensorrt" or "auto" (TensorRT when usable;
         the engine is built and cached on first use, see trt_engines.py)."""
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
-        self.weights_path = weights_path
+        self.weights_path = weights_path if model is not None else resolve_weights(weights_path)
         self.engine = None
         if model is None and runtime != "torch":
             import trt_engines
@@ -119,7 +135,7 @@ class LocalizerCropper:
             if rt == "tensorrt":
                 try:
                     self.engine = trt_engines.localizer_engine(
-                        weights_path, precision=precision, max_batch=max_batch,
+                        self.weights_path, precision=precision, max_batch=max_batch,
                         on_status=on_status)
                     self.device = torch.device("cuda")
                     reason = f"TensorRT {precision} ({os.path.basename(self.engine.path)})"

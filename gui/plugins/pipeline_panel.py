@@ -12,6 +12,9 @@ BackendClient, streaming SSE progress on background threads (backend_worker).
     current_frames_dir() -> str | None    current_bg_path() -> str | None
     checkpoint_dir() -> str | None        status(msg: str) -> None
     register_model(entry: dict) -> None   (optional; records a trained checkpoint)
+    project_videos() -> list[dict]        localizer_dir() -> str | None
+    localizer_path() -> str | None        set_localizer_path(path) -> None
+        (optional; Train Localizer, and the project's chosen localizer weights)
 """
 
 from __future__ import annotations
@@ -106,15 +109,20 @@ class PreprocessTab(_Base):
             self.crop_method.addItem(label, method)
         self.crop_method.setToolTip(
             "Background subtraction: needs a background image.\n"
-            "SAM2 localizer: a network finds the animal; needs its weights (.pt), "
-            "no background.\n"
+            "SAM2 localizer: a network finds the animal; no background. Uses the "
+            "bundled top-down mouse weights unless you choose (or train) others.\n"
             "None: write whole frames. resize_factor still applies.")
         self.crop_method.currentIndexChanged.connect(
             lambda _i: self._on_method_changed(self.method()))
         form.addRow("Crop method", self.crop_method)
 
         self.loc_edit = QtWidgets.QLineEdit()
-        self.loc_edit.setPlaceholderText("localizer weights (.pt)")
+        self.loc_edit.setPlaceholderText("bundled: top-down mouse (or Train Localizer)")
+        self.loc_edit.setToolTip(
+            "Localizer weights (.pt). Empty = the bundled network, trained on one "
+            "top-down IR mouse rig (weights/localizer/README.md). For another rig, "
+            "train one in the Train Localizer tab.")
+        self.loc_edit.editingFinished.connect(self._save_localizer)
         self.loc_btn = QtWidgets.QPushButton("Browse…")
         self.loc_btn.clicked.connect(self._pick_localizer)
         loc_row = QtWidgets.QHBoxLayout()
@@ -262,12 +270,28 @@ class PreprocessTab(_Base):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self, "Localizer weights", "", "PyTorch weights (*.pt *.pth);;All files (*)")
         if path:
-            self.loc_edit.setText(path)
+            self.set_localizer(path)
+
+    def set_localizer(self, path: str | None, select: bool = False) -> None:
+        """Crop with these weights (None = bundled) and remember them in the
+        project; ``select`` also switches the crop method to the localizer."""
+        self.loc_edit.setText(path or "")
+        self._save_localizer()
+        if select:
+            self.crop_method.setCurrentIndex(self.crop_method.findData("localizer"))
+
+    def _save_localizer(self) -> None:
+        setter = getattr(self.ctx, "set_localizer_path", None)
+        if setter:
+            setter(self.loc_edit.text().strip() or None)
 
     def refresh(self) -> None:
         self.video_label.setText(self.ctx.video_path() or "—")
         if self.ctx.current_bg_path() and not self.bg_edit.text():
             self.bg_edit.setText(self.ctx.current_bg_path())
+        saved = getattr(self.ctx, "localizer_path", lambda: None)()
+        if saved and saved != self.loc_edit.text().strip():
+            self.loc_edit.setText(saved)
 
     def build_crop_params(self) -> dict:
         out = {}
@@ -322,11 +346,7 @@ class PreprocessTab(_Base):
             self.ctx.status("Load a video first.")
             return
         bg = None
-        if self.method() == "localizer":
-            if not self.loc_edit.text().strip():
-                self.preview_info.setText("Choose the localizer weights (.pt) first.")
-                return
-        else:
+        if self.method() != "localizer":
             bg = self.bg_edit.text().strip() or self.ctx.current_bg_path()
             if not bg:
                 self.preview_info.setText(
@@ -401,9 +421,6 @@ class PreprocessTab(_Base):
                 self._spawn_stream(lambda: client.preprocess_status(task_id), on_event)
 
         method = self.method()
-        if method == "localizer" and not self.loc_edit.text().strip():
-            self.ctx.status("Choose the localizer weights (.pt) first.")
-            return
         crop = method != "none"
         params = self.build_crop_params()
         self.ctx.status("Extracting frames…" if not crop else "Preprocessing…")
@@ -1312,12 +1329,15 @@ class PipelinePanel(QtWidgets.QTabWidget):
     def __init__(self, ctx, parent=None):
         super().__init__(parent)
         from .active_learning_panel import ActiveLearningPanel  # lazy: avoids import cycle
+        from .localizer_panel import LocalizerTab
         self.preprocess = PreprocessTab(ctx)
+        self.localizer = LocalizerTab(ctx, preprocess_tab=self.preprocess)
         self.train = TrainTab(ctx)
         self.tune = TuneTab(ctx, train_tab=self.train)
         self.export = ExportTab(ctx)
         self.active_learning = ActiveLearningPanel(ctx)
         self.addTab(self.preprocess, "Preprocess")
+        self.addTab(self.localizer, "Train Localizer")
         self.addTab(self.train, "Train")
         self.addTab(self.tune, "Tune")
         self.addTab(self.export, "Export")
@@ -1325,6 +1345,7 @@ class PipelinePanel(QtWidgets.QTabWidget):
 
     def refresh(self) -> None:
         self.preprocess.refresh()
+        self.localizer.refresh()
         self.train.refresh()
         self.tune.refresh()
         self.export.refresh()

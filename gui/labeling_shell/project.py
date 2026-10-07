@@ -132,6 +132,20 @@ class ProjectStore:
     def list_models(self) -> list:
         return self.load_manifest().get("models", []) or []
 
+    # Free-form per-project settings for whichever pipeline is attached (the
+    # shell never reads them): a JSON object under manifest["settings"].
+    def get_setting(self, key: str, default=None):
+        return (self.load_manifest().get("settings") or {}).get(key, default)
+
+    def set_setting(self, key: str, value) -> None:
+        manifest = self.load_manifest()
+        settings = manifest.setdefault("settings", {})
+        if value is None:
+            settings.pop(key, None)
+        else:
+            settings[key] = value
+        self._write_manifest(manifest)
+
     def save_video_labels(self, video_id, model: LabelModel) -> None:
         """Persist this video's bouts (+ the training CSV) and the global behaviors."""
         self.labels_dir.mkdir(parents=True, exist_ok=True)

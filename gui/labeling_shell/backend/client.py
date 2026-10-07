@@ -137,6 +137,26 @@ class BackendClient:
             body["crop_params"] = crop_params
         return self._post("/api/preprocess/run", body)
 
+    # ------------------------------------------------------------- localizer
+    def localizer_info(self) -> dict:
+        return self._get("/api/localizer/info")
+
+    def localizer_seed_preview(self, video_path: str, frame: int, x: Optional[float] = None,
+                               y: Optional[float] = None, sam2_model: str = "tiny") -> dict:
+        """The frame, plus SAM2's mask for a click at (x, y) native px. The
+        first call loads (and may download) SAM2, hence the long timeout."""
+        return self._request("POST", "/api/localizer/seed-preview", timeout=900.0, json={
+            "video_path": video_path, "frame": frame, "x": x, "y": y, "sam2_model": sam2_model})
+
+    def train_localizer(self, request: dict) -> dict:
+        return self._post("/api/localizer/train", request)
+
+    def localizer_status(self, task_id: str) -> Iterator[dict]:
+        return self._stream("GET", f"/api/localizer/status/{task_id}")
+
+    def stop_localizer(self, task_id: str) -> dict:
+        return self._post(f"/api/localizer/stop/{task_id}")
+
     def preprocess_status(self, task_id: str) -> Iterator[dict]:
         return self._stream("GET", f"/api/preprocess/status/{task_id}")
 

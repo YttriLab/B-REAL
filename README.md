@@ -84,10 +84,24 @@ In the **Preprocess** tab: pick a **crop method**, tune the crop preview, then r
 | Crop method | Finds the animal by | Needs |
 |---|---|---|
 | **Background subtraction** (default) | thresholding the difference from an averaged background | a background (**Compute background**) |
-| **SAM2 localizer** | a ResNet18 heatmap network distilled from SAM2 body masks, run in batches on the GPU; it also predicts whether an animal is present, and holds the box still when it isn't | the localizer weights (`.pt`) |
+| **SAM2 localizer** | a ResNet18 heatmap network distilled from SAM2 body masks, run in batches on the GPU; it also predicts whether an animal is present, and holds the box still when it isn't | nothing: the bundled weights are used unless you choose or train others |
 | **None** | — (whole frames) | nothing |
 
-The localizer copes with what background subtraction can't: a drifting background, long stillness, an empty arena, or a hand in the cage. Its weights are trained per rig — they are not shipped with B-REAL. Active Learning crops with the same settings as this tab, so keep them matching what the model was trained on.
+The localizer copes with what background subtraction can't: a drifting background, long stillness, an empty arena, or a hand in the cage. B-REAL ships one set of weights (`weights/localizer/mouse_topdown.pt`, trained on a single top-down IR mouse rig; see [its README](weights/localizer/README.md)). Check the preview: if the box misses the animal on your rig, train your own (below). The chosen weights are saved with the project. Active Learning crops with the same settings as this tab, so keep them matching what the model was trained on.
+
+#### Train Localizer (optional)
+The **Train Localizer** tab fits the localizer to your rig. SAM2 (Meta's Segment Anything 2, via Hugging Face `transformers`) tracks the animal through short clips of your videos, and a fast network is trained to reproduce SAM2's body centres. That network runs hundreds of times faster than SAM2.
+
+- **Clips seeded by the current localizer**: tick videos and choose clips per video. Each clip starts where the current localizer is confident it sees the animal.
+- **Clips seeded by a click**: for a rig where the current localizer doesn't work at all. Load the player's frame, click the animal, check that SAM2's green mask covers it, and add the seed.
+- **Empty-arena videos** (optional): real "no animal" frames for the presence head. Synthetic empty frames are made either way.
+- **Start from**: fine-tune the current localizer (the default), or train from ImageNet weights.
+
+SAM2 labels about 10 frames/s on a GPU, so 6 clips × 500 frames take about 5 minutes. Its labels are cached in the project, so retraining with other settings skips straight to training. The model downloads on first use (about 150 MB for SAM2 tiny). Whole clips are held out to measure centre error against SAM2. That error is checked as training runs, and the best checkpoint is the one kept. When fine-tuning, the starting weights count as a candidate, so a run can't hand back something worse than it started from; the log says so when nothing beat them. Clips where SAM2 lost the animal, or tracked something of the wrong size, are left out and named in the log.
+
+The result is saved to `models/localizer/` with a JSON card and a QC sheet. The QC sheet marks SAM2's centre in green and the new network's in magenta: check it, because a wrong SAM2 track teaches the wrong thing. **Use for cropping** switches the Preprocess tab to it. Re-run preprocessing before training a classifier on the new crops.
+
+What to expect: on a colour 1280×720 rig where the bundled weights miss the animal (over 200 px median error, presence 0.09), 8 click-seeded clips of 400 frames fine-tuned in about 4 minutes to 2.9 px median error (p95 7 px) on held-out clips. On a rig where the bundled weights already work (20 px), a few clips won't beat them. They were trained on tens of thousands of frames, so keep them.
 
 ### 6. Train
 In the **Train** tab: add data sources (frame dir + label CSV), set hyperparameters, and start training. Watch live loss/accuracy. Optionally enable **Weights & Biases** logging (project name, run name, and API key — the key is passed to the training process via environment variable and never written to disk). When a project is open, the best checkpoint is saved into it and recorded automatically.
@@ -234,7 +248,7 @@ pixi run -e gui python gui/run_all_tests.py
 │   └── plugins/        # this project's pipeline UI (preprocess/train/tune/export)
 ├── backend/            # FastAPI server (port 8742)
 │   ├── server.py
-│   ├── routers/        # preprocess, training, tuning, inference, project endpoints
+│   ├── routers/        # preprocess, localizer, training, tuning, inference, project endpoints
 │   └── services/       # core logic incl. rlt_service.py (.rlt files)
 ├── model.py            # EfficientNet classifier
 ├── model_tsm.py        # TSM (Temporal Shift Module) variant
@@ -242,6 +256,9 @@ pixi run -e gui python gui/run_all_tests.py
 ├── optimized_runtime.py  # ONNX -> OpenVINO / TensorRT export + latency benchmarking
 ├── tune_cropping.py    # cropping/background utilities
 ├── localizer.py        # SAM2-distilled localizer network + crop stabilisation
+├── sam2_track.py       # SAM2 teacher: one click -> body-centre track (Train Localizer)
+├── localizer_train.py  # SAM2 clips -> distilled localizer weights
+├── weights/localizer/  # the bundled default localizer (+ model card)
 ├── video_decode.py     # cv2 / NVDEC frame source (bit-identical), prefetching
 ├── trt_engines.py      # automatic TensorRT engines for the localizer + classifier
 ├── config_tsm.yaml     # training defaults

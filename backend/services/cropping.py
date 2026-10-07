@@ -9,7 +9,8 @@ model is evaluated on a distribution it never saw. Both services build a
 - ``"background"`` (default): background subtraction + contour centroid
   (``tune_cropping.FindRatBoundingBox``). Needs a background image.
 - ``"localizer"``: the SAM2-distilled network (``localizer.py``), batched on
-  the GPU. Needs ``crop_params["localizer_path"]``; no background.
+  the GPU. ``crop_params["localizer_path"]`` picks the weights (default: the
+  bundled ``localizer.DEFAULT_WEIGHTS``); no background.
 - ``"none"``: no crop, the whole (resized) frame.
 
 ``resize_factor`` pre-resizes the whole frame in every mode. Smoothing state
@@ -75,15 +76,13 @@ class FrameCropper:
             self.bg = resize_frame(self.bg, self.resize_factor)
             self._bg_cropper = FindRatBoundingBox(self.bg, **rest)
         elif self.method == "localizer":
-            from localizer import LocalizerCropper
-            path = extras.get("localizer_path")
-            if localizer is None and not path:
-                raise ValueError("crop method 'localizer' needs crop_params['localizer_path'] "
-                                 "(the SAM2-distilled localizer weights, .pt)")
+            from localizer import PRESENCE_THRESHOLD, LocalizerCropper
+            path = extras.get("localizer_path")  # None -> the bundled weights
             loc_kw = dict(box_size=rest.get("box_size", 220),
                           smoothing=rest.get("smoothing", 0.5),
                           deadband=rest.get("deadband", 0.0),
-                          presence_threshold=extras.get("presence_threshold", 0.5))
+                          presence_threshold=extras.get("presence_threshold",
+                                                        PRESENCE_THRESHOLD))
             if localizer is not None:
                 for k, v in loc_kw.items():
                     setattr(localizer, k, v)

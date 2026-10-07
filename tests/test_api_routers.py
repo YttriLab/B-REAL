@@ -129,12 +129,14 @@ class TestCropMethodAndDecoder:
     """The localizer crop method and the decoder choice, at the HTTP layer."""
 
     @pytest.mark.asyncio
-    async def test_localizer_preview_needs_weights_not_a_background(self, ac, synthetic_video):
+    async def test_localizer_preview_defaults_to_bundled_weights(self, ac, synthetic_video):
+        """No weights path and no background: the bundled network runs."""
         resp = await ac.post("/api/preprocess/preview", json={
             "video_path": synthetic_video[0], "frame_index": 0,
-            "crop_params": {"method": "localizer"},
+            "crop_params": {"method": "localizer", "box_size": 24},
         })
-        assert resp.status_code == 422 and "localizer_path" in resp.json()["detail"]
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["cropped"] and len(resp.json()["center"]) == 2
 
     @pytest.mark.asyncio
     async def test_localizer_preview(self, ac, synthetic_video, stub_localizer):
@@ -160,8 +162,7 @@ class TestCropMethodAndDecoder:
         base = {"video_path": synthetic_video[0], "output_dir": str(tmp_path)}
         r1 = await ac.post("/api/preprocess/run", json={**base, "crop_params": {"method": "sam3"}})
         r2 = await ac.post("/api/preprocess/run", json={**base, "decoder": "vaapi"})
-        r3 = await ac.post("/api/preprocess/run", json={**base, "crop_params": {"method": "localizer"}})
-        assert (r1.status_code, r2.status_code, r3.status_code) == (422, 422, 422)
+        assert (r1.status_code, r2.status_code) == (422, 422)
 
     @pytest.mark.asyncio
     async def test_inference_accepts_decoder_and_batch_size(self, ac, synthetic_video):

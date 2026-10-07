@@ -217,6 +217,34 @@ class MainWindow(QtWidgets.QMainWindow):
     def checkpoint_dir(self):
         return str(self.project.checkpoint_dir()) if self.project else None
 
+    def project_videos(self):
+        """The project's registered videos: [{id, name, path, frame_count}]."""
+        return list(self.project.load_manifest().get("videos", [])) if self.project else []
+
+    def localizer_dir(self):
+        """Where Train Localizer saves (models/localizer: a full .rlt packages it)."""
+        return str(self.project.models_dir() / "localizer") if self.project else None
+
+    def localizer_path(self):
+        """The localizer weights this project crops with (absolute), or None
+        for the bundled default. Stored relative to the project when inside
+        it, so a moved or re-imported project still finds its own."""
+        p = self.project.get_setting("localizer_path") if self.project else None
+        if not p:
+            return None
+        p = Path(p)
+        return str(p if p.is_absolute() else self.project.root / p)
+
+    def set_localizer_path(self, path):
+        if not self.project:
+            return
+        if path:
+            try:
+                path = Path(path).resolve().relative_to(self.project.root.resolve()).as_posix()
+            except ValueError:
+                path = str(path)
+        self.project.set_setting("localizer_path", path or None)
+
     def register_model(self, entry: dict) -> None:
         """Record a trained checkpoint in the project manifest so it travels
         with the .rlt. A no-op without an open project (checkpoints then land

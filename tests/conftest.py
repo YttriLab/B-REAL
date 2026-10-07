@@ -308,9 +308,10 @@ def clear_task_registries():
     # stops instead of running on into the next test.
     from backend.services import (
         preprocess_service, training_service, tuning_service, inference_service,
+        localizer_service,
     )
     for svc in (tuning_service, preprocess_service, training_service,
-                inference_service):
+                inference_service, localizer_service):
         try:
             svc.cancel_all()
         except Exception:
@@ -319,3 +320,4 @@ def clear_task_registries():
     training_service._tasks.clear()
     tuning_service._tasks.clear()
     inference_service._tasks.clear()
+    localizer_service._tasks.clear()

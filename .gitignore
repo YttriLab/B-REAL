@@ -18,6 +18,8 @@ checkpoints/
 *.ckpt
 *.pt
 *.pth
+# ...except the bundled default localizer (weights/localizer/README.md)
+!weights/localizer/*.pt
 *.onnx
 wandb/
 

@@ -206,18 +206,23 @@ def test_preprocess_localizer_preview_sends_no_background():
     tab.bg_edit.setText("/p/bg.png")
     _set_method(tab, "localizer")
 
-    tab._preview(reset_center=True)  # no weights yet: refuses, says why
-    assert not calls and "localizer" in tab.preview_info.text().lower()
+    app = QtWidgets.QApplication.instance()
+
+    def wait(n):
+        for _ in range(200):
+            if len(calls) >= n:
+                break
+            app.processEvents()
+            QtCore.QThread.msleep(10)
+
+    tab._preview(reset_center=True)  # no weights chosen: the bundled ones
+    wait(1)
+    assert calls and calls[-1]["bg"] is None
+    assert calls[-1]["crop_params"]["localizer_path"] is None
 
     tab.loc_edit.setText("/w/loc.pt")
     tab._preview(reset_center=True)
-    app = QtWidgets.QApplication.instance()
-    for _ in range(200):
-        if calls:
-            break
-        app.processEvents()
-        QtCore.QThread.msleep(10)
-    assert calls and calls[-1]["bg"] is None
+    wait(2)
     assert calls[-1]["crop_params"]["localizer_path"] == "/w/loc.pt"
 
 
@@ -621,7 +626,8 @@ def test_pipeline_panel_has_a_tune_tab():
     _app()
     panel = PipelinePanel(FakeCtx())
     titles = [panel.tabText(i) for i in range(panel.count())]
-    assert titles == ["Preprocess", "Train", "Tune", "Export", "Active Learning"]
+    assert titles == ["Preprocess", "Train Localizer", "Train", "Tune", "Export",
+                      "Active Learning"]
     assert panel.tune.train_tab is panel.train
 
 

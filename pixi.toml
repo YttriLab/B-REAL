@@ -70,6 +70,10 @@ wandb = "*"
 # falling back to TorchScript numbers that don't predict the frame budget.
 onnx = "*"
 openvino = "*"
+# SAM2 (Hugging Face port, Apache-2.0) — the teacher for Train Localizer
+# (sam2_track.py). Sam2VideoModel landed in 4.56. Weights download from the
+# Hugging Face hub on first use.
+transformers = ">=4.56"
 # Tests
 pytest = "*"
 pytest-asyncio = "*"
