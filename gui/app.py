@@ -18,12 +18,12 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from PySide6 import QtCore, QtWidgets  # noqa: E402
+from PySide6 import QtCore, QtGui, QtWidgets  # noqa: E402
 
 from labeling_shell.backend import Backend, BackendConfig  # noqa: E402
 from labeling_shell.backend_worker import CallWorker  # noqa: E402
 from labeling_shell.behaviors_panel import BehaviorsPanel  # noqa: E402
-from labeling_shell.bouts import KEY_ORDER, Behavior, LabelModel  # noqa: E402
+from labeling_shell.bouts import KEY_ORDER, Behavior, LabelModel, behavior_name_key  # noqa: E402
 from labeling_shell.bouts_panel import BoutsPanel  # noqa: E402
 from labeling_shell.csv_io import (  # noqa: E402
     generate_bouts_csv, generate_training_label_csv, parse_csv_and_import,
@@ -32,7 +32,10 @@ from labeling_shell.project import ProjectStore, safe_id  # noqa: E402
 from labeling_shell.start_dialog import StartDialog, recent_projects, remember_project  # noqa: E402
 from labeling_shell.active_learning import AlState, hud_info  # noqa: E402
 from labeling_shell.theme import apply_theme  # noqa: E402
-from labeling_shell.timeline_widget import UncertaintyTimeline  # noqa: E402
+from labeling_shell.behavior_colors import behavior_colors  # noqa: E402
+from labeling_shell.timeline_widget import (  # noqa: E402
+    TimelineControls, UncertaintyTimeline, next_segment,
+)
 from labeling_shell.video_widget import PlayerWidget  # noqa: E402
 from labeling_shell.videos_panel import VideosPanel  # noqa: E402
 from plugins.crop_overlay import LEGEND as CROP_LEGEND, CropBoxOverlay  # noqa: E402
@@ -91,11 +94,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.timeline = UncertaintyTimeline()
         self.timeline.seekRequested.connect(self._seek)
+        self.timeline_controls = TimelineControls()
+        self.timeline_controls.modeChanged.connect(self.set_timeline_mode)
+        self.timeline_controls.jumpRequested.connect(self.jump_to_behavior)
         left = QtWidgets.QWidget()
         lv = QtWidgets.QVBoxLayout(left)
         lv.setContentsMargins(0, 0, 0, 0)
         lv.addWidget(self.player, 1)
         lv.addWidget(self.timeline)
+        lv.addWidget(self.timeline_controls)
 
         # On-video HUD (prediction / confidence / label), overlaid on the frame.
         self.hud = QtWidgets.QLabel(self.player.view)
@@ -135,6 +142,10 @@ class MainWindow(QtWidgets.QMainWindow):
         fm.addAction("New Project…", self.new_project)
         fm.addAction("Open Project…", self.open_project)
 
+        em = m.addMenu("&Edit")
+        self.undo_action = em.addAction("Undo Label Change", self.undo)
+        self.undo_action.setShortcut(QtGui.QKeySequence.StandardKey.Undo)
+
         vm = m.addMenu("&View")
         self.crop_box_action = vm.addAction("Show Crop Box")
         self.crop_box_action.setCheckable(True)
@@ -143,6 +154,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.crop_box_action.toggled.connect(self.set_show_crop_box)
         self.crop_box_action.setChecked(
             self.settings.value("show_crop_box", False, type=bool))
+        self.timeline_controls.set_mode(
+            self.settings.value("timeline_mode", "uncertainty", type=str))
 
         bm = m.addMenu("&Backend")
         bm.addAction("Connect Local…", self.connect_local)
@@ -163,6 +176,61 @@ class MainWindow(QtWidgets.QMainWindow):
         self.behaviors_panel.refresh()
         self.bouts_panel.refresh()
         self.pipeline.refresh()
+        self._refresh_timeline_labels()
+
+    def _refresh_timeline_labels(self) -> None:
+        """Bouts + one color per behavior (and per model class) for the timeline."""
+        names = [b.name for b in self.model.behaviors]
+        known = {behavior_name_key(n) for n in names}
+        if self._al_state is not None:
+            names += [c for c in self._al_state.class_names
+                      if isinstance(c, str) and behavior_name_key(c) not in known]
+        colors = behavior_colors(names)
+        self.timeline.set_labels(self.model.bouts, colors)
+        self.timeline_controls.set_behaviors(names, colors)
+
+    def set_timeline_mode(self, mode: str) -> None:
+        self.timeline.set_mode(mode)
+        self.settings.setValue("timeline_mode", mode)
+
+    def jump_to_behavior(self, name: str, source: str, forward: bool) -> None:
+        """Seek to the next / previous segment of `name` in your labels or the predictions."""
+        key = behavior_name_key(name)
+        if source == "predicted":
+            if self._al_state is None:
+                self._status("No predictions for this video yet.")
+                return
+            classes = self._al_state.class_names
+            runs = [r for r in self._al_state.predicted_runs()
+                    if 0 <= r[2] < len(classes) and behavior_name_key(classes[r[2]]) == key]
+            if not runs and not any(behavior_name_key(c) == key for c in classes):
+                self._status(f"The model doesn't predict {name} (classes: {', '.join(classes)}).")
+                return
+        else:
+            runs = [(b.start_frame, b.end_frame) for b in self.model.bouts
+                    if behavior_name_key(b.behavior_name) == key]
+        target = next_segment(runs, self.player.index, forward)
+        where = "labels" if source == "labels" else "predictions"
+        if target is None:
+            self._status(f"No {'later' if forward else 'earlier'} {name} in the {where}.")
+            return
+        self.player.pause()
+        self._seek(target)
+        self._status(f"{name} ({where}) at frame {target}")
+
+    def undo(self) -> None:
+        if self.model.undo():
+            self._on_model_changed()
+            self._status("Undid the last label change.")
+        else:
+            self._status("Nothing to undo.")
+
+    # ---- labeling, for the Active Learning tab's behavior buttons ----------
+    def toggle_behavior(self, key: str) -> None:
+        self._toggle_behavior(key)
+
+    def is_recording(self, behavior_id) -> bool:
+        return self.model.is_recording(behavior_id)
 
     def _seek(self, frame: int) -> None:
         self.player._show(frame)
@@ -189,6 +257,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_model_changed(self) -> None:
         self._refresh_all()
         self._recompute_misclassified()
+        self._update_hud(self.player.index)
         self._autosave()
 
     def _autosave(self) -> None:
@@ -328,6 +397,7 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             n = (max(state.by_index) + 1) if state.by_index else 0
         self.timeline.set_data(state, n)
+        self._refresh_timeline_labels()
         self._recompute_misclassified()
         self._update_hud(self.player.index)
 
@@ -335,8 +405,9 @@ class MainWindow(QtWidgets.QMainWindow):
         """Drop the shown predictions (they belong to one video)."""
         self._al_token += 1
         self._al_state = self._al_meta = None
-        self.timeline.set_data(None, 0)
+        self.timeline.set_data(None, self.player.reader.num_frames if self.player.reader else 0)
         self.timeline.set_misclassified([])
+        self._refresh_timeline_labels()
         self.hud.hide()
         self.pipeline.active_learning.refresh()
 
@@ -374,16 +445,13 @@ class MainWindow(QtWidgets.QMainWindow):
         if self._al_state is None:
             return
 
-        def label_at(i):
-            b = self.model.bout_at_frame(i)
-            return b.behavior_name if b else None
-
-        self.timeline.set_misclassified(self._al_state.misclassified_frames(label_at))
+        self.timeline.set_misclassified(self._al_state.misclassified_in_bouts(self.model.bouts))
 
     def _update_hud(self, frame: int) -> None:
         b = self.model.bout_at_frame(frame)
         human = b.behavior_name if b else None
         info = hud_info(self._al_state, frame, human)
+        self.pipeline.active_learning.show_frame(frame, info)
         if self._al_state is None or info["predicted"] is None:
             self.hud.hide()
             return
@@ -555,6 +623,9 @@ class MainWindow(QtWidgets.QMainWindow):
         return super().eventFilter(obj, event)
 
     def _handle_key(self, text: str, key: int) -> bool:
+        if text in ("[", "]") and not self.player.loading:
+            self.timeline_controls.request_jump(text == "]")
+            return True
         if self.player.loading:  # swallow labeling/transport keys mid-load
             return text in KEY_ORDER or key in (
                 QtCore.Qt.Key.Key_Space, QtCore.Qt.Key.Key_Left, QtCore.Qt.Key.Key_Right)
@@ -585,11 +656,15 @@ class MainWindow(QtWidgets.QMainWindow):
         if res.action == "started":
             self._status(f"Started {res.behavior.name} @ frame {self.player.index}")
         elif res.action == "ended":
-            self._status(f"Ended {res.behavior.name} "
-                         f"[{res.bout.start_frame}–{res.bout.end_frame}]")
+            msg = f"Ended {res.behavior.name} [{res.bout.start_frame}–{res.bout.end_frame}]"
+            if res.replaced:
+                msg += f", relabeling {res.replaced} frame(s) (Ctrl+Z to undo)"
+            self._status(msg)
         elif res.action == "zero_length":
             self._status("Zero-length bout skipped.")
         self._refresh_all()
+        self._recompute_misclassified()
+        self._update_hud(self.player.index)
         self._autosave()
 
     # ------------------------------------------------------------------- CSV
@@ -598,6 +673,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self, "Import labels", "", "CSV (*.csv);;All files (*)")
         if not path:
             return
+        self.model.snapshot(with_behaviors=True)
         n = parse_csv_and_import(Path(path).read_text(encoding="utf-8"), self.model, self._fps())
         self._refresh_all()
         self._autosave()

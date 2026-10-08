@@ -307,6 +307,68 @@ def test_inference_results_saved_to_the_video_they_ran_on():
         win.player.reader.close()
 
 
+def test_relabel_loop_in_active_learning():
+    """AL buttons label like the keys, a new bout replaces what it covers, the
+    disagreement marks follow, Ctrl+Z undoes, and the timeline jumps by behavior."""
+    _app()
+    from app import MainWindow
+    from labeling_shell.active_learning import AlState
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        path = os.path.join(d, "clip.mp4")
+        write_index_video(path, 60, fps=30, gop=12)
+        win = MainWindow(autostart_backend=False, settings=_settings())
+        win.project = ProjectStore(os.path.join(d, "proj"))
+        win.project.create("t")
+        win.load_video(path, wait=True)
+        assert win.timeline.num_frames == 60  # labels lane is live before any inference
+        win.behaviors_panel.add_behavior("other")
+        win.behaviors_panel.add_behavior("rear")
+        al = AlState()
+        al.load_results({"class_names": ["other", "rear"],
+                         "frames": [{"index": i, "predicted_class": 1 if 20 <= i < 30 else 0,
+                                     "uncertainty": 0.2, "predictions": [0.8, 0.2]}
+                                    for i in range(60)]})
+        win.set_al_results(al, {"checkpoint": "/m/x.ckpt"})
+        panel = win.pipeline.active_learning
+        assert set(panel.behavior_buttons) == {b.id for b in win.model.behaviors}
+
+        other = win.model.find_behavior_by_name("other")
+        rear = win.model.find_behavior_by_name("rear")
+        win._seek(0)
+        panel.behavior_buttons[other.id].click()  # start "other"
+        assert "recording" in panel.behavior_buttons[other.id].text()
+        win._seek(40)
+        panel.behavior_buttons[other.id].click()  # end it: 0-40 labeled other
+        assert win.timeline.misclassified == set(range(20, 30))
+
+        win._seek(20)
+        win._handle_key("2", 0)
+        win._seek(29)
+        win._handle_key("2", 0)  # relabel 20-29 as rear: replaces, no overlap
+        assert [(b.start_frame, b.end_frame, b.behavior_name) for b in win.model.bouts] == \
+            [(0, 19, "other"), (20, 29, "rear"), (30, 40, "other")]
+        assert win.timeline.misclassified == set()
+        assert "predicted <b>rear</b>" in panel.frame_info.text()
+        assert win.project.load_into_model(win.current_video_id).bouts[1].behavior_name == "rear"
+
+        win.undo()
+        assert len(win.model.bouts) == 1 and win.timeline.misclassified == set(range(20, 30))
+        assert win.project.load_into_model(win.current_video_id).bouts[0].end_frame == 40
+
+        # jump between segments of a behavior
+        win._seek(0)
+        win.jump_to_behavior("rear", "predicted", True)
+        assert win.player.index == 20
+        win.timeline_controls.behavior.setCurrentText("other")
+        win.timeline_controls.source.setCurrentIndex(0)  # in labels
+        win._seek(5)
+        win._handle_key("]", 0)
+        assert win.player.index == 5  # no later "other" bout: stays put
+        win._handle_key("[", 0)
+        assert win.player.index == 0  # back to the start of the bout it's in
+        win.player.reader.close()
+
+
 def test_start_dialog_choices_and_recent_list():
     _app()
     from labeling_shell.start_dialog import StartDialog, recent_projects, remember_project

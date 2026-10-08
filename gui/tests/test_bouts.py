@@ -124,6 +124,66 @@ def test_bout_at_frame_and_serialization():
     assert round_trip.to_dict() == m.to_dict()
 
 
+def _spans(m):
+    return [(b.start_frame, b.end_frame, b.behavior_name) for b in m.bouts]
+
+
+def test_new_bout_replaces_what_it_overlaps():
+    from labeling_shell.bouts import Bout as B
+    m = LabelModel()
+    g, r = m.add_behavior("groom"), m.add_behavior("rear")
+    for s, e in ((0, 9), (20, 29), (40, 59)):
+        m.insert_bout_sorted(B(g.id, g.name, s, e))
+    # overlaps the end of one, all of another, and the middle of a third
+    replaced = m.place_bout(B(r.id, r.name, 5, 45))
+    assert _spans(m) == [(0, 4, "groom"), (5, 45, "rear"), (46, 59, "groom")]
+    assert replaced == 5 + 10 + 6
+    # inside one bout: split around it
+    m.place_bout(B(r.id, r.name, 50, 52))
+    assert _spans(m)[-3:] == [(46, 49, "groom"), (50, 52, "rear"), (53, 59, "groom")]
+    # same behavior touching / overlapping merges into one bout
+    m.place_bout(B(g.id, g.name, 53, 70))
+    assert _spans(m)[-1] == (53, 70, "groom")
+    assert m.find_overlapping_bouts() is None
+
+
+def test_toggle_relabels_and_undo_restores():
+    m = LabelModel()
+    g, r = m.add_behavior("groom"), m.add_behavior("rear")
+    m.toggle(g.key, 0)
+    m.toggle(g.key, 20)
+    m.toggle(r.key, 10)
+    res = m.toggle(r.key, 14)
+    assert res.replaced == 5
+    assert _spans(m) == [(0, 9, "groom"), (10, 14, "rear"), (15, 20, "groom")]
+    assert m.undo() and _spans(m) == [(0, 20, "groom")]
+    assert m.undo() and m.bouts == []
+    assert not m.undo()
+
+
+def test_undo_covers_delete_reassign_edit_and_merge():
+    m = LabelModel()
+    g, r = m.add_behavior("groom"), m.add_behavior("rear")
+    m.toggle(g.key, 0)
+    m.toggle(g.key, 9)
+    m.toggle(r.key, 20)
+    m.toggle(r.key, 29)
+    before = _spans(m)
+    m.remove_bout(0)
+    m.undo()
+    assert _spans(m) == before
+    m.reassign_bout(0, r.id)
+    m.undo()
+    assert _spans(m) == before
+    m.set_bout_frames(1, 5, 25)  # rear now covers the end of groom
+    assert _spans(m) == [(0, 4, "groom"), (5, 25, "rear")]
+    m.undo()
+    assert _spans(m) == before
+    m.merge_behaviors([g.id, r.id], g.id)
+    assert [b.name for b in m.behaviors] == ["groom"]
+    m.undo()
+    assert [b.name for b in m.behaviors] == ["groom", "rear"] and _spans(m) == before
+
 def _main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failures = []

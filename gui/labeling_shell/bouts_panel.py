@@ -103,9 +103,7 @@ class BoutsPanel(QtWidgets.QWidget):
         sf, ef = ms_to_frame(start_ms, self.fps()), ms_to_frame(end_ms, self.fps())
         if sf == ef:
             return False
-        bout = self.model.bouts.pop(row)
-        bout.start_frame, bout.end_frame = min(sf, ef), max(sf, ef)
-        self.model.insert_bout_sorted(bout)
+        self.model.set_bout_frames(row, sf, ef)
         self.refresh()
         self.changed.emit()
         return True

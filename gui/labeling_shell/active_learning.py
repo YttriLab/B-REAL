@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+import numpy as np
+
 
 def map_label_to_model_class(human_label, class_names, *, binarize=None,
                              label_union=None) -> Optional[str]:
@@ -61,6 +63,39 @@ class AlState:
         self.by_index = {int(f["index"]): f for f in (results.get("frames") or [])}
         self.binarize = binarize
         self.label_union = label_union
+        self._arrays = None
+        self._runs = None
+
+    def arrays(self):
+        """Per-frame arrays over 0..max index, built once: (uncertainty float32,
+        NaN where no prediction; predicted class index int32, -1 where none).
+        What the timeline draws from — a long video is ~half a million frames."""
+        if getattr(self, "_arrays", None) is None:
+            n = (max(self.by_index) + 1) if self.by_index else 0
+            unc = np.full(n, np.nan, np.float32)
+            cls = np.full(n, -1, np.int32)
+            index_of = {c: i for i, c in enumerate(self.class_names)}
+            for i, f in self.by_index.items():
+                u = f.get("uncertainty")
+                if u is not None:
+                    unc[i] = u
+                pc = f.get("predicted_class")
+                cls[i] = pc if isinstance(pc, int) else index_of.get(pc, -1)
+            self._arrays = (unc, cls)
+        return self._arrays
+
+    def predicted_runs(self) -> list[tuple[int, int, int]]:
+        """Contiguous runs of one predicted class: [(start, end, class_index)]."""
+        if getattr(self, "_runs", None) is None:
+            _unc, cls = self.arrays()
+            runs = []
+            if len(cls):
+                edges = np.flatnonzero(np.diff(cls)) + 1
+                starts = np.concatenate(([0], edges))
+                ends = np.concatenate((edges - 1, [len(cls) - 1]))
+                runs = [(int(a), int(b), int(cls[a])) for a, b in zip(starts, ends) if cls[a] >= 0]
+            self._runs = runs
+        return self._runs
 
     def frame_info(self, idx: int) -> Optional[dict]:
         return self.by_index.get(idx)
@@ -105,6 +140,24 @@ class AlState:
             if i > after and (self.by_index[i].get("uncertainty") or 0.0) >= threshold:
                 return i
         return None
+
+    def misclassified_in_bouts(self, bouts) -> set:
+        """misclassified_frames for a list of bouts, visiting only labeled frames
+        (an unlabeled frame can't disagree with a label) — ~1000x fewer than all
+        predicted frames on a long video. With overlapping bouts the earlier one
+        in the list wins, as bout_at_frame does."""
+        out, seen = set(), set()
+        for b in bouts:
+            mapped = map_label_to_model_class(
+                b.behavior_name, self.class_names,
+                binarize=self.binarize, label_union=self.label_union)
+            for i in range(b.start_frame, b.end_frame + 1):
+                if i in seen:
+                    continue
+                seen.add(i)
+                if mapped is not None and i in self.by_index and self.predicted_name(i) != mapped:
+                    out.add(i)
+        return out
 
     def misclassified_frames(self, label_at) -> set:
         """Set of frames whose prediction disagrees with the mapped human label.

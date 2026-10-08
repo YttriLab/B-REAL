@@ -84,6 +84,37 @@ def test_hud_info():
     assert hud_info(None, 12, "groom")["predicted"] is None
 
 
+def test_misclassified_in_bouts_matches_the_full_scan():
+    from labeling_shell.bouts import Bout, LabelModel
+    al = AlState()
+    al.load_results({"class_names": ["other", "rear"],
+                     "frames": [{"index": i, "predicted_class": 1 if 10 <= i < 30 else 0,
+                                 "uncertainty": 0.1} for i in range(100)]})
+    m = LabelModel()
+    o, r = m.add_behavior("other"), m.add_behavior("rear")
+    m.insert_bout_sorted(Bout(r.id, r.name, 5, 15))
+    m.insert_bout_sorted(Bout(o.id, o.name, 25, 40))
+    m.insert_bout_sorted(Bout(o.id, o.name, 95, 120))  # past the predictions
+
+    def label_at(i):
+        b = m.bout_at_frame(i)
+        return b.behavior_name if b else None
+
+    fast = al.misclassified_in_bouts(m.bouts)
+    assert fast == al.misclassified_frames(label_at)
+    assert fast == set(range(5, 10)) | set(range(25, 30))
+
+
+def test_arrays_and_predicted_runs():
+    al = AlState()
+    al.load_results({"class_names": ["other", "rear"],
+                     "frames": [{"index": i, "predicted_class": "rear" if i in (3, 4) else 0,
+                                 "uncertainty": i / 10} for i in range(8) if i != 6]})
+    unc, cls = al.arrays()
+    assert list(cls) == [0, 0, 0, 1, 1, 0, -1, 0]
+    assert abs(unc[3] - 0.3) < 1e-6 and unc[6] != unc[6]  # NaN where no frame
+    assert al.predicted_runs() == [(0, 2, 0), (3, 4, 1), (5, 5, 0), (7, 7, 0)]
+
 def _main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failures = []

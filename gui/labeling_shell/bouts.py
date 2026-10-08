@@ -9,11 +9,16 @@ Data model (matching the JS contract so CSV/.rlt/localStorage interoperate):
   Behavior: {id, name, key}         -- up to 10 behaviors, keys "1".."0"
   Bout:     {behavior_id, behavior_name, start_frame, end_frame}, kept sorted
             by start_frame; created by pressing a behavior's key twice.
+
+One label per frame: a new bout replaces whatever it overlaps (trimming or
+splitting older bouts), which is how a stretch gets relabeled, and matches
+training's one-hot rows. Bout changes are undoable (`undo`).
 """
 
 from __future__ import annotations
 
 import bisect
+import copy
 import re
 import uuid
 from dataclasses import dataclass
@@ -59,13 +64,36 @@ class ToggleResult:
     behavior: Optional[Behavior] = None
     bout: Optional[Bout] = None
     start_frame: Optional[int] = None
+    replaced: int = 0  # frames of other behaviors the new bout relabeled
 
 
 class LabelModel:
+    MAX_UNDO = 100
+
     def __init__(self):
         self.behaviors: list[Behavior] = []
         self.bouts: list[Bout] = []
         self._active_starts: dict[str, int] = {}  # behavior_id -> start frame
+        self._undo: list[tuple] = []  # (bouts, behaviors or None) before each change
+
+    # ----------------------------------------------------------------- undo
+    def snapshot(self, with_behaviors: bool = False) -> None:
+        """Record the bouts (and, for a merge, the behaviors) before a change."""
+        self._undo.append((copy.deepcopy(self.bouts),
+                           copy.deepcopy(self.behaviors) if with_behaviors else None))
+        del self._undo[:-self.MAX_UNDO]
+
+    def can_undo(self) -> bool:
+        return bool(self._undo)
+
+    def undo(self) -> bool:
+        if not self._undo:
+            return False
+        bouts, behaviors = self._undo.pop()
+        self.bouts = bouts
+        if behaviors is not None:
+            self.behaviors = behaviors
+        return True
 
     # ---------------------------------------------------------- behaviors
     def find_behavior_by_name(self, name) -> Optional[Behavior]:
@@ -118,6 +146,33 @@ class LabelModel:
         starts = [b.start_frame for b in self.bouts]
         self.bouts.insert(bisect.bisect_right(starts, bout.start_frame), bout)
 
+    def place_bout(self, bout: Bout) -> int:
+        """Insert `bout`, replacing whatever labels it overlaps: other bouts are
+        trimmed, or split around it, and a same-behavior bout it overlaps or
+        touches is merged into it. Returns how many frames of *other*
+        behaviors it relabeled. Not snapshotted; callers do that."""
+        s, e = bout.start_frame, bout.end_frame
+        kept, replaced = [], 0
+        for b in self.bouts:
+            if b.end_frame < s or b.start_frame > e:
+                kept.append(b)
+                continue
+            if b.behavior_id != bout.behavior_id:
+                replaced += min(b.end_frame, e) - max(b.start_frame, s) + 1
+            if b.start_frame < s:
+                kept.append(Bout(b.behavior_id, b.behavior_name, b.start_frame, s - 1))
+            if b.end_frame > e:
+                kept.append(Bout(b.behavior_id, b.behavior_name, e + 1, b.end_frame))
+        merged = []
+        for b in kept:
+            if b.behavior_id == bout.behavior_id and b.start_frame <= e + 1 and b.end_frame >= s - 1:
+                s, e = min(s, b.start_frame), max(e, b.end_frame)
+            else:
+                merged.append(b)
+        self.bouts = sorted(merged, key=lambda b: b.start_frame)
+        self.insert_bout_sorted(Bout(bout.behavior_id, bout.behavior_name, s, e))
+        return replaced
+
     def toggle(self, key, frame: int) -> ToggleResult:
         """Press a behavior's key once: first press starts a bout, second ends it.
 
@@ -134,8 +189,9 @@ class LabelModel:
         if start == frame:
             return ToggleResult("zero_length", behavior=b)
         bout = Bout(b.id, b.name, min(start, frame), max(start, frame))
-        self.insert_bout_sorted(bout)
-        return ToggleResult("ended", behavior=b, bout=bout)
+        self.snapshot()
+        replaced = self.place_bout(bout)
+        return ToggleResult("ended", behavior=b, bout=bout, replaced=replaced)
 
     def active_behavior_ids(self) -> set:
         return set(self._active_starts)
@@ -163,11 +219,20 @@ class LabelModel:
         return next((b for b in self.bouts if b.start_frame <= frame <= b.end_frame), None)
 
     def remove_bout(self, index: int) -> None:
+        self.snapshot()
         del self.bouts[index]
+
+    def set_bout_frames(self, index: int, start: int, end: int) -> int:
+        """Move a bout's ends (it then replaces what it newly overlaps)."""
+        self.snapshot()
+        bout = self.bouts.pop(index)
+        return self.place_bout(Bout(bout.behavior_id, bout.behavior_name,
+                                    min(start, end), max(start, end)))
 
     def reassign_bout(self, index: int, behavior_id) -> None:
         b = self.behavior_by_id(behavior_id)
         if b is not None:
+            self.snapshot()
             self.bouts[index].behavior_id = b.id
             self.bouts[index].behavior_name = b.name
 
@@ -185,6 +250,7 @@ class LabelModel:
         from_ids = {i for i in ids if i != target_id and self.behavior_by_id(i)}
         if not from_ids:
             return
+        self.snapshot(with_behaviors=True)
         self._reassign(from_ids, target)
         self.behaviors = [b for b in self.behaviors if b.id not in from_ids]
         for i in from_ids:

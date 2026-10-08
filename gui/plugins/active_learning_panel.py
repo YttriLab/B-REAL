@@ -7,12 +7,18 @@ to the frames the model is least sure about — where new labels help most.
 Results are saved into the project (predictions/<video>.json) with what made
 them, and reloaded when the video is opened again.
 
+Relabeling happens here too: a readout of the current frame's prediction vs.
+your label, and one button per behavior that does exactly what its number key
+does (first press starts a bout, second ends it; a new bout replaces the labels
+it covers). Ctrl+Z undoes.
+
 Additional ctx duck-type used here (on top of pipeline_panel's):
     crop_params() -> dict        current_bg_path() -> str | None
     set_al_results(state, meta)  set_al_threshold(t)
     al_state() -> AlState|None   current_frame() -> int      seek(frame)
     (optional) video_id() -> str|None    al_meta() -> dict|None
                save_predictions(video_id, results, meta)
+               toggle_behavior(key)          is_recording(behavior_id) -> bool
 """
 
 from __future__ import annotations
@@ -23,6 +29,7 @@ import os
 from PySide6 import QtCore, QtWidgets
 
 from labeling_shell.active_learning import AlState
+from labeling_shell.behavior_colors import behavior_colors
 from labeling_shell.no_wheel import NoWheelComboBox
 from labeling_shell.theme import mark_accent
 
@@ -81,6 +88,17 @@ class ActiveLearningPanel(_Base):
         self.pred_info.setWordWrap(True)
         self.pred_info.setProperty("muted", "true")
         form.addRow("Predictions", self.pred_info)
+
+        self.frame_info = QtWidgets.QLabel("—")
+        self.frame_info.setWordWrap(True)
+        self.frame_info.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        form.addRow("This frame", self.frame_info)
+        self.behavior_box = QtWidgets.QWidget()
+        self.behavior_grid = QtWidgets.QGridLayout(self.behavior_box)
+        self.behavior_grid.setContentsMargins(0, 0, 0, 0)
+        self.behavior_buttons: dict[str, QtWidgets.QPushButton] = {}
+        self._button_spec = None
+        form.addRow("Label", self.behavior_box)
         self.refresh()
 
         run_btn = QtWidgets.QPushButton("Run inference (current video)")
@@ -92,6 +110,7 @@ class ActiveLearningPanel(_Base):
         form.addRow(next_btn)
 
     def refresh(self) -> None:
+        self._refresh_behavior_buttons()
         if getattr(self.ctx, "al_state", lambda: None)() is None:
             self.pred_info.setText("None for this video yet.")
             self.pred_info.setToolTip("")
@@ -107,6 +126,51 @@ class ActiveLearningPanel(_Base):
         crop = (meta.get("crop_params") or {}).get("method", "?")
         self.pred_info.setText(f"{os.path.basename(ckpt)} · {crop} crop · {when}")
         self.pred_info.setToolTip(ckpt)
+
+    # ------------------------------------------------------------ relabel
+    def _refresh_behavior_buttons(self) -> None:
+        behaviors = list(getattr(self.ctx, "behaviors", lambda: [])())
+        recording = getattr(self.ctx, "is_recording", lambda _i: False)
+        spec = [(b.id, b.name, b.key, recording(b.id)) for b in behaviors]
+        if spec == self._button_spec:
+            return
+        self._button_spec = spec
+        while self.behavior_grid.count():
+            self.behavior_grid.takeAt(0).widget().deleteLater()
+        self.behavior_buttons = {}
+        if not behaviors:
+            self.behavior_grid.addWidget(QtWidgets.QLabel("Add behaviors in the Label tab."), 0, 0)
+            return
+        colors = behavior_colors([b.name for b in behaviors])
+        for i, (bid, name, key, rec) in enumerate(spec):
+            btn = QtWidgets.QPushButton(f"{key}  {name}" + ("  ● recording" if rec else ""))
+            btn.setToolTip(f"Recording {name}: press to end the bout on this frame" if rec
+                           else f"Start a {name} bout on this frame (same as key {key})")
+            border = colors[name].name()
+            btn.setStyleSheet(f"border-left: 6px solid {border};"
+                              + (f"background: {border}; color: #111;" if rec else ""))
+            btn.clicked.connect(lambda _=False, k=key: self._toggle(k))
+            self.behavior_grid.addWidget(btn, i // 2, i % 2)
+            self.behavior_buttons[bid] = btn
+
+    def _toggle(self, key: str) -> None:
+        toggle = getattr(self.ctx, "toggle_behavior", None)
+        if toggle:
+            toggle(key)
+
+    def show_frame(self, frame: int, info: dict) -> None:
+        """Readout for the current frame: the model's call vs. your label."""
+        label = info.get("label")
+        labeled = f"labeled <b>{label}</b>" if label else "unlabeled"
+        if info.get("predicted") is None:
+            self.frame_info.setText(f"{frame} — no prediction · {labeled}")
+            return
+        conf = info.get("confidence")
+        pred = f"predicted <b>{info['predicted']}</b>" + (f" ({conf:.2f})" if conf is not None else "")
+        text = f"{frame} — {pred} · {labeled}"
+        if info.get("mismatch"):
+            text = f'<span style="color:#ff5c5c">{text} · disagrees</span>'
+        self.frame_info.setText(text)
 
     # ------------------------------------------------------------- handlers
     def _pick_ckpt(self) -> None:
