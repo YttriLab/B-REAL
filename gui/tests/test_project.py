@@ -169,6 +169,41 @@ def test_remove_video_keeps_or_deletes_its_data():
             pass
 
 
+def test_video_paths_resolve_on_another_machine():
+    """A shared project is mounted at different places on different machines;
+    the path relative to the project still finds the video."""
+    with tempfile.TemporaryDirectory() as d:
+        root = os.path.join(d, "share", "proj")
+        vids = os.path.join(d, "share", "videos")
+        os.makedirs(vids)
+        for n in ("a.mp4", "b.mp4", "c.mp4"):
+            open(os.path.join(vids, n), "wb").close()
+        store = ProjectStore(root)
+        store.create("demo")
+        store.register_video("a.mp4", "a.mp4", os.path.join(vids, "a.mp4"), 10)
+        rec = store.load_manifest()["videos"][0]
+        assert rec["rel_path"] == "../videos/a.mp4"
+
+        # the other machine wrote its own absolute path last
+        man = store.load_manifest()
+        man["videos"][0]["path"] = "/mnt/howlin/share/videos/a.mp4"
+        man["videos"].append({"id": "b.mp4", "name": "b.mp4",
+                              "path": "D:\\old\\videos\\b.mp4", "frame_count": 10})
+        man["videos"].append({"id": "c.mp4", "name": "c.mp4",
+                              "path": "/gone/c.mp4", "frame_count": 10})
+        store._write_manifest(man)
+        paths = {v["id"]: v["path"] for v in store.list_videos()}
+        assert paths["a.mp4"] == os.path.join(vids, "a.mp4")      # via rel_path
+        assert paths["b.mp4"] == "D:\\old\\videos\\b.mp4"       # no rel_path: unresolved
+
+        # relinking one finds the others in the same folder (Windows paths too)
+        store.relink_video("b.mp4", os.path.join(vids, "b.mp4"))
+        assert store.relink_missing_in(vids) == ["c.mp4"]
+        assert all(os.path.exists(v["path"]) for v in store.list_videos())
+        assert {v["id"]: v.get("rel_path") for v in store.load_manifest()["videos"]}["c.mp4"] \
+            == "../videos/c.mp4"
+
+
 def _main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failures = []

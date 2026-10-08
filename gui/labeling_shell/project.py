@@ -64,10 +64,36 @@ class ProjectStore:
         manifest["behaviors"] = [vars(b) for b in behaviors]
         self._write_manifest(manifest)
 
+    # Video paths: `path` is absolute as the last machine to open the video
+    # saw it; `rel_path` is the same file relative to the project folder. A
+    # project on a share is mounted at different places on different machines
+    # (/mnt/data/... here, /mnt/howlin/mnt/data/... there), so each machine
+    # rewriting `path` would break it for the other; `rel_path` resolves on
+    # any machine that sees the project and its videos in the same layout.
+    def _rel_path(self, path):
+        try:
+            return Path(os.path.relpath(os.path.abspath(str(path)), os.path.abspath(self.root))).as_posix()
+        except ValueError:  # Windows: different drives have no relative path
+            return None
+
+    def resolve_video_path(self, rec: dict) -> str:
+        """The record's video as a path that exists here, if any: `path`, else
+        `rel_path` against this project folder. Else `path` unchanged."""
+        path = rec.get("path") or ""
+        if path and os.path.exists(path):
+            return path
+        rel = rec.get("rel_path")
+        if rel:
+            cand = os.path.normpath(os.path.join(self.root, rel))
+            if os.path.exists(cand):
+                return cand
+        return path
+
     def register_video(self, video_id, name, path, frame_count=None) -> None:
         manifest = self.load_manifest()
         videos = manifest.setdefault("videos", [])
-        record = {"id": video_id, "name": name, "path": str(path), "frame_count": frame_count}
+        record = {"id": video_id, "name": name, "path": str(path),
+                  "rel_path": self._rel_path(path), "frame_count": frame_count}
         existing = next((v for v in videos if v.get("id") == video_id), None)
         if existing:
             existing.update(record)
@@ -75,8 +101,34 @@ class ProjectStore:
             videos.append(record)
         self._write_manifest(manifest)
 
+    def relink_video(self, video_id, path) -> None:
+        """Point an existing entry at a new file (keeping its id, so its labels)."""
+        manifest = self.load_manifest()
+        for v in manifest.get("videos", []):
+            if v.get("id") == video_id:
+                v["path"] = str(path)
+                v["rel_path"] = self._rel_path(path)
+        self._write_manifest(manifest)
+
+    def relink_missing_in(self, folder) -> list[str]:
+        """Relink every video that can't be found here to a file of the same
+        name in `folder`. Returns the ids fixed (one relink usually means the
+        whole batch moved together)."""
+        fixed = []
+        for v in self.list_videos():
+            if os.path.exists(v["path"]):
+                continue
+            name = re.split(r"[\\/]", v["path"])[-1] if v["path"] else ""
+            cand = os.path.join(str(folder), name)
+            if name and os.path.isfile(cand):
+                self.relink_video(v["id"], cand)
+                fixed.append(v["id"])
+        return fixed
+
     def list_videos(self) -> list:
-        return self.load_manifest().get("videos", []) or []
+        """Video records, each `path` resolved for this machine (see resolve_video_path)."""
+        return [{**v, "path": self.resolve_video_path(v)}
+                for v in self.load_manifest().get("videos", []) or []]
 
     def set_last_video(self, video_id) -> None:
         """Remember the open video so reopening the project returns to it."""

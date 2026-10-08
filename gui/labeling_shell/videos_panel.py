@@ -20,6 +20,7 @@ class VideosPanel(QtWidgets.QWidget):
     videoRequested = QtCore.Signal(str)  # video id
     addRequested = QtCore.Signal()
     removeRequested = QtCore.Signal(str)  # video id
+    locateRequested = QtCore.Signal(str)  # video id: pick a different file for it
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -87,6 +88,12 @@ class VideosPanel(QtWidgets.QWidget):
         if item is None:
             return
         menu = QtWidgets.QMenu(self)
+        locate = menu.addAction("Locate File…")
+        locate.setToolTip("Point this video at a different file, keeping its labels.")
         remove = menu.addAction("Remove from project…")
-        if menu.exec(self.list.viewport().mapToGlobal(pos)) is remove:
-            self.removeRequested.emit(item.data(QtCore.Qt.ItemDataRole.UserRole))
+        chosen = menu.exec(self.list.viewport().mapToGlobal(pos))
+        vid = item.data(QtCore.Qt.ItemDataRole.UserRole)
+        if chosen is remove:
+            self.removeRequested.emit(vid)
+        elif chosen is locate:
+            self.locateRequested.emit(vid)

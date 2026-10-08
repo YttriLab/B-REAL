@@ -72,6 +72,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.videos_panel.videoRequested.connect(self.open_project_video)
         self.videos_panel.addRequested.connect(self.open_video)
         self.videos_panel.removeRequested.connect(self.remove_project_video)
+        self.videos_panel.locateRequested.connect(
+            lambda vid: self.open_project_video(vid, locate=True))
         self.pipeline = PipelinePanel(self)  # MainWindow is the pipeline ctx
         self.crop_overlay = CropBoxOverlay(self, self.player, self)
 
@@ -378,6 +380,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.current_video_id = self._pending_video_id or safe_id(name)
         self._pending_video_id = None
         if self.project:
+            self._check_frame_count(self.current_video_id, path)
             self.model = self.project.load_into_model(self.current_video_id)
             self._rebind_model()
             self.project.register_video(
@@ -393,30 +396,59 @@ class MainWindow(QtWidgets.QMainWindow):
         if on:
             self._status(CROP_LEGEND)
 
+    def _check_frame_count(self, video_id: str, path: str) -> None:
+        """Labels are stored by frame number, so a relinked file with a different
+        frame count (e.g. a 30 fps re-encode of the original) would misplace them."""
+        rec = next((v for v in self.project.list_videos() if v.get("id") == video_id), None)
+        expected = rec.get("frame_count") if rec else None
+        actual = self.player.reader.num_frames
+        if expected and actual != expected:
+            QtWidgets.QMessageBox.warning(
+                self, "Different video?",
+                f"{Path(path).name} has {actual:,} frames, but this project recorded "
+                f"{expected:,} for {rec.get('name') or video_id}.\n\nLabels are stored by "
+                "frame number, so they won't line up if this is a different file (for "
+                "example a re-encode at another frame rate). If it's the wrong file, "
+                "right-click it in the Videos list and choose Locate File….")
+
     def _on_video_load_failed(self, path: str, msg: str) -> None:
         self._pending_video_id = None
         self._refresh_all()  # drop the list selection back to the open video
         QtWidgets.QMessageBox.warning(
             self, "Could not open video", f"{path}\n\n{msg}")
 
-    def open_project_video(self, video_id: str) -> None:
-        """Open a video from the project list, asking where it went if it moved."""
-        if not self.project or video_id == self.current_video_id:
+    def open_project_video(self, video_id: str, locate: bool = False) -> None:
+        """Open a video from the project list, asking where it went if it moved.
+        `locate` asks for a file even when the recorded one exists (Locate File…)."""
+        if not self.project or (video_id == self.current_video_id and not locate):
             return
         rec = next((v for v in self.project.list_videos() if v.get("id") == video_id), None)
         if rec is None:
             return
         path = rec.get("path") or ""
-        if not os.path.exists(path):
-            QtWidgets.QMessageBox.information(
-                self, "Video not found",
-                f"{rec.get('name') or video_id} is no longer at\n{path}\n\nLocate it to continue.")
+        if locate or not os.path.exists(path):
+            if not locate:
+                QtWidgets.QMessageBox.information(
+                    self, "Video not found",
+                    f"{rec.get('name') or video_id} is no longer at\n{path}\n\n"
+                    "Locate it to continue.")
+            old_dir = os.path.dirname(path)
+            start = old_dir if old_dir and os.path.isdir(old_dir) else str(self.project.root.parent)
             path, _ = QtWidgets.QFileDialog.getOpenFileName(
-                self, f"Locate {rec.get('name') or video_id}", "",
+                self, f"Locate {rec.get('name') or video_id}", start,
                 "Videos (*.mp4 *.mkv *.avi *.webm *.mov);;All files (*)")
             if not path:
                 self._refresh_all()  # drop the list selection back to the open video
                 return
+            # Saved now, not when the (possibly slow) load lands: a load that is
+            # superseded or fails must not lose the new location.
+            self.project.relink_video(video_id, path)
+            others = [v for v in self.project.relink_missing_in(os.path.dirname(path))
+                      if v != video_id]
+            self._refresh_all()
+            if others:
+                self._status(f"Also relinked {len(others)} other video(s) found in "
+                             f"{os.path.dirname(path)}.")
         self.load_video(path, video_id)
 
     def remove_project_video(self, video_id: str) -> None:

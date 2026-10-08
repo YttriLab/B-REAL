@@ -203,6 +203,46 @@ def test_remove_video_from_project():
                 win.project.load_into_model(safe_id("b.mp4")).bouts] == [(2, 6)]
 
 
+def test_relink_saves_immediately_and_fixes_siblings():
+    _app()
+    import time as _time
+    from app import MainWindow
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        proj, vids = os.path.join(d, "proj"), os.path.join(d, "vids")
+        os.makedirs(vids)
+        a, b = os.path.join(vids, "a.mp4"), os.path.join(vids, "b.mp4")
+        write_index_video(a, 30, fps=30, gop=10)
+        write_index_video(b, 40, fps=30, gop=10)
+        store = ProjectStore(proj)
+        store.create("t")
+        store.register_video("a.mp4", "a.mp4", "/mnt/elsewhere/vids/a.mp4", 30)
+        store.register_video("b.mp4", "b.mp4", "/mnt/elsewhere/vids/b.mp4", 30)  # wrong count
+
+        warnings = []
+        real_info, real_open, real_warn = (QtWidgets.QMessageBox.information,
+                                           QtWidgets.QFileDialog.getOpenFileName,
+                                           QtWidgets.QMessageBox.warning)
+        QtWidgets.QMessageBox.information = staticmethod(lambda *x, **k: None)
+        QtWidgets.QFileDialog.getOpenFileName = staticmethod(lambda *x, **k: (a, ""))
+        QtWidgets.QMessageBox.warning = staticmethod(lambda *x, **k: warnings.append(x[2]))
+        try:
+            win = MainWindow(autostart_backend=False, settings=_settings())
+            win.open_project_dir(proj)  # nothing on disk: nothing opens
+            win.open_project_video("a.mp4")
+            # saved before the load finishes, and b was found beside a
+            assert {v["id"]: v["path"] for v in store.list_videos()} == {"a.mp4": a, "b.mp4": b}
+            assert _wait_until(lambda: not win.player.loading)
+            assert not warnings  # a's frame count matches
+            win.open_project_video("b.mp4")
+            assert _wait_until(lambda: not win.player.loading)
+            assert len(warnings) == 1 and "40 frames" in warnings[0]
+        finally:
+            QtWidgets.QMessageBox.information = real_info
+            QtWidgets.QFileDialog.getOpenFileName = real_open
+            QtWidgets.QMessageBox.warning = real_warn
+        win.player.reader.close()
+
+
 def test_start_dialog_choices_and_recent_list():
     _app()
     from labeling_shell.start_dialog import StartDialog, recent_projects, remember_project
