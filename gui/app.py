@@ -30,7 +30,7 @@ from labeling_shell.csv_io import (  # noqa: E402
 )
 from labeling_shell.project import ProjectStore, safe_id  # noqa: E402
 from labeling_shell.start_dialog import StartDialog, recent_projects, remember_project  # noqa: E402
-from labeling_shell.active_learning import hud_info  # noqa: E402
+from labeling_shell.active_learning import AlState, hud_info  # noqa: E402
 from labeling_shell.theme import apply_theme  # noqa: E402
 from labeling_shell.timeline_widget import UncertaintyTimeline  # noqa: E402
 from labeling_shell.video_widget import PlayerWidget  # noqa: E402
@@ -56,6 +56,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.backend: Backend | None = None
         self._bg_workers: set = set()
         self._al_state = None
+        self._al_meta: dict | None = None  # what made the shown predictions
+        self._al_token = 0  # bumped whenever the shown predictions change
         self.al_threshold = 0.5
 
         self.player = PlayerWidget()
@@ -310,8 +312,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.al_threshold = t
         self.timeline.set_threshold(t)
 
-    def set_al_results(self, state):
+    def video_id(self):
+        return self.current_video_id
+
+    def al_meta(self):
+        return self._al_meta
+
+    def set_al_results(self, state, meta: dict | None = None):
+        self._al_token += 1
         self._al_state = state
+        self._al_meta = meta
+        self.pipeline.active_learning.refresh()
         if self.player.reader is not None:
             n = self.player.reader.num_frames
         else:
@@ -319,6 +330,45 @@ class MainWindow(QtWidgets.QMainWindow):
         self.timeline.set_data(state, n)
         self._recompute_misclassified()
         self._update_hud(self.player.index)
+
+    def clear_al(self) -> None:
+        """Drop the shown predictions (they belong to one video)."""
+        self._al_token += 1
+        self._al_state = self._al_meta = None
+        self.timeline.set_data(None, 0)
+        self.timeline.set_misclassified([])
+        self.hud.hide()
+        self.pipeline.active_learning.refresh()
+
+    def save_predictions(self, video_id, results: dict, meta: dict) -> None:
+        """Write a run's results into the project (off the UI thread: a long
+        video's JSON is tens of MB)."""
+        if not self.project or not video_id:
+            return
+        store = self.project
+        self._spawn_bg(lambda: store.save_predictions(video_id, results, meta),
+                       lambda path: self._status(f"Predictions saved to {path}"))
+
+    def _load_saved_predictions(self, video_id) -> None:
+        if not self.project or not self.project.find_predictions(video_id):
+            return
+        store, token = self.project, self._al_token
+
+        def load():
+            res = store.load_predictions(video_id)
+            state = AlState()
+            state.load_results(res)
+            return state, res.get("meta") or {}
+
+        def done(out):
+            # Skip if the video changed or fresh results arrived meanwhile.
+            if token == self._al_token and video_id == self.current_video_id:
+                state, meta = out
+                self.set_al_results(state, meta)
+                self._status(f"Loaded saved predictions ({len(state.by_index):,} frames).")
+
+        self._status("Loading saved predictions…")
+        self._spawn_bg(load, done)
 
     def _recompute_misclassified(self) -> None:
         if self._al_state is None:
@@ -386,9 +436,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.project.register_video(
                 self.current_video_id, name, path, self.player.reader.num_frames)
             self.project.set_last_video(self.current_video_id)
+        self.clear_al()
         self._refresh_all()
         self.crop_overlay.video_changed()
         self._status(f"Loaded {name} — {self.player.reader.num_frames} frames")
+        self._load_saved_predictions(self.current_video_id)
 
     def set_show_crop_box(self, on: bool) -> None:
         self.crop_overlay.set_enabled(on)
@@ -469,9 +521,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.model.behaviors = [Behavior(**b) for b in
                                     self.project.load_manifest().get("behaviors", [])]
             self._rebind_model()
-            self._al_state = None
-            self.timeline.set_data(None, 0)
-            self.hud.hide()
+            self.clear_al()
             self.crop_overlay.video_changed()
         self.project.remove_video(video_id, delete_data=delete_data)
         self._refresh_all()

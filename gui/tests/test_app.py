@@ -15,7 +15,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from PySide6 import QtWidgets  # noqa: E402
+from PySide6 import QtCore, QtWidgets  # noqa: E402
 
 from labeling_shell.behaviors_panel import BehaviorsPanel  # noqa: E402
 from labeling_shell.bouts import Bout, LabelModel  # noqa: E402
@@ -240,6 +240,70 @@ def test_relink_saves_immediately_and_fixes_siblings():
             QtWidgets.QMessageBox.information = real_info
             QtWidgets.QFileDialog.getOpenFileName = real_open
             QtWidgets.QMessageBox.warning = real_warn
+        win.player.reader.close()
+
+
+def test_predictions_follow_their_video():
+    """Saved predictions reload with their video, and never show on another."""
+    _app()
+    from app import MainWindow
+    from labeling_shell.active_learning import AlState
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        proj = os.path.join(d, "proj")
+        a, b = os.path.join(d, "a.mp4"), os.path.join(d, "b.mp4")
+        write_index_video(a, 30, fps=30, gop=12)
+        write_index_video(b, 30, fps=30, gop=12)
+        win = MainWindow(autostart_backend=False, settings=_settings())
+        win.project = ProjectStore(proj)
+        win.project.create("t")
+        res = {"class_names": ["other", "rear"],
+               "frames": [{"index": i, "predicted_class": 1, "uncertainty": 0.9,
+                           "predictions": [0.1, 0.9]} for i in range(30)]}
+        win.project.save_predictions(safe_id("a.mp4"), res,
+                                     {"checkpoint": "/m/best.ckpt", "created": "2026-10-08T12:00:00",
+                                      "crop_params": {"method": "localizer"}})
+
+        win.load_video(a, wait=True)
+        assert _wait_until(lambda: win.al_state() is not None)
+        assert len(win.al_state().by_index) == 30
+        assert "best.ckpt" in win.pipeline.active_learning.pred_info.text()
+
+        win.load_video(b, wait=True)  # no saved predictions for b
+        QtWidgets.QApplication.processEvents()
+        assert win.al_state() is None and win.timeline.al_state is None
+        assert "None" in win.pipeline.active_learning.pred_info.text()
+
+        # a slow load must not overwrite results that arrived meanwhile
+        win.load_video(a, wait=True)
+        fresh = AlState()
+        fresh.load_results({"class_names": ["x"], "frames": []})
+        win.set_al_results(fresh, {"checkpoint": "/m/new.ckpt"})
+        QtCore.QThread.msleep(300)
+        QtWidgets.QApplication.processEvents()
+        assert _wait_until(lambda: not win._bg_workers)
+        assert win.al_state() is fresh
+        win.player.reader.close()
+
+
+def test_inference_results_saved_to_the_video_they_ran_on():
+    _app()
+    from app import MainWindow
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        proj = os.path.join(d, "proj")
+        a, b = os.path.join(d, "a.mp4"), os.path.join(d, "b.mp4")
+        write_index_video(a, 30, fps=30, gop=12)
+        write_index_video(b, 30, fps=30, gop=12)
+        win = MainWindow(autostart_backend=False, settings=_settings())
+        win.project = ProjectStore(proj)
+        win.project.create("t")
+        win.load_video(b, wait=True)
+        res = {"class_names": ["other", "rear"],
+               "frames": [{"index": 0, "predicted_class": 0, "uncertainty": 0.1}]}
+        # a run started on a.mp4 lands while b.mp4 is open
+        win.pipeline.active_learning._on_results(res, safe_id("a.mp4"), {"checkpoint": "/m/c.ckpt"})
+        assert win.al_state() is None  # not shown on b
+        assert _wait_until(lambda: win.project.find_predictions(safe_id("a.mp4")) is not None)
+        assert win.project.load_predictions(safe_id("a.mp4"))["meta"]["checkpoint"] == "/m/c.ckpt"
         win.player.reader.close()
 
 

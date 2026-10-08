@@ -204,6 +204,23 @@ def test_video_paths_resolve_on_another_machine():
             == "../videos/c.mp4"
 
 
+def test_predictions_save_load_and_electron_names():
+    with tempfile.TemporaryDirectory() as d:
+        store = ProjectStore(d)
+        store.create("demo")
+        assert store.load_predictions("a.mp4") is None
+        res = {"class_names": ["other", "rear"],
+               "frames": [{"index": 3, "predicted_class": 1, "uncertainty": 0.2}]}
+        store.save_predictions("a.mp4", res, {"checkpoint": "/m/x.ckpt"})
+        back = store.load_predictions("a.mp4")
+        assert back["frames"] == res["frames"] and back["meta"]["checkpoint"] == "/m/x.ckpt"
+        # the Electron app wrote predictions/<filename stem>.json
+        import json
+        (store.predictions_dir() / "old.json").write_text(json.dumps(res))
+        assert store.find_predictions("old.mp4").name == "old.json"
+        assert store.load_predictions("old.mp4")["class_names"] == ["other", "rear"]
+
+
 def _main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failures = []

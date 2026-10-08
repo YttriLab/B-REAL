@@ -184,6 +184,39 @@ class ProjectStore:
         legacy = self.backgrounds_dir() / f"{video_id}.png"
         return legacy if legacy.exists() else current
 
+    # Inference results, one JSON per video: the shared payload
+    # ({frames: [{index, predicted_class, uncertainty, ...}], class_names}) plus
+    # an optional "meta" (which model / settings made them). The .rlt package
+    # carries this folder.
+    def predictions_dir(self) -> Path:
+        return self.root / "predictions"
+
+    def predictions_path(self, video_id) -> Path:
+        return self.predictions_dir() / f"{video_id}.json"
+
+    def find_predictions(self, video_id) -> Path | None:
+        """This video's saved predictions, also under the Electron app's name
+        (it keyed videos by filename stem: predictions/<stem>.json)."""
+        for p in (self.predictions_path(video_id),
+                  self.predictions_dir() / f"{os.path.splitext(str(video_id))[0]}.json"):
+            if p.is_file():
+                return p
+        return None
+
+    def save_predictions(self, video_id, results: dict, meta: dict | None = None) -> Path:
+        path = self.predictions_path(video_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".json.tmp")
+        # Compact: a long video is ~half a million frames.
+        tmp.write_text(json.dumps({**results, "meta": meta or {}}, separators=(",", ":")),
+                       encoding="utf-8")
+        os.replace(tmp, path)
+        return path
+
+    def load_predictions(self, video_id) -> dict | None:
+        p = self.find_predictions(video_id)
+        return json.loads(p.read_text(encoding="utf-8")) if p else None
+
     def models_dir(self) -> Path:
         return self.root / "models"
 
