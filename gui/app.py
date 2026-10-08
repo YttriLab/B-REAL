@@ -29,6 +29,7 @@ from labeling_shell.csv_io import (  # noqa: E402
     generate_bouts_csv, generate_training_label_csv, parse_csv_and_import,
 )
 from labeling_shell.project import ProjectStore, safe_id  # noqa: E402
+from labeling_shell.start_dialog import StartDialog, recent_projects, remember_project  # noqa: E402
 from labeling_shell.active_learning import hud_info  # noqa: E402
 from labeling_shell.theme import apply_theme  # noqa: E402
 from labeling_shell.timeline_widget import UncertaintyTimeline  # noqa: E402
@@ -41,9 +42,11 @@ EDITABLE = (QtWidgets.QLineEdit, QtWidgets.QAbstractSpinBox, QtWidgets.QComboBox
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self, autostart_backend: bool = True):
+    def __init__(self, autostart_backend: bool = True, settings: QtCore.QSettings | None = None):
         super().__init__()
         self.setWindowTitle("B-REAL — Labeler")
+        # Per-user app state (recent projects). Tests pass a throwaway one.
+        self.settings = settings if settings is not None else QtCore.QSettings("B-REAL", "B-REAL")
         self.model = LabelModel()
         self.project: ProjectStore | None = None
         self.current_video_id: str | None = None
@@ -467,28 +470,47 @@ class MainWindow(QtWidgets.QMainWindow):
             self._status(f"Saved {path}")
 
     # --------------------------------------------------------------- project
-    def new_project(self) -> None:
+    def prompt_for_project(self) -> bool:
+        """Ask to open or create a project until one is open. False = the user quit."""
+        while True:
+            dlg = StartDialog(recent_projects(self.settings), "B-REAL — Open a project", self)
+            if not dlg.exec():
+                return False
+            if self._handle_start_choice(dlg.choice):
+                return True
+
+    def _handle_start_choice(self, choice) -> bool:
+        kind, path = choice
+        if kind == "open":
+            return self.open_project_dir(path)
+        if kind == "browse":
+            return self.open_project()
+        return self.new_project()
+
+    def new_project(self) -> bool:
         d = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose project folder")
         if not d:
-            return
-        name, ok = QtWidgets.QInputDialog.getText(self, "Project name", "Name:")
+            return False
+        if ProjectStore(d).exists():
+            QtWidgets.QMessageBox.information(
+                self, "Existing project", "That folder already holds a project; opening it.")
+            return self.open_project_dir(d)
+        name, ok = QtWidgets.QInputDialog.getText(
+            self, "Project name", "Name:", text=Path(d).name)
         if not ok:
-            return
-        self.project = ProjectStore(d)
-        self.project.create(name or Path(d).name)
-        self._refresh_all()
-        self._status(f"Project created at {d}")
+            return False
+        ProjectStore(d).create(name.strip() or Path(d).name)
+        return self.open_project_dir(d)
 
-    def open_project(self) -> None:
+    def open_project(self) -> bool:
         d = QtWidgets.QFileDialog.getExistingDirectory(self, "Open project folder")
-        if d:
-            self.open_project_dir(d)
+        return self.open_project_dir(d) if d else False
 
-    def open_project_dir(self, d) -> None:
+    def open_project_dir(self, d) -> bool:
         store = ProjectStore(d)
         if not store.exists():
             QtWidgets.QMessageBox.warning(self, "Not a project", "No project.json found.")
-            return
+            return False
         self._autosave()
         self.project = store
         self.model = LabelModel()
@@ -501,8 +523,10 @@ class MainWindow(QtWidgets.QMainWindow):
         videos = [v for v in store.list_videos() if os.path.exists(v.get("path") or "")]
         last = store.last_video()
         pick = next((v for v in videos if v.get("id") == last), videos[0] if videos else None)
+        remember_project(self.settings, store.root)
         if pick:
             self.load_video(pick["path"], pick["id"])
+        return True
 
     # --------------------------------------------------------------- backend
     def _spawn_bg(self, fn, on_done):
@@ -560,10 +584,15 @@ class MainWindow(QtWidgets.QMainWindow):
 def main() -> int:
     app = QtWidgets.QApplication(sys.argv)
     apply_theme(app)
-    win = MainWindow()
+    # The backend starts once a project is chosen: quitting from the prompt
+    # shouldn't spawn uvicorn (or leave its health poll running at exit).
+    win = MainWindow(autostart_backend=False)
+    win.show()
+    if not win.prompt_for_project():
+        return 0
+    win.connect_local()
     if len(sys.argv) > 1:
         win.load_video(sys.argv[1])
-    win.show()
     return app.exec()
 
 

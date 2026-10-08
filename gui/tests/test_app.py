@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -25,6 +26,17 @@ from tools.index_video import write_index_video  # noqa: E402
 
 def _app():
     return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+
+_SETTINGS_DIR = tempfile.mkdtemp(prefix="breal_test_settings_")
+
+
+def _settings():
+    """A throwaway settings file, so tests never touch the user's recent projects."""
+    from PySide6 import QtCore
+    fd, path = tempfile.mkstemp(suffix=".ini", dir=_SETTINGS_DIR)
+    os.close(fd)
+    return QtCore.QSettings(path, QtCore.QSettings.Format.IniFormat)
 
 
 def _wait_until(cond, timeout=20.0):
@@ -76,7 +88,7 @@ def test_bouts_panel_populate_delete_and_seek():
 def test_mainwindow_key_toggle_creates_bout():
     _app()
     from app import MainWindow
-    win = MainWindow(autostart_backend=False)
+    win = MainWindow(autostart_backend=False, settings=_settings())
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
         path = os.path.join(d, "clip.mp4")
         write_index_video(path, 60, fps=30, gop=12)
@@ -99,7 +111,7 @@ def test_mainwindow_key_toggle_creates_bout():
 def test_mainwindow_project_autosave_roundtrip():
     _app()
     from app import MainWindow
-    win = MainWindow(autostart_backend=False)
+    win = MainWindow(autostart_backend=False, settings=_settings())
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
         proj = os.path.join(d, "proj")
         win.project = ProjectStore(proj)
@@ -130,7 +142,7 @@ def test_open_project_lists_videos_and_reopens_the_last_one():
         a, b = os.path.join(d, "a.mp4"), os.path.join(d, "b.mp4")
         write_index_video(a, 30, fps=30, gop=12)
         write_index_video(b, 30, fps=30, gop=12)
-        win = MainWindow(autostart_backend=False)
+        win = MainWindow(autostart_backend=False, settings=_settings())
         win.project = ProjectStore(proj)
         win.project.create("t")
         win.load_video(a, wait=True)
@@ -138,7 +150,7 @@ def test_open_project_lists_videos_and_reopens_the_last_one():
         win.project.register_video("gone.mp4", "gone.mp4", os.path.join(d, "gone.mp4"))
         win.player.reader.close()
 
-        win2 = MainWindow(autostart_backend=False)
+        win2 = MainWindow(autostart_backend=False, settings=_settings())
         win2.open_project_dir(proj)
         assert _wait_until(lambda: not win2.player.loading)
         assert win2.current_video_id == safe_id("b.mp4")  # last opened, not first
@@ -152,12 +164,91 @@ def test_open_project_lists_videos_and_reopens_the_last_one():
         win2.player.reader.close()
 
 
+def test_start_dialog_choices_and_recent_list():
+    _app()
+    from labeling_shell.start_dialog import StartDialog, recent_projects, remember_project
+    with tempfile.TemporaryDirectory() as d:
+        a, b = os.path.join(d, "a"), os.path.join(d, "b")
+        for p in (a, b):
+            ProjectStore(p).create(os.path.basename(p))
+        st = _settings()
+        remember_project(st, a)
+        remember_project(st, b)
+        remember_project(st, a)                       # re-opening moves it to the front
+        remember_project(st, os.path.join(d, "gone"))  # no project.json: filtered out
+        assert recent_projects(st) == [a, b]
+
+        dlg = StartDialog(recent_projects(st))
+        assert dlg.recent.count() == 2
+        dlg.recent.itemActivated.emit(dlg.recent.item(1))
+        assert dlg.result() == QtWidgets.QDialog.DialogCode.Accepted
+        assert dlg.choice == ("open", b)
+
+        for btn, kind in (("new_btn", "new"), ("open_btn", "browse")):
+            dlg = StartDialog([])
+            getattr(dlg, btn).click()
+            assert dlg.choice == (kind, None)
+        dlg = StartDialog([])
+        dlg.quit_btn.click()
+        assert dlg.result() == QtWidgets.QDialog.DialogCode.Rejected and dlg.choice is None
+
+
+def test_prompt_for_project_retries_until_one_opens():
+    _app()
+    import app as appmod
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        proj = os.path.join(d, "proj")
+        ProjectStore(proj).create("p")
+        choices = [("open", os.path.join(d, "not_a_project")), ("open", proj)]
+
+        class FakeDialog:
+            def __init__(self, recent, *a, **k):
+                self.choice = choices.pop(0)
+
+            def exec(self):
+                return True
+
+        real_dialog, real_warning = appmod.StartDialog, QtWidgets.QMessageBox.warning
+        appmod.StartDialog = FakeDialog
+        QtWidgets.QMessageBox.warning = staticmethod(lambda *a, **k: None)
+        try:
+            win = appmod.MainWindow(autostart_backend=False, settings=_settings())
+            assert win.prompt_for_project()
+        finally:
+            appmod.StartDialog, QtWidgets.QMessageBox.warning = real_dialog, real_warning
+        assert not choices  # the bad folder was rejected and it asked again
+        assert win.project.root == Path(proj)
+        from labeling_shell.start_dialog import recent_projects
+        assert recent_projects(win.settings) == [os.path.abspath(proj)]
+
+
+def test_prompt_for_project_quit_returns_false():
+    _app()
+    import app as appmod
+
+    class QuitDialog:
+        def __init__(self, *a, **k):
+            self.choice = None
+
+        def exec(self):
+            return False
+
+    real = appmod.StartDialog
+    appmod.StartDialog = QuitDialog
+    try:
+        win = appmod.MainWindow(autostart_backend=False, settings=_settings())
+        assert not win.prompt_for_project()
+        assert win.project is None
+    finally:
+        appmod.StartDialog = real
+
+
 def test_mainwindow_al_results_drive_timeline_and_hud():
     _app()
     from app import MainWindow
     from labeling_shell.active_learning import AlState
     from labeling_shell.bouts import Bout
-    win = MainWindow(autostart_backend=False)
+    win = MainWindow(autostart_backend=False, settings=_settings())
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
         path = os.path.join(d, "clip.mp4")
         write_index_video(path, 60, fps=30, gop=12)
@@ -190,7 +281,7 @@ def test_mainwindow_al_results_drive_timeline_and_hud():
 def test_snap_back_seeks_to_the_last_bout_end():
     _app()
     from app import MainWindow
-    win = MainWindow(autostart_backend=False)
+    win = MainWindow(autostart_backend=False, settings=_settings())
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
         path = os.path.join(d, "clip.mp4")
         write_index_video(path, 60, fps=30, gop=12)
@@ -217,7 +308,7 @@ def test_snap_back_seeks_to_the_last_bout_end():
 def test_snap_back_without_a_video_is_harmless():
     _app()
     from app import MainWindow
-    win = MainWindow(autostart_backend=False)
+    win = MainWindow(autostart_backend=False, settings=_settings())
     win.snap_back()  # must not raise
 
 
