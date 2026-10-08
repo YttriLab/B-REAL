@@ -182,7 +182,7 @@ QLineEdit, QPlainTextEdit, QTextEdit, QAbstractSpinBox {
 QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QAbstractSpinBox:focus {
     border: 1px solid #58a6ff;
 }
-QLineEdit:disabled, QAbstractSpinBox:disabled {
+QLineEdit:disabled, QAbstractSpinBox:disabled, QComboBox:disabled {
     color: #6b6f73;
     background: #222325;
 }

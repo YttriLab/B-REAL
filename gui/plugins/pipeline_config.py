@@ -58,6 +58,16 @@ CROP_METHODS = [
     ("SAM2 localizer", "localizer"),
     ("None (whole frame)", "none"),
 ]
+# One line under the Crop method dropdown saying what the choice does.
+CROP_METHOD_HINTS = {
+    "background": "Finds the animal by subtracting a background image. Needs a "
+                  "static camera and a background (Compute background below).",
+    "localizer": "A small network finds the animal: no background needed, and it "
+                 "copes with lighting or bedding changes. Uses the bundled mouse "
+                 "network unless you choose or train another.",
+    "none": "Writes whole frames, only resized (resize_factor). For rigs where the "
+            "animal fills the frame.",
+}
 # Which CROP_DEFAULTS knobs each method reads.
 CROP_KEYS_BY_METHOD = {
     "background": set(CROP_DEFAULTS),

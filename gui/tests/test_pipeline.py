@@ -191,6 +191,76 @@ def test_preprocess_localizer_mode():
     assert params["localizer_runtime"] == "auto"  # TensorRT when available
 
 
+class SettingsCtx(FakeCtx):
+    """FakeCtx plus the per-project settings store MainWindow provides."""
+
+    def __init__(self, store=None, videos=()):
+        super().__init__()
+        self.store = {} if store is None else store
+        self.videos = list(videos)
+
+    def setting(self, key, default=None):
+        return self.store.get(key, default)
+
+    def set_setting(self, key, value):
+        self.store[key] = value
+
+    def project_videos(self):
+        return self.videos
+
+
+def test_preprocess_settings_survive_a_restart():
+    """Crop method and knobs are saved per project and restored on refresh:
+    Active Learning crops with whatever this tab shows, so a restart that
+    silently fell back to background subtraction would feed the model the
+    wrong crops."""
+    _app()
+    store = {}
+    tab = PreprocessTab(SettingsCtx(store))
+    _set_method(tab, "localizer")
+    tab.crop_widgets["box_size"].setValue(300)
+    assert store["preprocess"]["method"] == "localizer"
+    assert store["preprocess"]["params"]["box_size"] == 300
+
+    again = PreprocessTab(SettingsCtx(store))  # a fresh app on the same project
+    again.refresh()
+    assert again.method() == "localizer"
+    assert again.crop_widgets["box_size"].value() == 300
+    assert again.crop_widgets["smoothing"].value() == 0.5
+    assert store["preprocess"] == again._current_settings()  # restoring saved nothing new
+
+    other = PreprocessTab(SettingsCtx({}))  # a project with nothing saved: defaults
+    other.refresh()
+    assert other.method() == "background"
+
+
+def test_preprocess_starts_from_electron_era_video_settings():
+    _app()
+    rec = {"id": "v.mp4", "path": "v.mp4",
+           "preprocessing": {"box_size": 214, "difference_threshold": 4, "bogus": 1}}
+    tab = PreprocessTab(SettingsCtx({}, [rec]))
+    tab.refresh()
+    assert tab.method() == "background"
+    assert tab.crop_widgets["box_size"].value() == 214
+    assert tab.crop_widgets["difference_threshold"].value() == 4
+
+
+def test_preprocess_shows_only_the_rows_the_method_uses():
+    _app()
+    tab = PreprocessTab(FakeCtx())
+    form = tab._form
+    row = lambda w: form.getWidgetPosition(w)[0]
+    assert form.isRowVisible(row(tab.bg_field)) and not form.isRowVisible(row(tab.loc_field))
+    _set_method(tab, "localizer")
+    assert not form.isRowVisible(row(tab.bg_field)) and form.isRowVisible(row(tab.loc_field))
+    assert "bundled" in tab.loc_info.text()
+    tab.loc_edit.setText("/no/such/weights.pt")
+    assert "Not found" in tab.loc_info.text()
+    _set_method(tab, "none")
+    assert not form.isRowVisible(row(tab.bg_field)) and not form.isRowVisible(row(tab.loc_field))
+    assert tab.method_hint.text()
+
+
 def test_preprocess_localizer_preview_sends_no_background():
     _app()
     ctx = FakeCtx()

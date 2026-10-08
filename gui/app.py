@@ -259,6 +259,14 @@ class MainWindow(QtWidgets.QMainWindow):
                 path = str(path)
         self.project.set_setting("localizer_path", path or None)
 
+    def setting(self, key, default=None):
+        """A per-project pipeline setting (stored in the manifest's settings)."""
+        return self.project.get_setting(key, default) if self.project else default
+
+    def set_setting(self, key, value) -> None:
+        if self.project:
+            self.project.set_setting(key, value)
+
     def register_model(self, entry: dict) -> None:
         """Record a trained checkpoint in the project manifest so it travels
         with the .rlt. A no-op without an open project (checkpoints then land

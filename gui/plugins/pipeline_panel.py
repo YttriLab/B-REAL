@@ -15,6 +15,9 @@ BackendClient, streaming SSE progress on background threads (backend_worker).
     project_videos() -> list[dict]        localizer_dir() -> str | None
     localizer_path() -> str | None        set_localizer_path(path) -> None
         (optional; Train Localizer, and the project's chosen localizer weights)
+    setting(key, default=None)            set_setting(key, value) -> None
+        (optional; per-project pipeline settings — Preprocess keeps its crop
+        method and knobs here so they survive a restart)
 """
 
 from __future__ import annotations
@@ -34,7 +37,7 @@ from labeling_shell.no_wheel import (
 from labeling_shell.theme import mark_accent
 
 from .pipeline_config import (
-    BATCH_CHOICES, CROP_DEFAULTS, CROP_KEYS_BY_METHOD, CROP_METHODS,
+    BATCH_CHOICES, CROP_DEFAULTS, CROP_KEYS_BY_METHOD, CROP_METHOD_HINTS, CROP_METHODS,
     EXPORT_FORMATS, FRAMES_CHOICES, LOCALIZER_SMOOTHING,
     IMAGE_SIZE_CHOICES, OBJECTIVES, POOLS, PRECISIONS, TARGET_LABELS, TARGETS,
     VARIANT_NATIVE_SIZE, VARIANTS,
@@ -114,22 +117,40 @@ class PreprocessTab(_Base):
             "None: write whole frames. resize_factor still applies.")
         self.crop_method.currentIndexChanged.connect(
             lambda _i: self._on_method_changed(self.method()))
-        form.addRow("Crop method", self.crop_method)
+        self.method_hint = QtWidgets.QLabel()
+        self.method_hint.setWordWrap(True)
+        self.method_hint.setProperty("muted", "true")
+        method_col = QtWidgets.QVBoxLayout()
+        method_col.setContentsMargins(0, 0, 0, 0)
+        method_col.addWidget(self.crop_method)
+        method_col.addWidget(self.method_hint)
+        form.addRow("Crop method", self._wrap(method_col))
 
         self.loc_edit = QtWidgets.QLineEdit()
-        self.loc_edit.setPlaceholderText("bundled: top-down mouse (or Train Localizer)")
+        self.loc_edit.setPlaceholderText("empty = the bundled network")
         self.loc_edit.setToolTip(
             "Localizer weights (.pt). Empty = the bundled network, trained on one "
             "top-down IR mouse rig (weights/localizer/README.md). For another rig, "
             "train one in the Train Localizer tab.")
         self.loc_edit.editingFinished.connect(self._save_localizer)
+        self.loc_edit.textChanged.connect(lambda _t: self._update_localizer_info())
         self.loc_btn = QtWidgets.QPushButton("Browse…")
         self.loc_btn.clicked.connect(self._pick_localizer)
         loc_row = QtWidgets.QHBoxLayout()
         loc_row.addWidget(self.loc_edit, 1)
         loc_row.addWidget(self.loc_btn)
+        # Says which weights will actually be used, so an empty field doesn't
+        # read as "nothing chosen".
+        self.loc_info = QtWidgets.QLabel()
+        self.loc_info.setWordWrap(True)
+        self.loc_info.setProperty("muted", "true")
+        loc_col = QtWidgets.QVBoxLayout()
+        loc_col.setContentsMargins(0, 0, 0, 0)
+        loc_col.addLayout(loc_row)
+        loc_col.addWidget(self.loc_info)
         self.loc_row_label = QtWidgets.QLabel("Localizer")
-        form.addRow(self.loc_row_label, self._wrap(loc_row))
+        self.loc_field = self._wrap(loc_col)
+        form.addRow(self.loc_row_label, self.loc_field)
 
         self.bg_edit = QtWidgets.QLineEdit()
         self.bg_frames = NoWheelSpinBox()
@@ -147,7 +168,9 @@ class PreprocessTab(_Base):
         bg_row.addWidget(self.bg_frames)
         bg_row.addWidget(self.bg_btn)
         self.bg_row_label = QtWidgets.QLabel("Background")
-        form.addRow(self.bg_row_label, self._wrap(bg_row))
+        self.bg_field = self._wrap(bg_row)
+        form.addRow(self.bg_row_label, self.bg_field)
+        self._form = form
 
         self.crop_widgets: dict[str, QtWidgets.QWidget] = {}
         self.crop_labels: dict[str, QtWidgets.QLabel] = {}
@@ -165,6 +188,10 @@ class PreprocessTab(_Base):
                 w.setRange(0, 100000)
                 w.setValue(default)
             self.crop_widgets[key] = w
+            if isinstance(w, QtWidgets.QComboBox):
+                w.currentTextChanged.connect(lambda _v: self._save_settings())
+            else:
+                w.valueChanged.connect(lambda _v: self._save_settings())
             label = QtWidgets.QLabel(key)
             self.crop_labels[key] = label
             form.addRow(label, w)
@@ -231,7 +258,8 @@ class PreprocessTab(_Base):
 
         # Smoothed crop centre carried between previewed frames.
         self._preview_center = None
-        self._on_method_changed(self.method())
+        self._restoring = False
+        self._update_method_ui(self.method())
 
     @staticmethod
     def _wrap(layout) -> QtWidgets.QWidget:
@@ -243,10 +271,25 @@ class PreprocessTab(_Base):
         return self.crop_method.currentData()
 
     def _on_method_changed(self, method: str) -> None:
+        """The user picked a crop method."""
+        self._update_method_ui(method)
+        if method == "localizer" and self.crop_widgets["smoothing"].value() == 0:
+            # Unsmoothed localizer centres jitter by a few px frame to frame;
+            # 0.5 is the EMA the localizer pipeline was validated with.
+            self.crop_widgets["smoothing"].setValue(LOCALIZER_SMOOTHING)
+            self.ctx.status(f"Localizer: smoothing set to {LOCALIZER_SMOOTHING}.")
+        self._save_settings()
+
+    def _update_method_ui(self, method: str) -> None:
         """Enable only the knobs the chosen crop method reads: the background
         and detection settings are background-only, the box and its
         stabilisation are shared with the localizer, and resize_factor applies
-        to every method (it still resizes whole frames)."""
+        to every method (it still resizes whole frames). The Background and
+        Localizer rows belong to one method each, so they are hidden otherwise."""
+        self.method_hint.setText(CROP_METHOD_HINTS[method])
+        self._form.setRowVisible(self.bg_field, method == "background")
+        self._form.setRowVisible(self.loc_field, method == "localizer")
+        self._update_localizer_info()
         for key, w in self.crop_widgets.items():
             enabled = key in CROP_KEYS_BY_METHOD[method]
             w.setEnabled(enabled)
@@ -260,11 +303,70 @@ class PreprocessTab(_Base):
             self.preview_info.setText(
                 "Raw mode: whole frames are written, no background subtraction. "
                 "Nothing to preview.")
-        elif method == "localizer" and self.crop_widgets["smoothing"].value() == 0:
-            # Unsmoothed localizer centres jitter by a few px frame to frame;
-            # 0.5 is the EMA the localizer pipeline was validated with.
-            self.crop_widgets["smoothing"].setValue(LOCALIZER_SMOOTHING)
-            self.ctx.status(f"Localizer: smoothing set to {LOCALIZER_SMOOTHING}.")
+
+    def _update_localizer_info(self) -> None:
+        path = self.loc_edit.text().strip()
+        warn = ""
+        if not path:
+            text = ("Using the bundled network (top-down IR mouse, trained on one "
+                    "rig). If it misses your animal, train one in the Train "
+                    "Localizer tab.")
+        elif os.path.isfile(path):
+            text = f"Using {os.path.basename(path)}"
+        else:
+            text, warn = "Not found on this computer — preprocessing will fail.", "#ff5c5c"
+        self.loc_info.setText(text)
+        self.loc_info.setToolTip(path)
+        self.loc_info.setStyleSheet(f"color: {warn};" if warn else "")
+
+    # ---- per-project persistence ----------------------------------------
+    def _current_settings(self) -> dict:
+        params = {}
+        for key, w in self.crop_widgets.items():
+            params[key] = w.currentText() if isinstance(w, QtWidgets.QComboBox) else w.value()
+        return {"method": self.method(), "params": params}
+
+    def _save_settings(self) -> None:
+        setter = getattr(self.ctx, "set_setting", None)
+        if setter and not getattr(self, "_restoring", True):
+            setter("preprocess", self._current_settings())
+
+    def _legacy_settings(self) -> dict:
+        """Electron-era projects kept tuned background-subtraction knobs on each
+        video's manifest entry; start from those until something is saved."""
+        video = self.ctx.video_path()
+        for rec in getattr(self.ctx, "project_videos", lambda: [])():
+            old = rec.get("preprocessing")
+            if video and rec.get("path") == video and isinstance(old, dict):
+                return {"method": "background",
+                        "params": {k: v for k, v in old.items() if k in CROP_DEFAULTS}}
+        return {}
+
+    def _restore_settings(self) -> None:
+        """Show the project's saved crop method + knobs (defaults if none)."""
+        getter = getattr(self.ctx, "setting", None)
+        if getter is None:
+            return
+        saved = getter("preprocess") or self._legacy_settings()
+        want = {"method": saved.get("method", CROP_METHODS[0][1]),
+                "params": {**CROP_DEFAULTS, **(saved.get("params") or {})}}
+        if want == self._current_settings():
+            return
+        self._restoring = True
+        try:
+            idx = self.crop_method.findData(want["method"])
+            self.crop_method.blockSignals(True)
+            self.crop_method.setCurrentIndex(max(idx, 0))
+            self.crop_method.blockSignals(False)
+            for key, w in self.crop_widgets.items():
+                value = want["params"].get(key, CROP_DEFAULTS[key])
+                if isinstance(w, QtWidgets.QComboBox):
+                    w.setCurrentText(str(value))
+                else:
+                    w.setValue(value)
+            self._update_method_ui(self.method())
+        finally:
+            self._restoring = False
 
     def _pick_localizer(self) -> None:
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -286,6 +388,7 @@ class PreprocessTab(_Base):
             setter(self.loc_edit.text().strip() or None)
 
     def refresh(self) -> None:
+        self._restore_settings()
         self.video_label.setText(self.ctx.video_path() or "—")
         if self.ctx.current_bg_path() and not self.bg_edit.text():
             self.bg_edit.setText(self.ctx.current_bg_path())
