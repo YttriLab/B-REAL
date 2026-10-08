@@ -226,6 +226,18 @@ class PlayerWidget(QtWidgets.QWidget):
         self._set_transport_enabled(False)
         loader.start()
 
+    def unload(self) -> None:
+        """Close the current video (and any load in flight); show nothing."""
+        self.pause()
+        self._cancel_load()
+        if self.reader is not None:
+            self.reader.close()
+            self.reader = None
+        self.index = 0
+        self.view.set_frame(None)
+        self.slider.setEnabled(False)
+        self._update_info()
+
     def shutdown(self) -> None:
         """Stop any background load; call before the widget goes away."""
         self._cancel_load()

@@ -164,6 +164,45 @@ def test_open_project_lists_videos_and_reopens_the_last_one():
         win2.player.reader.close()
 
 
+def test_remove_video_from_project():
+    _app()
+    from app import MainWindow
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        proj = os.path.join(d, "proj")
+        a, b = os.path.join(d, "a.mp4"), os.path.join(d, "b.mp4")
+        write_index_video(a, 30, fps=30, gop=12)
+        write_index_video(b, 30, fps=30, gop=12)
+        win = MainWindow(autostart_backend=False, settings=_settings())
+        win.project = ProjectStore(proj)
+        win.project.create("t")
+        win.load_video(a, wait=True)
+        win.load_video(b, wait=True)
+        win.behaviors_panel.add_behavior("groom")
+        win._seek(2)
+        win._handle_key("1", 0)
+        win._seek(6)
+        win._handle_key("1", 0)
+
+        answers = [(False, False), (True, False), (True, False)]
+        win._confirm_remove = lambda name: answers.pop(0)
+
+        win.remove_project_video(safe_id("a.mp4"))  # cancelled
+        assert len(win.project.list_videos()) == 2
+
+        win.remove_project_video(safe_id("a.mp4"))  # not the open one: b stays up
+        assert [v["id"] for v in win.project.list_videos()] == [safe_id("b.mp4")]
+        assert win.current_video_id == safe_id("b.mp4") and win.player.reader is not None
+
+        win.remove_project_video(safe_id("b.mp4"))  # the open one: player cleared
+        assert win.project.list_videos() == []
+        assert win.current_video_id is None and win.player.reader is None
+        assert win.model.bouts == [] and [x.name for x in win.model.behaviors] == ["groom"]
+        assert win.videos_panel.list.count() == 0
+        # labels were autosaved and kept, so adding b back restores its bout
+        assert [(x.start_frame, x.end_frame) for x in
+                win.project.load_into_model(safe_id("b.mp4")).bouts] == [(2, 6)]
+
+
 def test_start_dialog_choices_and_recent_list():
     _app()
     from labeling_shell.start_dialog import StartDialog, recent_projects, remember_project

@@ -70,6 +70,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.videos_panel = VideosPanel()
         self.videos_panel.videoRequested.connect(self.open_project_video)
         self.videos_panel.addRequested.connect(self.open_video)
+        self.videos_panel.removeRequested.connect(self.remove_project_video)
         self.pipeline = PipelinePanel(self)  # MainWindow is the pipeline ctx
 
         label_tab = QtWidgets.QWidget()
@@ -388,6 +389,49 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._refresh_all()  # drop the list selection back to the open video
                 return
         self.load_video(path, video_id)
+
+    def remove_project_video(self, video_id: str) -> None:
+        """Drop a video from the project after confirming (the file stays put)."""
+        if not self.project:
+            return
+        rec = next((v for v in self.project.list_videos() if v.get("id") == video_id), None)
+        if rec is None:
+            return
+        ok, delete_data = self._confirm_remove(rec.get("name") or video_id)
+        if not ok:
+            return
+        if video_id in (self.current_video_id, self._pending_video_id):
+            self._autosave()
+            self.player.unload()
+            self.current_video_id = self._pending_video_id = self._video_path = None
+            self.model = LabelModel()
+            self.model.behaviors = [Behavior(**b) for b in
+                                    self.project.load_manifest().get("behaviors", [])]
+            self._rebind_model()
+            self._al_state = None
+            self.timeline.set_data(None, 0)
+            self.hud.hide()
+        self.project.remove_video(video_id, delete_data=delete_data)
+        self._refresh_all()
+        self._status(f"Removed {rec.get('name') or video_id} from the project"
+                     + (" and deleted its labels/frames." if delete_data else "."))
+
+    def _confirm_remove(self, name: str) -> tuple[bool, bool]:
+        """Ask before removing; returns (confirmed, also delete its project data)."""
+        box = QtWidgets.QMessageBox(self)
+        box.setIcon(QtWidgets.QMessageBox.Icon.Question)
+        box.setWindowTitle("Remove video")
+        box.setText(f"Remove {name} from the project?")
+        box.setInformativeText(
+            "The video file itself is not deleted. Its labels stay in the project "
+            "folder, so adding the video again brings them back.")
+        cb = QtWidgets.QCheckBox("Also delete its labels, extracted frames and background")
+        box.setCheckBox(cb)
+        box.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Cancel)
+        remove = box.addButton("Remove", QtWidgets.QMessageBox.ButtonRole.DestructiveRole)
+        box.setDefaultButton(QtWidgets.QMessageBox.StandardButton.Cancel)
+        box.exec()
+        return box.clickedButton() is remove, cb.isChecked()
 
     # --------------------------------------------------------------- keyboard
     def eventFilter(self, obj, event):

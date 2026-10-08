@@ -135,6 +135,40 @@ def test_add_model_survives_a_manifest_without_models():
         assert len(store.list_models()) == 1
 
 
+def test_remove_video_keeps_or_deletes_its_data():
+    with tempfile.TemporaryDirectory() as d:
+        store = ProjectStore(d)
+        store.create("demo")
+        m = LabelModel()
+        g = m.add_behavior("groom")
+        m.insert_bout_sorted(Bout(g.id, g.name, 1, 3))
+        for vid in ("a.mp4", "b.mp4"):
+            store.register_video(vid, vid, f"/x/{vid}")
+            store.save_video_labels(vid, m)
+            (store.frames_dir(vid)).mkdir(parents=True)
+            (store.frames_dir(vid) / "1.png").write_bytes(b"x")
+        store.set_last_video("a.mp4")
+
+        store.remove_video("a.mp4")  # default: keep its data
+        assert [v["id"] for v in store.list_videos()] == ["b.mp4"]
+        assert store.last_video() is None
+        assert store.load_into_model("a.mp4").bouts  # re-adding brings labels back
+        assert store.frames_dir("a.mp4").is_dir()
+
+        store.remove_video("b.mp4", delete_data=True)
+        assert store.list_videos() == []
+        assert not store.load_into_model("b.mp4").bouts
+        assert not store.label_csv_path("b.mp4").exists()
+        assert not store.frames_dir("b.mp4").exists()
+        assert store.frames_dir("a.mp4").is_dir()  # the other video's frames untouched
+
+        try:
+            store.remove_video("", delete_data=True)
+            raise AssertionError("empty id must not reach frames/")
+        except ValueError:
+            pass
+
+
 def _main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failures = []

@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 from pathlib import Path
 
 from .bouts import Behavior, Bout, LabelModel
@@ -86,6 +87,25 @@ class ProjectStore:
 
     def last_video(self):
         return self.load_manifest().get("last_video")
+
+    def remove_video(self, video_id, delete_data: bool = False) -> None:
+        """Drop a video from the project. The video file itself is never touched.
+
+        By default its labels, frames and background stay on disk, so adding the
+        same video back restores its labels. `delete_data` removes those too.
+        """
+        if not str(video_id or "").strip():
+            raise ValueError("empty video id")  # frames_dir("") is all of frames/
+        manifest = self.load_manifest()
+        manifest["videos"] = [v for v in manifest.get("videos", []) if v.get("id") != video_id]
+        if manifest.get("last_video") == video_id:
+            manifest.pop("last_video")
+        self._write_manifest(manifest)
+        if delete_data:
+            for p in (self.labels_dir / f"{video_id}.json", self.label_csv_path(video_id),
+                      self.background_path(video_id)):
+                p.unlink(missing_ok=True)
+            shutil.rmtree(self.frames_dir(video_id), ignore_errors=True)
 
     def label_csv_path(self, video_id) -> Path:
         return self.labels_dir / f"{video_id}_labels.csv"
