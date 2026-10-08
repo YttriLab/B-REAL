@@ -58,6 +58,8 @@ class FrameCropper:
         self.bg = None
         self._bg_cropper = None
         self._loc = None
+        # crop_batch's boxes, (x, y, w, h) in native video px, one per frame.
+        self.last_boxes: list[tuple[float, float, float, float]] = []
 
         if self.method == "background":
             if bg_path:
@@ -134,25 +136,35 @@ class FrameCropper:
         smoothing before frame i (a gap in the frame indices). ``prepared`` is
         this batch's :meth:`prepare` result, if the caller started it early.
         Returns crops in the frames' own layout (BGR, or 2-D gray from the
-        NVDEC decoder)."""
+        NVDEC decoder); each crop's box, in native video pixels, is left in
+        ``self.last_boxes``."""
         resets = resets or [False] * len(frames)
         resized_f, loc_prepared = prepared if prepared is not None else (None, None)
         if self.method == "localizer":
             # The network is stateless, so locate the whole batch at once; only
             # the smoothing below is sequential.
             centers, pres = self._loc.locate(frames, prepared=loc_prepared)
-        out = []
+        out, boxes = [], []
         for i, frame in enumerate(frames):
             if resets[i]:
                 self.reset()
             resized = resized_f[i].result() if resized_f is not None else self._resize(frame)
             if self.method == "none":
                 out.append(resized)
+                rect = (0, 0, resized.shape[1], resized.shape[0])
             elif self.method == "background":
                 out.append(self._bg_cropper(resized)[-1])
+                rect = self._bg_cropper.last_crop_rect
             else:
-                crop, _ = self._loc.crop(resized, centers[i], pres[i], frame.shape)
+                crop, rect = self._loc.crop(resized, centers[i], pres[i], frame.shape)
                 out.append(crop)
+            # Crops are taken from the resized frame; report the box in the
+            # video's own pixels so it can be drawn over the original.
+            sx = frame.shape[1] / resized.shape[1]
+            sy = frame.shape[0] / resized.shape[0]
+            x, y, w, h = rect
+            boxes.append((x * sx, y * sy, w * sx, h * sy))
+        self.last_boxes = boxes
         return out
 
 

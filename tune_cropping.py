@@ -53,6 +53,9 @@ class FindRatBoundingBox():
         self.resizer = partial(cv2.resize, dsize=(self.w // downsample_factor, self.h // downsample_factor), interpolation=cv2.INTER_NEAREST)
         self.bg = self.resizer(bg)
         self.prev_bounding = (0, 0, self.w, self.h)
+        # (x, y, w, h) of the last crop actually taken, in the px of the frame
+        # passed to crop() — the box drawn over the video in the app.
+        self.last_crop_rect = None
 
     def resize(self, frame):
         return self.resizer(frame)
@@ -141,7 +144,8 @@ class FindRatBoundingBox():
             y_end = min(y_scaled + h_scaled, frame.shape[0])
             
             cropped_rgb = frame[y_scaled:y_end, x_scaled:x_end]
-            
+            self.last_crop_rect = (x_scaled, y_scaled, x_end - x_scaled, y_end - y_scaled)
+
             return bb, small, opened_again, cropped_rgb
         
         print("No contours detected")
@@ -157,7 +161,8 @@ class FindRatBoundingBox():
         y_end = min(y_scaled + h_scaled, frame.shape[0])
         
         cropped_rgb = frame[y_scaled:y_end, x_scaled:x_end]
-        
+        self.last_crop_rect = (x_scaled, y_scaled, x_end - x_scaled, y_end - y_scaled)
+
         return self.prev_bounding, small, opened_again, cropped_rgb
     
     def __call__(self, frame):

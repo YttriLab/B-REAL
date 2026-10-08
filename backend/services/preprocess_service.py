@@ -4,6 +4,8 @@ frame preview, and full video-to-flat-frames extraction with progress.
 """
 
 import base64
+import csv
+import json
 import os
 import threading
 import uuid
@@ -172,6 +174,88 @@ def preview_frame(
     }
 
 
+# ── Crop boxes ─────────────────────────────────────────────────────────────
+# Preprocessing records where it cropped each frame, beside the frames, so the
+# app can draw the exact box a training sample came from. Native video px.
+
+CROPS_CSV = "crops.csv"
+
+
+def read_crop_boxes(path: str) -> dict[int, tuple[float, float, float, float]]:
+    """frames/<id>/crops.csv -> {frame: (x, y, w, h)}; {} if absent."""
+    boxes = {}
+    if not os.path.isfile(path):
+        return boxes
+    with open(path, newline="") as f:
+        for row in csv.DictReader(f):
+            boxes[int(row["frame"])] = tuple(float(row[k]) for k in ("x", "y", "w", "h"))
+    return boxes
+
+
+def _write_crop_boxes(out_dir: str, boxes: dict) -> None:
+    """Merge into the directory's crops.csv: a re-run over some ranges keeps the
+    boxes of frames it didn't touch, like it keeps their PNGs."""
+    path = os.path.join(out_dir, CROPS_CSV)
+    merged = {**read_crop_boxes(path), **boxes}
+    tmp = path + ".tmp"
+    with open(tmp, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["frame", "x", "y", "w", "h"])
+        for idx in sorted(merged):
+            w.writerow([idx, *(round(float(v), 1) for v in merged[idx])])
+    os.replace(tmp, path)
+
+
+# One cropper + open video kept between live crop-box requests, so stepping
+# forward continues the crop smoothing as preprocessing would.
+_live: dict = {"key": None, "cropper": None, "cap": None, "video": None, "last": None}
+_live_lock = threading.Lock()
+
+
+def _close_live() -> None:
+    if _live["cropper"] is not None:
+        _live["cropper"].close()
+    if _live["cap"] is not None:
+        _live["cap"].release()
+    _live.update(key=None, cropper=None, cap=None, video=None, last=None)
+
+
+def crop_box(video_path: str, frame_index: int, crop_params: dict,
+             bg_path: str | None = None) -> dict:
+    """The crop box for one frame, as preprocessing would take it with these
+    settings: same FrameCropper, so the same box. Smoothing carries over when
+    frames are requested in order and restarts after a jump (as it does at a
+    gap in the extracted ranges). Returns the box in native video px."""
+    params = dict(crop_params or {})
+    method = split_crop_params(params)[0]
+    if method == "background" and not bg_path:
+        raise ValueError("background crop needs a background image")
+    if method == "localizer":
+        # Never wait on a first-time TensorRT build for a box on screen.
+        params["localizer_runtime"] = "torch"
+    key = json.dumps([video_path, bg_path, params], sort_keys=True, default=str)
+    with _live_lock:
+        if _live["key"] != key:
+            _close_live()
+            _live["cropper"] = FrameCropper(params, video_path=video_path, bg_path=bg_path)
+            _live["cap"] = cv2.VideoCapture(video_path)
+            _live.update(key=key, video=video_path)
+        cap, cropper = _live["cap"], _live["cropper"]
+        sequential = _live["last"] is not None and frame_index == _live["last"] + 1
+        if not sequential:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+        ok, frame = cap.read()
+        if not ok:
+            _live["last"] = None
+            raise RuntimeError(f"Could not read frame {frame_index} from {video_path}")
+        cropper.crop_batch([frame], [not sequential])
+        _live["last"] = frame_index
+        x, y, w, h = cropper.last_boxes[0]
+    return {"frame_index": frame_index, "method": method,
+            "box": [round(x, 1), round(y, 1), round(w, 1), round(h, 1)],
+            "frame_width": frame.shape[1], "frame_height": frame.shape[0]}
+
+
 # ── Full video preprocessing (flat frame output) ──────────────────────────
 
 def _wanted_set(frame_ranges, total_frames):
@@ -228,7 +312,8 @@ def crop_video_flat(
     Crop smoothing restarts at each gap between ranges, as it does at inference.
 
     Naming by native frame index keeps the extracted frames aligned with the
-    label CSV ``time`` column and the app's timeline.
+    label CSV ``time`` column and the app's timeline. Each written frame's crop
+    box goes into ``crops.csv`` in the same directory (see read_crop_boxes).
 
     Returns the output subdirectory path.
     """
@@ -255,6 +340,7 @@ def crop_video_flat(
     stop_after = (max(wanted) + 1) if wanted else None
 
     written = 0
+    boxes: dict = {}
 
     def cancelled():
         return bool(cancel_flag and cancel_flag())
@@ -266,15 +352,19 @@ def crop_video_flat(
         for idxs, frames, resets, prepared in iter_wanted(batches, is_wanted, cropper):
             if cancelled():
                 break
-            for idx, out in zip(idxs, cropper.crop_batch(frames, resets, prepared)):
+            crops = cropper.crop_batch(frames, resets, prepared)
+            for idx, out, box in zip(idxs, crops, cropper.last_boxes):
                 if cancelled():
                     break
                 cv2.imwrite(os.path.join(out_sub_dir, f"{idx}.png"), out)
+                boxes[idx] = box
                 written += 1
                 if on_progress:
                     on_progress(written, target_total)
     finally:
         cropper.close()
+        if boxes:  # also after a cancel: these frames were written
+            _write_crop_boxes(out_sub_dir, boxes)
     return out_sub_dir
 
 

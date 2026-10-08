@@ -28,6 +28,7 @@ class VideoView(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._image: QtGui.QImage | None = None
+        self._boxes: list[dict] = []
         self.setMinimumSize(160, 120)
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,
                            QtWidgets.QSizePolicy.Policy.Expanding)
@@ -44,6 +45,18 @@ class VideoView(QtWidgets.QWidget):
     def current_image(self) -> QtGui.QImage | None:
         return self._image
 
+    def set_boxes(self, boxes) -> None:
+        """Rectangles drawn over the frame, in the video's own pixels (they
+        scale with the letterboxed image). Each is a dict: ``rect`` (x, y, w,
+        h), and optional ``color``, ``dashed`` and a short ``label``. Whoever
+        sets them owns them: they stay until replaced or cleared."""
+        self._boxes = list(boxes or [])
+        self.update()
+
+    @property
+    def boxes(self) -> list[dict]:
+        return list(self._boxes)
+
     def _fit_rect(self) -> QtCore.QRectF:
         img = self._image
         ww, wh = self.width(), self.height()
@@ -58,7 +71,29 @@ class VideoView(QtWidgets.QWidget):
         painter.fillRect(self.rect(), QtGui.QColor("black"))
         if self._image is not None:
             painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform, True)
-            painter.drawImage(self._fit_rect(), self._image)
+            fit = self._fit_rect()
+            painter.drawImage(fit, self._image)
+            if self._boxes:
+                self._paint_boxes(painter, fit, fit.width() / self._image.width())
+
+    def _paint_boxes(self, painter: QtGui.QPainter, fit: QtCore.QRectF, scale: float) -> None:
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        font = painter.font()
+        font.setPointSizeF(max(7.0, font.pointSizeF() * 0.85))
+        painter.setFont(font)
+        for box in self._boxes:
+            x, y, w, h = box["rect"]
+            r = QtCore.QRectF(fit.x() + x * scale, fit.y() + y * scale, w * scale, h * scale)
+            color = QtGui.QColor(box.get("color", "#3fb950"))
+            pen = QtGui.QPen(color, 2)
+            if box.get("dashed"):
+                pen.setStyle(QtCore.Qt.PenStyle.DashLine)
+            painter.setPen(pen)
+            painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+            painter.drawRect(r)
+            if box.get("label"):
+                painter.drawText(QtCore.QPointF(r.x() + 2, max(r.y() - 4, fit.y() + 12)),
+                                 box["label"])
 
 
 class _LoadCancelled(Exception):
@@ -235,6 +270,7 @@ class PlayerWidget(QtWidgets.QWidget):
             self.reader = None
         self.index = 0
         self.view.set_frame(None)
+        self.view.set_boxes([])
         self.slider.setEnabled(False)
         self._update_info()
 
@@ -279,6 +315,7 @@ class PlayerWidget(QtWidgets.QWidget):
             self.reader.close()
         self.reader = reader
         self.index = 0
+        self.view.set_boxes([])  # they were in the old video's pixels
         self.slider.setEnabled(True)
         self.slider.setRange(0, max(0, self.reader.num_frames - 1))
         self._show(0)

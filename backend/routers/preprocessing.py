@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from backend.services.preprocess_service import (
     compute_background,
+    crop_box,
     preview_frame,
     start_preprocessing,
     get_task,
@@ -69,6 +70,14 @@ class PreviewRequest(BaseModel):
     prev_center: Optional[list[float]] = None
 
 
+class CropBoxRequest(BaseModel):
+    video_path: str
+    frame_index: int
+    crop_params: CropParams = CropParams()
+    # Required for method="background"; unused by the localizer.
+    bg_path: Optional[str] = None
+
+
 class RunRequest(BaseModel):
     video_path: str
     output_dir: str
@@ -112,6 +121,20 @@ async def api_preview_frame(req: PreviewRequest):
             prev_center=req.prev_center,
         )
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/crop-box")
+def api_crop_box(req: CropBoxRequest):
+    """Where preprocessing would crop this frame: {box: [x, y, w, h]} in native
+    video px. Cheap enough to call per frame while stepping (no images). Plain
+    def: runs on the threadpool, so a slow seek doesn't stall other requests."""
+    if req.crop_params.method == "background" and not req.bg_path:
+        raise HTTPException(status_code=422, detail="bg_path is required for background cropping")
+    try:
+        return crop_box(req.video_path, req.frame_index, req.crop_params.model_dump(),
+                        req.bg_path)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

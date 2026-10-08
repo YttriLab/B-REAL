@@ -317,6 +317,7 @@ def clear_task_registries():
         except Exception:
             pass
     preprocess_service._tasks.clear()
+    preprocess_service._close_live()  # the cached live crop-box cropper + video
     training_service._tasks.clear()
     tuning_service._tasks.clear()
     inference_service._tasks.clear()

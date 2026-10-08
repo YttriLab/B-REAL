@@ -8,11 +8,14 @@ import numpy as np
 import pytest
 
 from backend.services.preprocess_service import (
+    CROPS_CSV,
     _encode_image,
     compute_background,
+    crop_box,
     crop_video_flat,
     get_task,
     preview_frame,
+    read_crop_boxes,
     start_preprocessing,
 )
 
@@ -208,7 +211,7 @@ class TestCropVideoFlat:
             crop_params={"box_size": 32, "difference_threshold": 5},
             frame_ranges=[[2, 3]], crop=False,
         )
-        assert sorted(os.listdir(result)) == ["2.png", "3.png"]
+        assert sorted(os.listdir(result)) == ["2.png", "3.png", CROPS_CSV]
 
     def test_raw_mode_still_applies_resize_factor(self, synthetic_video, tmp_path):
         import cv2
@@ -416,3 +419,85 @@ class TestCropperStabilization:
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         cx, cy = c._contour_centroid(c._select_contour(contours))
         assert 5 <= cx <= 25 and 5 <= cy <= 25  # tracked the large blob, not the speck
+
+
+# ── Crop boxes (crops.csv + live crop_box) ─────────────────────────────────
+
+class TestCropBoxes:
+    # Downsampled 2x with kernels small enough that the 16 px blob survives
+    # cleanup (the defaults would erase it and crop the whole frame).
+    BG = {"box_size": 16, "difference_threshold": 5, "downsample_factor": 2,
+          "open1_kernel": 2, "close_kernel": 3, "open2_kernel": 2}
+
+    def _flat(self, video_path, out, params, **kw):
+        return crop_video_flat(video_path=video_path, output_dir=str(out),
+                               crop_params=params, **kw)
+
+    def test_preprocessing_records_each_frames_box(self, synthetic_video,
+                                                   synthetic_background, tmp_path):
+        video_path, n = synthetic_video
+        sub = self._flat(video_path, tmp_path / "out", self.BG, bg_path=synthetic_background)
+        boxes = read_crop_boxes(os.path.join(sub, CROPS_CSV))
+        assert sorted(boxes) == list(range(n))
+        for idx, (x, y, w, h) in boxes.items():
+            crop = cv2.imread(os.path.join(sub, f"{idx}.png"))
+            assert (w, h) == (crop.shape[1], crop.shape[0]) == (32, 32)  # box * downsample
+            # the dark blob (centre 20 + i%24, 32) sits inside its box
+            assert x <= 20 + idx % 24 <= x + w and y <= 32 <= y + h
+
+    def test_boxes_are_in_native_pixels_after_resize(self, synthetic_video,
+                                                     synthetic_background, tmp_path):
+        video_path, _ = synthetic_video
+        sub = self._flat(video_path, tmp_path / "out",
+                         {**self.BG, "resize_factor": 0.5}, bg_path=synthetic_background)
+        x, y, w, h = read_crop_boxes(os.path.join(sub, CROPS_CSV))[3]
+        assert (w, h) == (64, 64)  # the 32 px crop of a half-size frame
+        raw = self._flat(video_path, tmp_path / "raw", {"method": "none"})
+        assert read_crop_boxes(os.path.join(raw, CROPS_CSV))[0] == (0, 0, 64, 64)
+
+    def test_rerun_merges_with_existing_boxes(self, synthetic_video,
+                                              synthetic_background, tmp_path):
+        video_path, _ = synthetic_video
+        out = tmp_path / "out"
+        self._flat(video_path, out, self.BG, bg_path=synthetic_background,
+                   frame_ranges=[[0, 4]])
+        sub = self._flat(video_path, out, self.BG, bg_path=synthetic_background,
+                         frame_ranges=[[10, 12]])
+        assert sorted(read_crop_boxes(os.path.join(sub, CROPS_CSV))) == [0, 1, 2, 3, 4, 10, 11, 12]
+
+    def test_live_box_matches_preprocessing_frame_for_frame(self, synthetic_video,
+                                                            synthetic_background, tmp_path):
+        """Stepping forward continues the smoothing exactly as preprocessing does."""
+        video_path, n = synthetic_video
+        params = {**self.BG, "smoothing": 0.6, "deadband": 1.0}
+        sub = self._flat(video_path, tmp_path / "out", params, bg_path=synthetic_background)
+        recorded = read_crop_boxes(os.path.join(sub, CROPS_CSV))
+        for i in range(n):
+            live = crop_box(video_path, i, params, synthetic_background)
+            assert tuple(live["box"]) == recorded[i], i
+        assert (live["frame_width"], live["frame_height"]) == (64, 64)
+
+    def test_live_box_restarts_smoothing_after_a_jump(self, synthetic_video,
+                                                      synthetic_background, tmp_path):
+        video_path, _ = synthetic_video
+        params = {**self.BG, "smoothing": 0.9}
+        sub = self._flat(video_path, tmp_path / "out", params, bg_path=synthetic_background,
+                         frame_ranges=[[20, 20]])  # a lone frame: fresh smoothing
+        crop_box(video_path, 0, params, synthetic_background)
+        assert tuple(crop_box(video_path, 20, params, synthetic_background)["box"]) == \
+            read_crop_boxes(os.path.join(sub, CROPS_CSV))[20]
+
+    def test_live_localizer_box_matches_preprocessing(self, synthetic_video, stub_localizer,
+                                                      tmp_path):
+        video_path, n = synthetic_video
+        params = {"method": "localizer", "localizer_path": stub_localizer,
+                  "box_size": 24, "smoothing": 0.5}
+        sub = self._flat(video_path, tmp_path / "out", params)
+        recorded = read_crop_boxes(os.path.join(sub, CROPS_CSV))
+        assert sorted(recorded) == list(range(n))
+        for i in (0, 1, 2):
+            assert tuple(crop_box(video_path, i, params)["box"]) == recorded[i]
+
+    def test_live_background_box_needs_a_background(self, synthetic_video):
+        with pytest.raises(ValueError):
+            crop_box(synthetic_video[0], 0, self.BG)

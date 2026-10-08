@@ -121,6 +121,16 @@ class BackendClient:
             body["crop_params"] = crop_params
         return self._post("/api/preprocess/preview", body)
 
+    def crop_box(self, video_path: str, frame_index: int,
+                 crop_params: Optional[dict] = None,
+                 bg_path: Optional[str] = None) -> dict:
+        """Where preprocessing would crop one frame: {box: [x, y, w, h], ...}
+        in native video px."""
+        body = {"video_path": video_path, "frame_index": frame_index, "bg_path": bg_path}
+        if crop_params is not None:
+            body["crop_params"] = crop_params
+        return self._post("/api/preprocess/crop-box", body)
+
     def run_preprocessing(self, video_path: str, output_dir: str,
                           crop_params: Optional[dict] = None,
                           frame_ranges: Optional[list] = None,

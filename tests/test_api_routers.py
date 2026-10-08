@@ -86,6 +86,19 @@ class TestPreprocessingRouter:
         assert resp.status_code == 500
 
     @pytest.mark.asyncio
+    async def test_crop_box(self, ac, synthetic_video, synthetic_background):
+        video_path, _ = synthetic_video
+        body = {"video_path": video_path, "frame_index": 5,
+                "crop_params": {"box_size": 16, "difference_threshold": 5}}
+        assert (await ac.post("/api/preprocess/crop-box", json=body)).status_code == 422
+        resp = await ac.post("/api/preprocess/crop-box",
+                             json={**body, "bg_path": synthetic_background})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["frame_index"] == 5 and len(data["box"]) == 4
+        assert data["method"] == "background"
+
+    @pytest.mark.asyncio
     async def test_run_returns_task_id(self, ac, synthetic_video, tmp_path):
         video_path, _ = synthetic_video
         resp = await ac.post("/api/preprocess/run", json={

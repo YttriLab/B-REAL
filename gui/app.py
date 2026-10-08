@@ -35,6 +35,7 @@ from labeling_shell.theme import apply_theme  # noqa: E402
 from labeling_shell.timeline_widget import UncertaintyTimeline  # noqa: E402
 from labeling_shell.video_widget import PlayerWidget  # noqa: E402
 from labeling_shell.videos_panel import VideosPanel  # noqa: E402
+from plugins.crop_overlay import LEGEND as CROP_LEGEND, CropBoxOverlay  # noqa: E402
 from plugins.pipeline_panel import PipelinePanel  # noqa: E402
 
 EDITABLE = (QtWidgets.QLineEdit, QtWidgets.QAbstractSpinBox, QtWidgets.QComboBox,
@@ -72,6 +73,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.videos_panel.addRequested.connect(self.open_video)
         self.videos_panel.removeRequested.connect(self.remove_project_video)
         self.pipeline = PipelinePanel(self)  # MainWindow is the pipeline ctx
+        self.crop_overlay = CropBoxOverlay(self, self.player, self)
 
         label_tab = QtWidgets.QWidget()
         ll = QtWidgets.QVBoxLayout(label_tab)
@@ -128,6 +130,15 @@ class MainWindow(QtWidgets.QMainWindow):
         fm.addSeparator()
         fm.addAction("New Project…", self.new_project)
         fm.addAction("Open Project…", self.open_project)
+
+        vm = m.addMenu("&View")
+        self.crop_box_action = vm.addAction("Show Crop Box")
+        self.crop_box_action.setCheckable(True)
+        self.crop_box_action.setShortcut("B")
+        self.crop_box_action.setToolTip(CROP_LEGEND)
+        self.crop_box_action.toggled.connect(self.set_show_crop_box)
+        self.crop_box_action.setChecked(
+            self.settings.value("show_crop_box", False, type=bool))
 
         bm = m.addMenu("&Backend")
         bm.addAction("Connect Local…", self.connect_local)
@@ -258,6 +269,7 @@ class MainWindow(QtWidgets.QMainWindow):
             except ValueError:
                 path = str(path)
         self.project.set_setting("localizer_path", path or None)
+        self.crop_overlay.refresh()
 
     def setting(self, key, default=None):
         """A per-project pipeline setting (stored in the manifest's settings)."""
@@ -266,6 +278,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def set_setting(self, key, value) -> None:
         if self.project:
             self.project.set_setting(key, value)
+        if key == "preprocess":  # crop settings changed: the live box with them
+            self.crop_overlay.refresh()
 
     def register_model(self, entry: dict) -> None:
         """Record a trained checkpoint in the project manifest so it travels
@@ -370,7 +384,14 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.current_video_id, name, path, self.player.reader.num_frames)
             self.project.set_last_video(self.current_video_id)
         self._refresh_all()
+        self.crop_overlay.video_changed()
         self._status(f"Loaded {name} — {self.player.reader.num_frames} frames")
+
+    def set_show_crop_box(self, on: bool) -> None:
+        self.crop_overlay.set_enabled(on)
+        self.settings.setValue("show_crop_box", bool(on))
+        if on:
+            self._status(CROP_LEGEND)
 
     def _on_video_load_failed(self, path: str, msg: str) -> None:
         self._pending_video_id = None
@@ -419,6 +440,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._al_state = None
             self.timeline.set_data(None, 0)
             self.hud.hide()
+            self.crop_overlay.video_changed()
         self.project.remove_video(video_id, delete_data=delete_data)
         self._refresh_all()
         self._status(f"Removed {rec.get('name') or video_id} from the project"
@@ -627,6 +649,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._status("Backend disconnected.")
 
     def closeEvent(self, event) -> None:
+        self.crop_overlay.shutdown()
         self.player.shutdown()
         self._autosave()
         self.disconnect_backend()
