@@ -33,6 +33,15 @@ def _app():
     return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
 
+def _wait(cond, timeout=10.0):
+    import time
+    end = time.monotonic() + timeout
+    while not cond() and time.monotonic() < end:
+        QtWidgets.QApplication.processEvents()
+        time.sleep(0.01)
+    return cond()
+
+
 class FakeCtx:
     def __init__(self):
         self._client = None
@@ -545,6 +554,125 @@ def test_train_tab_registers_the_trained_model():
     # behavior name into the model's collapsed label space
     assert entry["config"]["binarize"] == "groom"
     assert "label_union" in entry["config"]
+
+
+def _write_crop_record(d, params, mixed=False):
+    import json
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "crop_params.json"), "w") as f:
+        json.dump({"crop_params": params, "mixed": mixed}, f)
+
+
+BG_CROP = {"method": "background", "box_size": 214, "downsample_factor": 3,
+           "resize_factor": 1.0, "smoothing": 0.6, "difference_threshold": 4}
+LOC_CROP = {"method": "localizer", "box_size": 214, "resize_factor": 1.0,
+            "smoothing": 0.6, "localizer_path": None}
+
+
+def test_crop_summary_speaks_video_pixels():
+    from plugins.crop_summary import box_px, differences, summarize
+    assert box_px(BG_CROP) == 642 and box_px(LOC_CROP) == 214
+    assert box_px({**LOC_CROP, "resize_factor": 0.5}) == 428
+    assert box_px({"method": "none"}) is None
+    assert summarize(BG_CROP).startswith("background subtraction · 642 px box (214 × downsample 3)")
+    assert "bundled weights" in summarize(LOC_CROP)
+    assert differences(BG_CROP, LOC_CROP) == [
+        "method SAM2 localizer vs background subtraction in training"]
+    assert differences(BG_CROP, {**BG_CROP, "downsample_factor": 1, "smoothing": 0.0}) == [
+        "box 214 px vs 642 px in training", "smoothing 0.0 vs 0.6 in training"]
+    assert differences(BG_CROP, dict(BG_CROP)) == []
+
+
+def test_training_crop_from_frame_dirs():
+    import tempfile
+    from plugins.crop_summary import training_crop
+    with tempfile.TemporaryDirectory() as d:
+        a, b, c, e = (os.path.join(d, x) for x in "abce")
+        _write_crop_record(a, BG_CROP)
+        _write_crop_record(b, dict(BG_CROP))
+        _write_crop_record(c, {**BG_CROP, "box_size": 100})
+        _write_crop_record(e, BG_CROP, mixed=True)
+        assert training_crop([a, b]) == (BG_CROP, "")
+        assert training_crop([a, c])[0] is None and "differently" in training_crop([a, c])[1]
+        assert training_crop([e])[0] is None and "mixed" in training_crop([e])[1]
+        assert training_crop([a, os.path.join(d, "none")])[1].startswith("not recorded")
+
+
+def test_registered_model_records_its_training_crop():
+    import tempfile
+    _app()
+    ctx = FakeCtx()
+    tab = TrainTab(ctx)
+    with tempfile.TemporaryDirectory() as d:
+        _write_crop_record(d, BG_CROP)
+        tab._register_model({"frame_dirs": [d]}, {"best_checkpoint": "/p/m.ckpt"})
+    assert ctx.registered[0]["crop_params"] == BG_CROP
+    assert ctx.registered[0]["crop_note"] == ""
+
+
+class AlCtx(FakeCtx):
+    """FakeCtx plus what the Active Learning tab reads."""
+
+    def __init__(self, entry=None, current=None):
+        super().__init__()
+        self.entry, self.current = entry, current or LOC_CROP
+
+    def crop_params(self):
+        return dict(self.current)
+
+    def current_bg_path(self):
+        return "/p/bg.png"
+
+    def project_models(self):
+        return [self.entry] if self.entry else []
+
+    def model_entry(self, path):
+        return self.entry if self.entry and path == self.entry["path"] else None
+
+    def set_al_threshold(self, t):
+        pass
+
+
+def test_inference_crops_like_the_model_was_trained():
+    from plugins.active_learning_panel import ActiveLearningPanel
+    _app()
+    entry = {"name": "m.ckpt", "path": "/p/m.ckpt", "val_mcc": 0.8, "created": "2026-10-08",
+             "crop_params": BG_CROP, "crop_note": ""}
+    ctx = AlCtx(entry)
+    calls = []
+
+    class Client:
+        def run_inference(self, ckpt, **kw):
+            calls.append(kw)
+            return {}
+    ctx._client = Client()
+    panel = ActiveLearningPanel(ctx)
+    panel.refresh()
+    assert panel.models.count() == 2  # placeholder + the project's model
+    panel.models.setCurrentIndex(1)
+    assert panel.ckpt.text() == "/p/m.ckpt"
+    params, source, warnings = panel._effective_crop()
+    assert params == BG_CROP and "training" in source and not warnings
+    assert "642 px box" in panel.crop_info.text()
+
+    # trying the Preprocess tab's (localizer) settings warns how they differ
+    panel.crop_source.setCurrentIndex(1)
+    params, _source, warnings = panel._effective_crop()
+    assert params["method"] == "localizer"
+    assert warnings and "method SAM2 localizer vs background" in warnings[0]
+
+    panel.crop_source.setCurrentIndex(0)
+    panel._run()
+    assert _wait(lambda: calls)
+    assert calls[0]["crop_params"] == BG_CROP
+
+    # a model with no record falls back to the Preprocess tab, and says so
+    old = AlCtx({"name": "old.ckpt", "path": "/p/old.ckpt"})
+    p2 = ActiveLearningPanel(old)
+    p2.ckpt.setText("/p/old.ckpt")
+    params, source, warnings = p2._effective_crop()
+    assert params == LOC_CROP and source == "Preprocess tab"
+    assert "not recorded" in warnings[0]
 
 
 def test_register_model_survives_a_manifest_failure():

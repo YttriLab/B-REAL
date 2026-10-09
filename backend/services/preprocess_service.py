@@ -179,6 +179,9 @@ def preview_frame(
 # app can draw the exact box a training sample came from. Native video px.
 
 CROPS_CSV = "crops.csv"
+# The crop settings the frames were made with, so training can record them on
+# the model and inference can crop the same way.
+CROP_PARAMS_JSON = "crop_params.json"
 
 
 def read_crop_boxes(path: str) -> dict[int, tuple[float, float, float, float]]:
@@ -203,6 +206,27 @@ def _write_crop_boxes(out_dir: str, boxes: dict) -> None:
         w.writerow(["frame", "x", "y", "w", "h"])
         for idx in sorted(merged):
             w.writerow([idx, *(round(float(v), 1) for v in merged[idx])])
+    os.replace(tmp, path)
+
+
+def _write_crop_params(out_dir: str, crop_params: dict, crop: bool) -> None:
+    """{"crop_params": ..., "mixed": bool}. A re-run with different settings
+    over the same directory leaves frames made both ways, so it marks it mixed
+    (the record then shows the latest settings)."""
+    params = dict(crop_params or {})
+    if not crop:
+        params["method"] = "none"
+    path = os.path.join(out_dir, CROP_PARAMS_JSON)
+    mixed = False
+    try:
+        with open(path) as f:
+            old = json.load(f)
+        mixed = bool(old.get("mixed")) or old.get("crop_params") != params
+    except (OSError, ValueError):
+        pass
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump({"crop_params": params, "mixed": mixed}, f, indent=2, sort_keys=True)
     os.replace(tmp, path)
 
 
@@ -313,7 +337,8 @@ def crop_video_flat(
 
     Naming by native frame index keeps the extracted frames aligned with the
     label CSV ``time`` column and the app's timeline. Each written frame's crop
-    box goes into ``crops.csv`` in the same directory (see read_crop_boxes).
+    box goes into ``crops.csv`` in the same directory (see read_crop_boxes),
+    and the settings into ``crop_params.json``.
 
     Returns the output subdirectory path.
     """
@@ -365,6 +390,7 @@ def crop_video_flat(
         cropper.close()
         if boxes:  # also after a cancel: these frames were written
             _write_crop_boxes(out_sub_dir, boxes)
+            _write_crop_params(out_sub_dir, crop_params, crop)
     return out_sub_dir
 
 

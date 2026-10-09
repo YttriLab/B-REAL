@@ -353,6 +353,18 @@ class MainWindow(QtWidgets.QMainWindow):
             self.project.set_setting(key, value)
         if key == "preprocess":  # crop settings changed: the live box with them
             self.crop_overlay.refresh()
+            self.pipeline.active_learning.refresh()
+
+    def project_models(self) -> list:
+        return self.project.list_models() if self.project else []
+
+    def model_entry(self, path):
+        """The project's record of a checkpoint (by path), or None."""
+        if not path:
+            return None
+        want = os.path.normpath(str(path))
+        return next((m for m in self.project_models()
+                     if m.get("path") and os.path.normpath(m["path"]) == want), None)
 
     def register_model(self, entry: dict) -> None:
         """Record a trained checkpoint in the project manifest so it travels
@@ -366,7 +378,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # ---- active-learning ctx ----------------------------------------------
     def crop_params(self):
-        return self.pipeline.preprocess.build_crop_params()
+        pipeline = getattr(self, "pipeline", None)  # None while it is being built
+        return pipeline.preprocess.build_crop_params() if pipeline else {}
 
     def al_state(self):
         return self._al_state

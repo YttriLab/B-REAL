@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from backend.services.preprocess_service import (
+    CROP_PARAMS_JSON,
     CROPS_CSV,
     _encode_image,
     compute_background,
@@ -211,7 +212,7 @@ class TestCropVideoFlat:
             crop_params={"box_size": 32, "difference_threshold": 5},
             frame_ranges=[[2, 3]], crop=False,
         )
-        assert sorted(os.listdir(result)) == ["2.png", "3.png", CROPS_CSV]
+        assert sorted(os.listdir(result)) == ["2.png", "3.png", CROP_PARAMS_JSON, CROPS_CSV]
 
     def test_raw_mode_still_applies_resize_factor(self, synthetic_video, tmp_path):
         import cv2
@@ -501,3 +502,30 @@ class TestCropBoxes:
     def test_live_background_box_needs_a_background(self, synthetic_video):
         with pytest.raises(ValueError):
             crop_box(synthetic_video[0], 0, self.BG)
+
+
+class TestCropParamsRecord:
+    def test_records_settings_and_marks_a_mixed_rerun(self, synthetic_video,
+                                                      synthetic_background, tmp_path):
+        import json
+        video_path, _ = synthetic_video
+        out = tmp_path / "out"
+        params = {"box_size": 16, "difference_threshold": 5}
+        sub = crop_video_flat(video_path=video_path, output_dir=str(out), crop_params=params,
+                              bg_path=synthetic_background, frame_ranges=[[0, 3]])
+        rec = json.loads(open(os.path.join(sub, CROP_PARAMS_JSON)).read())
+        assert rec == {"crop_params": params, "mixed": False}
+        crop_video_flat(video_path=video_path, output_dir=str(out), crop_params=params,
+                        bg_path=synthetic_background, frame_ranges=[[5, 6]])
+        assert json.loads(open(os.path.join(sub, CROP_PARAMS_JSON)).read())["mixed"] is False
+        crop_video_flat(video_path=video_path, output_dir=str(out),
+                        crop_params={**params, "box_size": 24},
+                        bg_path=synthetic_background, frame_ranges=[[8, 9]])
+        rec = json.loads(open(os.path.join(sub, CROP_PARAMS_JSON)).read())
+        assert rec["mixed"] is True and rec["crop_params"]["box_size"] == 24
+
+    def test_raw_mode_records_method_none(self, synthetic_video, tmp_path):
+        import json
+        sub = crop_video_flat(video_path=synthetic_video[0], output_dir=str(tmp_path / "o"),
+                              crop_params={"box_size": 16}, frame_ranges=[[0, 1]], crop=False)
+        assert json.loads(open(os.path.join(sub, CROP_PARAMS_JSON)).read())["crop_params"]["method"] == "none"

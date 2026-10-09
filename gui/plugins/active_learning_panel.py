@@ -19,6 +19,7 @@ Additional ctx duck-type used here (on top of pipeline_panel's):
     (optional) video_id() -> str|None    al_meta() -> dict|None
                save_predictions(video_id, results, meta)
                toggle_behavior(key)          is_recording(behavior_id) -> bool
+               project_models() -> list[dict] model_entry(path) -> dict|None
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from labeling_shell.behavior_colors import behavior_colors
 from labeling_shell.no_wheel import NoWheelComboBox
 from labeling_shell.theme import mark_accent
 
+from .crop_summary import differences, summarize
 from .pipeline_config import DECODERS, INFERENCE_RUNTIMES
 from .pipeline_panel import _Base
 
@@ -43,7 +45,12 @@ class ActiveLearningPanel(_Base):
         self._task_id = None
         form = QtWidgets.QFormLayout(self)
 
+        # Models trained in this project (their entries know their training crop).
+        self.models = NoWheelComboBox()
+        self.models.currentIndexChanged.connect(self._on_model_chosen)
+        form.addRow("Project model", self.models)
         self.ckpt = QtWidgets.QLineEdit()
+        self.ckpt.textChanged.connect(lambda _t: self._update_crop_info())
         browse = QtWidgets.QPushButton("Browse…")
         browse.clicked.connect(self._pick_ckpt)
         crow = QtWidgets.QHBoxLayout()
@@ -51,8 +58,22 @@ class ActiveLearningPanel(_Base):
         crow.addWidget(browse)
         form.addRow("Checkpoint", crow)
 
-        # Crops come from the Preprocess tab's settings (method, box, ...), so
-        # inference sees what training saw; only the decoder is chosen here.
+        # A model only works on crops like the ones it was trained on, so by
+        # default inference crops the way its training frames were made.
+        self.crop_source = NoWheelComboBox()
+        self.crop_source.addItem("This model's training crop", "model")
+        self.crop_source.addItem("The Preprocess tab's settings", "preprocess")
+        self.crop_source.setToolTip(
+            "Training crop: what the model's training frames were made with "
+            "(recorded when it was trained in this app). Preprocess tab: whatever "
+            "it shows now, e.g. to try other settings.")
+        self.crop_source.currentIndexChanged.connect(lambda _i: self._update_crop_info())
+        form.addRow("Crop from", self.crop_source)
+        self.crop_info = QtWidgets.QLabel()
+        self.crop_info.setWordWrap(True)
+        self.crop_info.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        form.addRow("Cropping", self.crop_info)
+
         self.decoder = NoWheelComboBox()
         for label, dec in DECODERS:
             self.decoder.addItem(label, dec)
@@ -110,6 +131,8 @@ class ActiveLearningPanel(_Base):
         form.addRow(next_btn)
 
     def refresh(self) -> None:
+        self._refresh_models()
+        self._update_crop_info()
         self._refresh_behavior_buttons()
         if getattr(self.ctx, "al_state", lambda: None)() is None:
             self.pred_info.setText("None for this video yet.")
@@ -126,6 +149,53 @@ class ActiveLearningPanel(_Base):
         crop = (meta.get("crop_params") or {}).get("method", "?")
         self.pred_info.setText(f"{os.path.basename(ckpt)} · {crop} crop · {when}")
         self.pred_info.setToolTip(ckpt)
+
+    # ---------------------------------------------------------------- crop
+    def _refresh_models(self) -> None:
+        entries = [m for m in getattr(self.ctx, "project_models", lambda: [])()
+                   if m.get("kind") != "torchscript" and m.get("path")]
+        spec = [m["path"] for m in entries]
+        if spec == getattr(self, "_models_spec", None):
+            return
+        self._models_spec = spec
+        self.models.blockSignals(True)
+        self.models.clear()
+        self.models.addItem("— choose, or browse for a checkpoint —", None)
+        for m in entries:
+            score = f" · val MCC {m['val_mcc']:.3f}" if isinstance(m.get("val_mcc"), float) else ""
+            self.models.addItem(f"{m.get('name')}{score} · {m.get('created', '')}", m["path"])
+        idx = self.models.findData(self.ckpt.text())
+        self.models.setCurrentIndex(max(idx, 0))
+        self.models.blockSignals(False)
+
+    def _on_model_chosen(self, _i: int) -> None:
+        path = self.models.currentData()
+        if path:
+            self.ckpt.setText(path)
+
+    def _effective_crop(self):
+        """(crop params to use, where they came from, warnings)."""
+        current = getattr(self.ctx, "crop_params", lambda: {})() or {}
+        entry = getattr(self.ctx, "model_entry", lambda _p: None)(self.ckpt.text()) or {}
+        trained = entry.get("crop_params")
+        note = entry.get("crop_note") or "not recorded for this model"
+        if self.crop_source.currentData() == "model":
+            if trained:
+                return trained, "from this model's training", []
+            return current, "Preprocess tab", [f"Training crop {note}: using the Preprocess tab."]
+        warnings = []
+        if trained:
+            warnings = [f"Differs from training: {d}" for d in differences(trained, current)]
+        return current, "Preprocess tab", warnings
+
+    def _update_crop_info(self) -> None:
+        if not hasattr(self, "crop_info"):
+            return
+        params, source, warnings = self._effective_crop()
+        text = f"{summarize(params)} <i>({source})</i>"
+        if warnings:
+            text += "".join(f'<br><span style="color:#e5a50a">{w}</span>' for w in warnings)
+        self.crop_info.setText(text)
 
     # ------------------------------------------------------------ relabel
     def _refresh_behavior_buttons(self) -> None:
@@ -219,11 +289,12 @@ class ActiveLearningPanel(_Base):
                     lambda: client.inference_status(self._task_id), on_event, on_stream_done)
 
         # Snapshot on the GUI thread; the lambda runs on a worker.
-        crop_params = self.ctx.crop_params()
+        crop_params, crop_source, _warnings = self._effective_crop()
         decoder = self.decoder.currentData()
         runtime, precision = self.runtime.currentData()
         meta = {"checkpoint": self.ckpt.text(), "video": video,
-                "crop_params": crop_params, "frames_per_group": self.ctx.frames_per_group(),
+                "crop_params": crop_params, "crop_source": crop_source,
+                "frames_per_group": self.ctx.frames_per_group(),
                 "decoder": decoder, "runtime": runtime, "precision": precision,
                 "created": datetime.datetime.now().isoformat(timespec="seconds")}
         self.ctx.status("Running inference…")

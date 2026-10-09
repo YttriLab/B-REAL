@@ -790,8 +790,11 @@ class TrainTab(_Base):
 
         Stores the parts of the config needed to interpret the model later —
         binarize/label_union in particular, without which Active Learning can't
-        map a behavior name into a binarized model's collapsed label space.
+        map a behavior name into a binarized model's collapsed label space —
+        and the crop its training frames were made with, so inference can crop
+        the same way.
         """
+        from .crop_summary import training_crop
         register = getattr(self.ctx, "register_model", None)
         if register is None:
             return
@@ -812,6 +815,7 @@ class TrainTab(_Base):
                 "image_size": config.get("image_size"),
             },
         }
+        entry["crop_params"], entry["crop_note"] = training_crop(config.get("frame_dirs") or [])
         try:
             register(entry)
             self.ctx.status(f"Recorded model in the project: {entry['name']}")
