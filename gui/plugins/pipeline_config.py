@@ -254,13 +254,15 @@ def build_tuning_request(base: dict, *, space: dict, n_trials: int = 20,
 
 def format_train_event(ev: dict) -> str:
     """One readable line for the Train tab's log from a training SSE event."""
-    if ev.get("message"):
-        return str(ev["message"])
     status = ev.get("status")
+    # Checked before "message": a failed run's final event is its last line
+    # (often a message) with the status and error laid over it.
     if status == "error":
         return f"Error: {ev.get('error') or 'training failed (no detail)'}"
     if status == "cancelled":
         return "Stopped."
+    if ev.get("message"):
+        return str(ev["message"])
     if status == "completed":
         ckpt = ev.get("best_checkpoint")
         if not ckpt:

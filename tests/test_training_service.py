@@ -205,3 +205,12 @@ class TestStartTraining:
             time.sleep(0.2)
         assert task["status"] == "error"
         assert task["error"] is not None
+
+
+def test_out_of_memory_failures_say_so():
+    from backend.services.training_service import explain_failure
+    tb = "Traceback ...\ntorch.OutOfMemoryError: CUDA out of memory. Tried to allocate 2.00 GiB"
+    out = explain_failure(tb)
+    assert out.startswith("The GPU ran out of memory") and out.endswith(tb)
+    assert explain_failure("KeyError: 'frame_dirs'") == "KeyError: 'frame_dirs'"
+

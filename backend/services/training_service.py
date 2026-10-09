@@ -158,7 +158,14 @@ def main():
 
     dl = OmegaConf.to_container(config.data_loading, resolve=True)
     if torch.cuda.is_available():
-        info(f"Device: CUDA ({torch.cuda.get_device_name(0)})")
+        # Free memory up front: another job on the GPU is the usual reason a
+        # run dies with "CUDA out of memory" partway in.
+        try:
+            free, total = torch.cuda.mem_get_info(0)
+            mem = f", {free / 2**30:.1f} of {total / 2**30:.1f} GB free"
+        except Exception:
+            mem = ""
+        info(f"Device: CUDA ({torch.cuda.get_device_name(0)}{mem})")
     else:
         # Explain WHY we fell back to CPU so the log is self-diagnosing.
         reasons = [f"torch {torch.__version__}", f"torch.version.cuda={torch.version.cuda}"]
@@ -351,6 +358,15 @@ if __name__ == "__main__":
 
 # ── Service functions ──────────────────────────────────────────────────────
 
+def explain_failure(detail: str) -> str:
+    """Put a plain-words cause in front of a failed run's output when it's
+    recognisable (the traceback itself stays, after it)."""
+    if "out of memory" in detail.lower() or "OutOfMemoryError" in detail:
+        return ("The GPU ran out of memory. Is another job using it (nvidia-smi)? "
+                "Otherwise lower batch_size or image_size.\n\n" + detail)
+    return detail
+
+
 def start_training(config: dict) -> str:
     """
     Launch training in a subprocess.
@@ -432,7 +448,7 @@ def start_training(config: dict) -> str:
                 detail = stderr or stdout or f"Training process exited with code {proc.returncode} (no output)."
                 # error must be set before status: the SSE poller breaks as soon
                 # as it sees status=="error", so the detail has to be there first.
-                task["error"] = detail[-2000:]  # Last 2000 chars
+                task["error"] = explain_failure(detail[-2000:])  # Last 2000 chars
                 task["status"] = "error"
             else:
                 # Read final metrics line for completion info
