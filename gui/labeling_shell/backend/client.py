@@ -41,6 +41,10 @@ class BackendClient:
     def __init__(self, base_url: str, timeout: float = 30.0):
         self.base_url = base_url.rstrip("/")
         self._client = httpx.Client(base_url=self.base_url, timeout=timeout)
+        # A status stream is quiet for as long as the work between two events
+        # takes (an epoch, a learning-rate range test: minutes), so it has no
+        # read timeout; it ends when the server closes it, or the server dies.
+        self._stream_timeout = httpx.Timeout(timeout, read=None)
 
     def close(self) -> None:
         self._client.close()
@@ -74,7 +78,8 @@ class BackendClient:
     def _stream(self, method: str, path: str, payload: Optional[dict] = None) -> Iterator[dict]:
         """Yield parsed dicts from an SSE endpoint until the server closes it."""
         try:
-            with self._client.stream(method, path, json=payload) as resp:
+            with self._client.stream(method, path, json=payload,
+                                     timeout=self._stream_timeout) as resp:
                 if resp.status_code >= 400:
                     resp.read()
                     detail = _extract_detail(resp)

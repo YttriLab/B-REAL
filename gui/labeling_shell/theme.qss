@@ -239,6 +239,23 @@ QCheckBox::indicator:checked {
 
 /* ---- Lists / tables ------------------------------------------------------*/
 
+/* Checklists (positive class, training videos, sweep choices): the default
+   indicator is near-invisible on the dark list, so match QCheckBox's. */
+QListView::indicator {
+    width: 15px;
+    height: 15px;
+    border: 1px solid #52565c;
+    border-radius: 4px;
+    background: #26282b;
+}
+QListView::indicator:hover {
+    border-color: #79b8ff;
+}
+QListView::indicator:checked {
+    background: #58a6ff;
+    border-color: #58a6ff;
+}
+
 QListWidget, QTableWidget {
     background: #1e1f22;
     color: #e6e6e6;

@@ -34,6 +34,7 @@ from labeling_shell.image_pane import ImagePane
 from labeling_shell.no_wheel import (
     NoWheelComboBox, NoWheelDoubleSpinBox, NoWheelSpinBox,
 )
+from labeling_shell.check_list import toggle_on_row_click
 from labeling_shell.theme import mark_accent
 from labeling_shell.videos_panel import STATUS_ROLE, StatusDelegate
 
@@ -60,18 +61,18 @@ class _Base(QtWidgets.QWidget):
             self.ctx.status("Connect a backend first (Backend menu).")
         return c
 
-    def _spawn_call(self, fn, on_done):
+    def _spawn_call(self, fn, on_done, on_failed=None):
         w = CallWorker(fn)
         w.done.connect(on_done)
-        w.failed.connect(self.ctx.status)
+        w.failed.connect(on_failed or self.ctx.status)
         w.finished.connect(lambda: self._workers.discard(w))
         self._workers.add(w)
         w.start()
 
-    def _spawn_stream(self, make_iter, on_event, on_done=None):
+    def _spawn_stream(self, make_iter, on_event, on_done=None, on_failed=None):
         w = StreamWorker(make_iter)
         w.event.connect(on_event)
-        w.failed.connect(self.ctx.status)
+        w.failed.connect(on_failed or self.ctx.status)
         if on_done:
             w.finished_ok.connect(on_done)
         w.finished.connect(lambda: self._workers.discard(w))
@@ -592,6 +593,7 @@ class TrainTab(_Base):
         self.sources.setItemDelegate(StatusDelegate(self.sources))
         self.sources.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         self.sources.itemChanged.connect(self._on_source_ticked)
+        toggle_on_row_click(self.sources)
         self.sources_hint = QtWidgets.QLabel()
         self.sources_hint.setWordWrap(True)
         src_layout.addWidget(self.sources)
@@ -629,6 +631,7 @@ class TrainTab(_Base):
         self.binarize_hint = QtWidgets.QLabel()
         self.binarize_hint.setWordWrap(True)
         self.binarize.itemChanged.connect(lambda _i: self._update_binarize_hint())
+        toggle_on_row_click(self.binarize)
 
         # A clip is num_frames images, so the backbone sees batch_size × frames
         # per step — the number that decides whether a big variant fits in VRAM.
@@ -936,13 +939,22 @@ class TrainTab(_Base):
             self.ctx.status("Learning-rate finder ended." if find_lr
                             else "Training stream ended.")
 
+        def on_failed(msg: str):
+            # The run may well carry on in the backend; say so where it's seen.
+            self.log.appendPlainText(f"Lost contact with the backend: {msg}")
+            self.ctx.status(f"Training stream failed: {msg}")
+            on_done()
+
         def start(res: dict):
             self._task_id = res.get("task_id")
             if self._task_id:
                 self._spawn_stream(
-                    lambda: client.training_status(self._task_id), on_event, on_done)
+                    lambda: client.training_status(self._task_id), on_event, on_done,
+                    on_failed)
+            else:
+                on_done()
 
-        self._spawn_call(lambda: client.start_training(config), start)
+        self._spawn_call(lambda: client.start_training(config), start, on_failed)
 
     def _show_lr_result(self, ev: dict) -> None:
         """The range test's curve; "Use" puts the chosen rate in the lr field."""
@@ -1013,6 +1025,7 @@ class _ChoiceList(QtWidgets.QListWidget):
     def __init__(self, values, labels=None, checked=(), parent=None):
         super().__init__(parent)
         self.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        toggle_on_row_click(self)
         labels = labels or [str(v) for v in values]
         for value, label in zip(values, labels):
             item = QtWidgets.QListWidgetItem(label)

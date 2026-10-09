@@ -583,6 +583,36 @@ def test_train_tab_registers_the_trained_model():
     assert "label_union" in entry["config"]
 
 
+def test_checklists_toggle_anywhere_on_the_row():
+    """Clicking a positive-class name ticks it (not only the small box), and a
+    click on the box itself toggles once, not twice."""
+    from PySide6 import QtTest
+    _app()
+    ctx = FakeCtx()
+    ctx.model.add_behavior("rear")
+    tab = TrainTab(ctx)
+    tab.resize(700, 900)
+    tab.show()
+    tab.refresh()
+    QtWidgets.QApplication.processEvents()
+    lw = tab.binarize
+    item = lw.item(0)
+    rect = lw.visualItemRect(item)
+
+    def click(x):
+        QtTest.QTest.mouseClick(lw.viewport(), QtCore.Qt.LeftButton,
+                                pos=QtCore.QPoint(rect.left() + x, rect.center().y()))
+        QtWidgets.QApplication.processEvents()
+        return item.checkState() == QtCore.Qt.Checked
+
+    assert click(80) is True and tab.positive_behaviors() == ["rear"]  # on the name
+    assert click(80) is False
+    assert click(10) is True  # on the box
+    assert click(10) is False
+    assert "binary" not in tab.binarize_hint.text()
+    tab.close()
+
+
 def test_train_log_lines_are_readable():
     from plugins.pipeline_config import format_train_event as fmt
     assert fmt({"status": "starting", "message": "Device: CUDA (RTX)"}) == "Device: CUDA (RTX)"
@@ -617,6 +647,38 @@ def test_train_log_shows_each_event_once():
     tab._start()
     assert _wait(lambda: tab.start_btn.isEnabled() and "Done." in tab.log.toPlainText())
     assert tab.log.toPlainText().splitlines() == ["[train] starting…", "Device: CUDA (RTX)", "Done."]
+
+
+def test_train_tab_reports_a_lost_stream_and_recovers():
+    """A dropped status stream is said in the log (the run may go on in the
+    backend) and the buttons come back; so do they when the start fails."""
+    from labeling_shell.backend.client import BackendError
+    _app()
+    ctx = FakeCtx()
+
+    class StubClient:
+        fail_start = False
+
+        def start_training(self, config):
+            if self.fail_start:
+                raise BackendError("POST /api/training/start -> 500: no GPU")
+            return {"task_id": "t1"}
+
+        def training_status(self, task_id):
+            yield {"status": "starting", "message": "Device: CPU"}
+            raise BackendError("GET /api/training/status/t1 stream failed: ReadTimeout")
+
+    ctx._client = StubClient()
+    tab = TrainTab(ctx)
+    tab._find_lr()
+    assert _wait(lambda: "Lost contact" in tab.log.toPlainText())
+    assert _wait(lambda: tab.find_lr_btn.isEnabled() and tab.start_btn.isEnabled())
+    assert not tab.stop_btn.isEnabled()
+
+    ctx._client.fail_start = True
+    tab._start()
+    assert _wait(lambda: "no GPU" in tab.log.toPlainText())
+    assert _wait(lambda: tab.start_btn.isEnabled())
 
 
 def _lr_result(suggested=2.5e-4):

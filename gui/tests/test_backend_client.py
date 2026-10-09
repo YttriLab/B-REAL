@@ -54,6 +54,19 @@ class _Handler(BaseHTTPRequestHandler):
             ])
         elif self.path.startswith("/api/training/checkpoints"):
             self._json(200, {"checkpoints": [], "query": self.path})
+        elif self.path == "/api/slow/status":
+            # SSE with a pause between events longer than the client's timeout,
+            # like an epoch or a learning-rate range test.
+            import time
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(b'data: {"status": "starting"}\n\n')
+            self.wfile.flush()
+            time.sleep(1.5)
+            self.wfile.write(b'data: {"status": "completed"}\n\n')
+            self.wfile.flush()
         elif self.path == "/api/boom":
             self._json(500, {"detail": "boom"})
         else:
@@ -93,6 +106,14 @@ def test_json_roundtrip_and_health():
         assert out["task_id"] == "t1"
         assert out["echo"]["video_path"] == "v.mp4"
         assert out["echo"]["crop_params"] == {"box_size": 200}
+
+
+def test_sse_stream_waits_out_quiet_stretches():
+    """A stream outlives the client timeout (it once dropped after 30 s of
+    quiet, losing a finished run's result); plain requests keep it."""
+    with _StubServer() as srv, BackendClient(srv.base_url, timeout=0.5) as client:
+        events = list(client._stream("GET", "/api/slow/status"))
+        assert [e["status"] for e in events] == ["starting", "completed"]
 
 
 def test_sse_stream_parses_events():

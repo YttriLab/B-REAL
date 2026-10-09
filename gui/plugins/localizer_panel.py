@@ -18,6 +18,7 @@ import os
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from labeling_shell.check_list import toggle_on_row_click
 from labeling_shell.image_pane import ImagePane
 from labeling_shell.no_wheel import NoWheelComboBox, NoWheelSpinBox
 from labeling_shell.theme import mark_accent
@@ -89,6 +90,7 @@ class LocalizerTab(_Base):
         cf = QtWidgets.QFormLayout(clips_box)
         self.videos = QtWidgets.QListWidget()
         self.videos.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        toggle_on_row_click(self.videos)
         self.videos.setMaximumHeight(120)
         self.clips_per_video = self._spin(6, 0, 200, "Evenly spaced through each ticked video.")
         self.frames_per_clip = self._spin(500, 10, 20000, "Frames SAM2 tracks per clip.")
@@ -147,6 +149,7 @@ class LocalizerTab(_Base):
                                    "distilled from; larger is slower and rarely needed.")
         self.negatives = QtWidgets.QListWidget()
         self.negatives.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        toggle_on_row_click(self.negatives)
         self.negatives.setMaximumHeight(90)
         self.negatives.setToolTip("Optional: videos of the empty arena. Their frames teach the "
                                   "presence head what 'no animal' looks like on this rig "
