@@ -72,6 +72,11 @@ class TrainingConfig(BaseModel):
     # Output
     checkpoint_dir: Optional[str] = None
 
+    # Learning-rate range test instead of training: a short run with the
+    # learning rate rising exponentially, reporting loss against it and
+    # Lightning's suggestion. Nothing is saved.
+    find_lr: bool = False
+
 
 class CheckpointSearchRequest(BaseModel):
     search_dirs: Optional[list[str]] = None
@@ -173,6 +178,7 @@ async def api_start_training(req: TrainingConfig):
         "run_name": req.run_name or "training",
         "wandb_api_key": req.wandb_api_key,
         "fine_tune_lr": False,
+        "find_lr": req.find_lr,
     }
     if req.checkpoint_dir:
         config["checkpoint_dir"] = req.checkpoint_dir

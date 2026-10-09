@@ -360,6 +360,18 @@ class TestTrainingRouter:
         assert "task_id" in resp.json()
 
     @pytest.mark.asyncio
+    async def test_find_lr_reaches_the_trainer(self, ac):
+        """find_lr runs the range test instead of training (training_service.find_lr)."""
+        from omegaconf import OmegaConf
+        from backend.services.training_service import get_task
+        base = {"label_paths": ["/fake/labels.csv"], "frame_dirs": ["/fake/frames"]}
+        for flag in (True, False):
+            resp = await ac.post("/api/training/start", json={**base, "find_lr": flag})
+            assert resp.status_code == 200
+            cfg = OmegaConf.load(get_task(resp.json()["task_id"])["config_path"])
+            assert cfg.find_lr is flag
+
+    @pytest.mark.asyncio
     async def test_data_loader_fields_accepted(self, ac):
         """batch_size / num_workers / image_size reach the trainer."""
         resp = await ac.post("/api/training/start", json={

@@ -107,6 +107,43 @@ class MetricsWriter(Callback):
         _emit(self.metrics_path, metrics)
 
 
+LR_FIND_MIN, LR_FIND_MAX, LR_FIND_STEPS = 1e-6, 1e-1, 200
+
+
+def find_lr(config, model, data_module, metrics_path, info):
+    """Lightning's learning-rate range test: LR_FIND_STEPS training steps with
+    the learning rate rising exponentially from LR_FIND_MIN to LR_FIND_MAX
+    (stopping early once the loss blows up), reporting the smoothed loss curve
+    and a suggestion (valley_lr). The model's weights are restored afterwards
+    and nothing is saved."""
+    from lightning.pytorch.tuner import Tuner
+    from backend.services.lr_valley import valley_lr
+
+    info(f"Finding a learning rate: {LR_FIND_STEPS} steps from {LR_FIND_MIN:g} to "
+         f"{LR_FIND_MAX:g} (currently {config.model.get('lr')})...")
+    trainer = L.Trainer(logger=False, enable_checkpointing=False,
+                        max_epochs=config.max_epochs, accelerator="auto")
+    finder = Tuner(trainer).lr_find(
+        model, datamodule=data_module, min_lr=LR_FIND_MIN, max_lr=LR_FIND_MAX,
+        num_training=LR_FIND_STEPS, update_attr=False)
+    pairs = [(float(lr), float(l)) for lr, l in zip(finder.results["lr"], finder.results["loss"])
+             if np.isfinite(l)]
+    lrs, losses = [p[0] for p in pairs], [p[1] for p in pairs]
+    suggestion = valley_lr(lrs, losses)
+    lightning = finder.suggestion()
+    if suggestion is not None:
+        info(f"Suggested learning rate: {suggestion:.2e} (fastai valley rule; Lightning's "
+             f"steepest-slope pick: {float(lightning or 0):.2e}). Check the curve.")
+    else:
+        info("No suggestion: the loss never fell over the range tested.")
+    _emit(metrics_path, {
+        "status": "completed", "lr_find": True, "lrs": lrs, "losses": losses,
+        "suggested_lr": suggestion,
+        "lightning_lr": float(lightning) if lightning is not None else None,
+        "current_lr": float(config.model.get("lr")),
+    })
+
+
 def main():
     config_path = sys.argv[1]
     metrics_path = sys.argv[2]
@@ -212,6 +249,10 @@ def main():
         boundary_smoothing=boundary_smoothing,
     )
     model.test_clip_sizes = test_clip_sizes
+
+    if config.get("find_lr", False):
+        find_lr(config, model, data_module, metrics_path, info)
+        return
 
     # Callbacks
     checkpoint_dir = config.get("checkpoint_dir", "checkpoints")

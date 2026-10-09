@@ -577,7 +577,7 @@ class TrainTab(_Base):
         self.pretrained = QtWidgets.QCheckBox("Pretrained")
         self.pretrained.setChecked(True)
         self.dropout = self._dspin(0.2, 0.0, 0.9, 0.05)
-        self.lr = self._dspin(1e-4, 1e-6, 1.0, 1e-4, decimals=6)
+        self.lr = self._dspin(1e-4, 1e-6, 1.0, 1e-4, decimals=8)
         self.weight_decay = self._dspin(1e-3, 0.0, 1.0, 1e-4, decimals=6)
         self.batch_size = self._ispin(64, 1, 1024)
         self.image_size = self._ispin(224, 32, 800)
@@ -652,14 +652,20 @@ class TrainTab(_Base):
 
         btns = QtWidgets.QHBoxLayout()
         self.coverage_btn = QtWidgets.QPushButton("Check coverage")
+        self.find_lr_btn = QtWidgets.QPushButton("Find LR")
+        self.find_lr_btn.setToolTip(
+            "Learning-rate range test (~1-2 min): a couple of hundred training steps "
+            "with the rate rising from 1e-6 to 1e-1, then the loss curve and a "
+            "suggested rate. Uses the settings above; nothing is saved.")
         self.start_btn = QtWidgets.QPushButton("Start training")
         mark_accent(self.start_btn)
         self.stop_btn = QtWidgets.QPushButton("Stop")
         self.stop_btn.setEnabled(False)
         self.coverage_btn.clicked.connect(self._check_coverage)
+        self.find_lr_btn.clicked.connect(self._find_lr)
         self.start_btn.clicked.connect(self._start)
         self.stop_btn.clicked.connect(self._stop)
-        for b in (self.coverage_btn, self.start_btn, self.stop_btn):
+        for b in (self.coverage_btn, self.find_lr_btn, self.start_btn, self.stop_btn):
             btns.addWidget(b)
         outer.addLayout(btns)
 
@@ -765,6 +771,12 @@ class TrainTab(_Base):
         )
 
     def _start(self) -> None:
+        self._launch(find_lr=False)
+
+    def _find_lr(self) -> None:
+        self._launch(find_lr=True)
+
+    def _launch(self, find_lr: bool) -> None:
         client = self._client()
         if not client:
             return
@@ -772,19 +784,27 @@ class TrainTab(_Base):
             self.ctx.status("Need labels + extracted frames (preprocess first).")
             return
         config = self.build_config()
-        self.log.appendPlainText("[train] starting…")
-        self.start_btn.setEnabled(False)
+        if find_lr:
+            config["find_lr"] = True
+        self.log.appendPlainText("[lr] finding a learning rate…" if find_lr else "[train] starting…")
+        for b in (self.start_btn, self.find_lr_btn):
+            b.setEnabled(False)
         self.stop_btn.setEnabled(True)
 
         def on_event(ev: dict):
+            if ev.get("lr_find"):
+                self._show_lr_result(ev)
+                return
             self.log.appendPlainText(str(ev))
             if ev.get("status") == "completed" and ev.get("best_checkpoint"):
                 self._register_model(config, ev)
 
         def on_done():
-            self.start_btn.setEnabled(True)
+            for b in (self.start_btn, self.find_lr_btn):
+                b.setEnabled(True)
             self.stop_btn.setEnabled(False)
-            self.ctx.status("Training stream ended.")
+            self.ctx.status("Learning-rate finder ended." if find_lr
+                            else "Training stream ended.")
 
         def start(res: dict):
             self._task_id = res.get("task_id")
@@ -793,6 +813,22 @@ class TrainTab(_Base):
                     lambda: client.training_status(self._task_id), on_event, on_done)
 
         self._spawn_call(lambda: client.start_training(config), start)
+
+    def _show_lr_result(self, ev: dict) -> None:
+        """The range test's curve; "Use" puts the chosen rate in the lr field."""
+        from .lr_finder_dialog import LrFinderDialog, fmt_lr
+        self.log.appendPlainText(
+            f"[lr] suggested {fmt_lr(ev.get('suggested_lr'))} "
+            f"(current {fmt_lr(ev.get('current_lr'))}, {len(ev.get('lrs') or [])} steps)")
+        self.lr_dialog = LrFinderDialog(ev, self)
+        self.lr_dialog.accepted.connect(lambda: self._use_lr(self.lr_dialog.chosen_lr))
+        self.lr_dialog.open()
+
+    def _use_lr(self, lr) -> None:
+        if lr:
+            self.lr.setValue(lr)
+            self.ctx.status(f"Learning rate set to {lr:.1e}.")
+            self.log.appendPlainText(f"[lr] using {lr:.1e}")
 
     def _register_model(self, config: dict, ev: dict) -> None:
         """Record the trained checkpoint in the project manifest.

@@ -583,6 +583,64 @@ def test_train_tab_registers_the_trained_model():
     assert "label_union" in entry["config"]
 
 
+def _lr_result(suggested=2.5e-4):
+    import math
+    lrs = [10 ** (-6 + 5 * i / 99) for i in range(100)]
+    losses = [0.68 - 0.1 * min(1, max(0, (math.log10(lr) + 4) / 1.3)) for lr in lrs]
+    return {"status": "completed", "lr_find": True, "lrs": lrs, "losses": losses,
+            "suggested_lr": suggested, "lightning_lr": 3.5e-6, "current_lr": 1e-4}
+
+
+def test_find_lr_runs_the_range_test_and_offers_the_rate():
+    """Find LR sends the Train tab's config with find_lr, shows the curve, and
+    Use puts the rate in the lr field; nothing is registered as a model."""
+    _app()
+    ctx = FakeCtx()
+    sent = []
+
+    class StubClient:
+        def start_training(self, config):
+            sent.append(config)
+            return {"task_id": "t1"}
+
+        def training_status(self, task_id):
+            yield {"status": "starting", "message": "Finding a learning rate"}
+            yield _lr_result()
+
+    ctx._client = StubClient()
+    tab = TrainTab(ctx)
+    tab._find_lr()
+    assert _wait(lambda: getattr(tab, "lr_dialog", None) is not None)
+    assert sent[0]["find_lr"] is True and sent[0]["lr"] == tab.lr.value()
+    assert not ctx.registered
+    dialog = tab.lr_dialog
+    assert dialog.use_btn.text() == "Use 2.5e-04" and dialog.use_btn.isEnabled()
+    dialog.accept()
+    assert abs(tab.lr.value() - 2.5e-4) < 1e-9
+    assert _wait(lambda: tab.find_lr_btn.isEnabled() and tab.start_btn.isEnabled())
+
+    tab._start()  # plain training doesn't ask for the range test
+    assert _wait(lambda: len(sent) == 2)
+    assert "find_lr" not in sent[1]
+
+
+def test_lr_finder_dialog_picks_from_the_curve():
+    from plugins.lr_finder_dialog import LrFinderDialog
+    _app()
+    dialog = LrFinderDialog(_lr_result())
+    dialog.resize(560, 440)
+    curve = dialog.curve
+    rect = curve._plot_rect()
+    assert abs(curve.lr_at_x(rect.left()) - 1e-6) < 1e-12
+    assert abs(curve.lr_at_x(rect.right()) - 1e-1) < 1e-9
+    dialog._pick(curve.lr_at_x(rect.left() + rect.width() * 0.5))  # 10 ** -3.5
+    assert dialog.chosen_lr == 3.2e-4 and dialog.use_btn.text() == "Use 3.2e-04"
+    curve.grab()  # paints without error
+
+    none = LrFinderDialog(_lr_result(suggested=None))
+    assert not none.use_btn.isEnabled()
+
+
 def _write_crop_record(d, params, mixed=False):
     import json
     os.makedirs(d, exist_ok=True)
