@@ -583,6 +583,42 @@ def test_train_tab_registers_the_trained_model():
     assert "label_union" in entry["config"]
 
 
+def test_train_log_lines_are_readable():
+    from plugins.pipeline_config import format_train_event as fmt
+    assert fmt({"status": "starting", "message": "Device: CUDA (RTX)"}) == "Device: CUDA (RTX)"
+    assert fmt({"epoch": 3, "total_epochs": 100, "train_loss": 0.2114, "val_loss": 0.3,
+                "val_mcc": 0.812, "best_val_mcc": 0.83, "stagnation_epochs": 2,
+                "patience": 20, "lr": 1e-4, "status": "training"}) == (
+        "epoch 3 (max 100) · train loss 0.211 · val loss 0.300 · val MCC 0.812 "
+        "(best 0.830) · no gain 2/20 · lr 1.0e-04")
+    assert fmt({"status": "completed", "best_val_mcc": 0.9,
+                "best_checkpoint": "/p/ck/rear-epoch=04-val_mcc=0.900.ckpt"}) == (
+        "Done. best val MCC 0.900: rear-epoch=04-val_mcc=0.900.ckpt")
+    assert fmt({"status": "error", "error": "CUDA out of memory"}) == "Error: CUDA out of memory"
+    assert fmt({"status": "cancelled"}) == "Stopped."
+
+
+def test_train_log_shows_each_event_once():
+    _app()
+    ctx = FakeCtx()
+    ev = {"status": "starting", "message": "Device: CUDA (RTX)"}
+
+    class StubClient:
+        def start_training(self, config):
+            return {"task_id": "t1"}
+
+        def training_status(self, task_id):
+            yield ev
+            yield {"status": "completed"}
+            yield {"status": "completed"}  # a backend repeating its final event
+
+    ctx._client = StubClient()
+    tab = TrainTab(ctx)
+    tab._start()
+    assert _wait(lambda: tab.start_btn.isEnabled() and "Done." in tab.log.toPlainText())
+    assert tab.log.toPlainText().splitlines() == ["[train] starting…", "Device: CUDA (RTX)", "Done."]
+
+
 def _lr_result(suggested=2.5e-4):
     import math
     lrs = [10 ** (-6 + 5 * i / 99) for i in range(100)]

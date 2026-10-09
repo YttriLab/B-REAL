@@ -7,6 +7,7 @@ separate from the widgets lets it be unit-tested against the backend contract.
 
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 # Architecture choices, shared by the Train, Tune and benchmark UIs so they can't
@@ -249,3 +250,36 @@ def build_tuning_request(base: dict, *, space: dict, n_trials: int = 20,
     if latency:
         req["latency"] = latency
     return req
+
+
+def format_train_event(ev: dict) -> str:
+    """One readable line for the Train tab's log from a training SSE event."""
+    if ev.get("message"):
+        return str(ev["message"])
+    status = ev.get("status")
+    if status == "error":
+        return f"Error: {ev.get('error') or 'training failed (no detail)'}"
+    if status == "cancelled":
+        return "Stopped."
+    if status == "completed":
+        ckpt = ev.get("best_checkpoint")
+        if not ckpt:
+            return "Done."
+        mcc = ev.get("best_val_mcc")
+        best = f"best val MCC {mcc:.3f}: " if isinstance(mcc, (int, float)) else ""
+        return f"Done. {best}{os.path.basename(ckpt)}"
+    if "epoch" in ev:
+        def num(key, fmt=".3f"):
+            v = ev.get(key)
+            return format(v, fmt) if isinstance(v, (int, float)) else "?"
+        line = (f"epoch {ev['epoch']}"
+                + (f" (max {ev['total_epochs']})" if ev.get("total_epochs") else "")
+                + f" · train loss {num('train_loss')} · val loss {num('val_loss')}"
+                + f" · val MCC {num('val_mcc')} (best {num('best_val_mcc')})")
+        if ev.get("patience"):
+            line += f" · no gain {ev.get('stagnation_epochs', 0)}/{ev['patience']}"
+        if isinstance(ev.get("lr"), (int, float)):
+            line += f" · lr {ev['lr']:.1e}"
+        return line
+    return ", ".join(f"{k}: {v}" for k, v in ev.items() if not isinstance(v, (list, dict)))
+

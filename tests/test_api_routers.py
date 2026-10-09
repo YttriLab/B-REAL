@@ -207,6 +207,28 @@ class TestTrainingRouter:
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
+    async def test_status_streams_each_event_once(self, ac, tmp_path):
+        """A finished run's last line is not sent twice (the GUI acts on
+        completion events: registering a model, opening the LR finder result);
+        an error still gets its final event, carrying the detail."""
+        import json as _json
+        from backend.services import training_service as ts
+        lines = [{"status": "starting", "message": "Device: CPU"},
+                 {"status": "completed", "best_checkpoint": "x.ckpt"}]
+        path = tmp_path / "metrics.jsonl"
+        path.write_text("".join(_json.dumps(l) + "\n" for l in lines))
+
+        async def events(status, error=None):
+            ts._tasks["t"] = {"status": status, "metrics_path": str(path), "error": error}
+            resp = await ac.get("/api/training/status/t")
+            return [_json.loads(l[5:]) for l in resp.text.splitlines() if l.startswith("data:")]
+
+        assert await events("completed") == lines
+        got = await events("error", "CUDA out of memory")
+        assert got[:2] == lines and got[2]["status"] == "error"
+        assert got[2]["error"] == "CUDA out of memory"
+
+    @pytest.mark.asyncio
     async def test_status_not_found(self, ac):
         resp = await ac.get("/api/training/status/nonexistent-id")
         assert resp.status_code == 404

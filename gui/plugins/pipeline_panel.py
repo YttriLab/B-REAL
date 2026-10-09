@@ -43,7 +43,7 @@ from .pipeline_config import (
     EXPORT_FORMATS, FRAMES_CHOICES, LOCALIZER_SMOOTHING,
     IMAGE_SIZE_CHOICES, OBJECTIVES, POOLS, PRECISIONS, TARGET_LABELS, TARGETS,
     VARIANT_NATIVE_SIZE, VARIANTS,
-    build_train_config, build_tuning_request, choice_spec, latency_spec,
+    build_train_config, build_tuning_request, choice_spec, format_train_event, latency_spec,
     parse_stages, range_spec, resolve_binarize,
 )
 
@@ -916,11 +916,16 @@ class TrainTab(_Base):
             b.setEnabled(False)
         self.stop_btn.setEnabled(True)
 
+        last = [None]
+
         def on_event(ev: dict):
+            if ev == last[0]:  # a backend that repeats its final event
+                return
+            last[0] = ev
             if ev.get("lr_find"):
                 self._show_lr_result(ev)
                 return
-            self.log.appendPlainText(str(ev))
+            self.log.appendPlainText(format_train_event(ev))
             if ev.get("status") == "completed" and ev.get("best_checkpoint"):
                 self._register_model(config, ev)
 

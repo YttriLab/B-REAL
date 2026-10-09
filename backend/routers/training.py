@@ -210,7 +210,11 @@ async def api_training_status(task_id: str):
             # emit a final event carrying status + error detail, then stop.
             status = get_task(task_id).get("status")
             if status in ("completed", "error", "cancelled"):
-                yield f"data: {json.dumps(read_latest_metrics(task_id))}\n\n"
+                # Unless it only repeats the completion line just streamed (the
+                # client would act on it twice).
+                final = read_latest_metrics(task_id)
+                if not lines or final != lines[-1]:
+                    yield f"data: {json.dumps(final)}\n\n"
                 break
             await asyncio.sleep(1.0)
 
