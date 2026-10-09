@@ -181,7 +181,10 @@ class ActiveLearningPanel(_Base):
         note = entry.get("crop_note") or "not recorded for this model"
         if self.crop_source.currentData() == "model":
             if trained:
-                return trained, "from this model's training", []
+                source = "from this model's training"
+                if entry.get("crop_note"):  # e.g. a record backfilled after the fact
+                    source += f": {entry['crop_note']}"
+                return trained, source, []
             return current, "Preprocess tab", [f"Training crop {note}: using the Preprocess tab."]
         warnings = []
         if trained:
