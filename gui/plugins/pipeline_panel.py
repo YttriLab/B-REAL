@@ -506,6 +506,11 @@ class PreprocessTab(_Base):
             self.ctx.status("Need a video and a project (for the output dir).")
             return
         ranges = compute_labeled_frame_ranges(self.ctx.bouts(), self.ctx.frames_per_group())
+        if not ranges:
+            # The backend reads "no ranges" as "every frame": tens of GB of
+            # frames nothing will train on.
+            self.ctx.status("No labeled bouts in this video: nothing to preprocess.")
+            return
         self.progress.setValue(0)
 
         def on_event(ev: dict):
@@ -528,8 +533,12 @@ class PreprocessTab(_Base):
         params = self.build_crop_params()
         self.ctx.status("Extracting frames…" if not crop else "Preprocessing…")
         self._spawn_call(
+            # The backend writes into output_dir/output_name; name it so the
+            # frames land in out_dir itself, where training and the crop
+            # records look (not out_dir/<video stem>/).
             lambda: client.run_preprocessing(
-                video, out_dir, crop_params=params,
+                video, os.path.dirname(out_dir), crop_params=params,
+                output_name=os.path.basename(out_dir),
                 frame_ranges=ranges,
                 # Only background mode reads a background; don't send a stale one.
                 bg_path=(self.bg_edit.text() or None) if method == "background" else None,

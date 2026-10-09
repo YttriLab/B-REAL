@@ -152,6 +152,33 @@ def test_compute_background_sends_frame_count_and_project_dir():
     assert calls[-1]["output_dir"] == ctx.backgrounds_dir()
 
 
+def test_preprocess_writes_into_the_videos_frames_dir():
+    """Frames go in frames/<id>/ itself, where training reads them; and a video
+    with no bouts extracts nothing (the backend reads "no ranges" as "all")."""
+    from labeling_shell.bouts import Bout
+    _app()
+    ctx = FakeCtx()
+    calls = []
+
+    class StubClient:
+        def run_preprocessing(self, video, output_dir, **kw):
+            calls.append({"video": video, "output_dir": output_dir, **kw})
+            return {}
+
+    ctx._client = StubClient()
+    tab = PreprocessTab(ctx)
+    tab._run()
+    assert not calls and "nothing to preprocess" in ctx.msgs[-1]
+
+    beh = ctx.model.add_behavior("groom")
+    ctx.model.bouts.append(Bout(beh.id, "groom", 10, 20))
+    tab._run()
+    assert _wait(lambda: calls)
+    assert calls[-1]["output_dir"] == "/p/frames"
+    assert calls[-1]["output_name"] == "clip"
+    assert calls[-1]["frame_ranges"] == [[8, 20]]
+
+
 def test_preprocess_raw_mode_disables_crop_controls():
     """Raw mode writes whole frames: background and the detection knobs are
     meaningless, but resize_factor still resizes what gets written."""
