@@ -641,6 +641,39 @@ def test_lr_finder_dialog_picks_from_the_curve():
     assert not none.use_btn.isEnabled()
 
 
+def test_preprocess_status_states():
+    import tempfile
+    import time
+    from labeling_shell.bouts import Bout
+    from plugins import preprocess_status as ps
+    with tempfile.TemporaryDirectory() as d:
+        bouts = [Bout("g", "groom", 10, 12)]  # needs 8..12 with frames/group 3
+        assert ps.video_status([], d).state == ps.UNLABELED
+        st = ps.video_status(bouts, d)
+        assert (st.state, st.needed, st.present) == (ps.MISSING, 5, 0)
+        for i in (8, 9, 10):
+            open(os.path.join(d, f"{i}.png"), "w").close()
+        open(os.path.join(d, "crops.csv"), "w").close()  # not a frame
+        st = ps.video_status(bouts, d)
+        assert (st.state, st.present) == (ps.PARTIAL, 3)
+        assert st.method is None and "not recorded" in st.detail
+        for i in (11, 12, 40):  # 40: a frame the labels no longer need
+            open(os.path.join(d, f"{i}.png"), "w").close()
+        _write_crop_record(d, {"method": "background"}, mixed=True)
+        st = ps.video_status(bouts, d)  # the dir changed, so it is re-listed
+        assert (st.state, st.present, st.method, st.mixed) == (ps.READY, 5, "background", True)
+        assert st.short == "preprocessed · background subtraction" and "mixed" in st.detail
+        assert ps.video_status(bouts, os.path.join(d, "nope")).state == ps.MISSING
+
+        # A settled directory is listed once and then served from the cache.
+        old = time.time() - 10
+        os.utime(d, (old, old))
+        ps.frames_on_disk(d)
+        os.remove(os.path.join(d, "8.png"))
+        os.utime(d, (old, old))  # same mtime: the cache can't tell
+        assert 8 in ps.frames_on_disk(d)
+
+
 def _write_crop_record(d, params, mixed=False):
     import json
     os.makedirs(d, exist_ok=True)

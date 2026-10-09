@@ -40,6 +40,7 @@ from labeling_shell.video_widget import PlayerWidget  # noqa: E402
 from labeling_shell.videos_panel import VideosPanel  # noqa: E402
 from plugins.crop_overlay import LEGEND as CROP_LEGEND, CropBoxOverlay  # noqa: E402
 from plugins.pipeline_panel import PipelinePanel  # noqa: E402
+from plugins import preprocess_status  # noqa: E402
 
 EDITABLE = (QtWidgets.QLineEdit, QtWidgets.QAbstractSpinBox, QtWidgets.QComboBox,
             QtWidgets.QPlainTextEdit)
@@ -61,6 +62,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._al_state = None
         self._al_meta: dict | None = None  # what made the shown predictions
         self._al_token = 0  # bumped whenever the shown predictions change
+        self._statuses = None  # per-video preprocess status, until the next refresh
         self.al_threshold = 0.5
 
         self.player = PlayerWidget()
@@ -171,8 +173,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.bouts_panel.model = self.model
 
     def _refresh_all(self) -> None:
+        self._statuses = None  # labels or frames may have changed
+        statuses = {vid: (st.short, st.color, st.detail)
+                    for vid, st in self.video_statuses().items()}
         self.videos_panel.set_videos(
-            self.project.list_videos() if self.project else [], self.current_video_id)
+            self.project.list_videos() if self.project else [], self.current_video_id,
+            statuses)
         self.behaviors_panel.refresh()
         self.bouts_panel.refresh()
         self.pipeline.refresh()
@@ -354,6 +360,40 @@ class MainWindow(QtWidgets.QMainWindow):
         if key == "preprocess":  # crop settings changed: the live box with them
             self.crop_overlay.refresh()
             self.pipeline.active_learning.refresh()
+
+    def video_sources(self) -> list:
+        """Every project video as a training source: [{id, name, path,
+        label_path, frame_dir, bouts}]. label_path is None until the video has
+        a training CSV; the open video's bouts are the live ones."""
+        if not self.project:
+            return []
+        out = []
+        for rec in self.project.list_videos():
+            vid = rec.get("id")
+            if vid == self.current_video_id:
+                bouts = list(self.model.bouts)
+            else:
+                try:
+                    bouts = self.project.load_into_model(vid).bouts
+                except (OSError, ValueError, TypeError):
+                    bouts = []
+            csv = self.project.label_csv_path(vid)
+            out.append({"id": vid, "name": rec.get("name") or vid, "path": rec.get("path"),
+                        "label_path": str(csv) if csv.exists() else None,
+                        "frame_dir": str(self.project.frames_dir(vid)), "bouts": bouts})
+        return out
+
+    def video_statuses(self) -> dict:
+        """{video id: preprocess_status.VideoStatus}, cached until the next refresh."""
+        if self._statuses is None:
+            pipeline = getattr(self, "pipeline", None)
+            fpg = pipeline.train.frames_per_group.value() if pipeline else 3
+            self._statuses = preprocess_status.statuses(self.video_sources(), fpg)
+        return self._statuses
+
+    def frames_changed(self) -> None:
+        """Preprocessing wrote frames: every "preprocessed?" display is stale."""
+        self._refresh_all()
 
     def project_models(self) -> list:
         return self.project.list_models() if self.project else []

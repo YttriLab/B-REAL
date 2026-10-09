@@ -35,7 +35,9 @@ from labeling_shell.no_wheel import (
     NoWheelComboBox, NoWheelDoubleSpinBox, NoWheelSpinBox,
 )
 from labeling_shell.theme import mark_accent
+from labeling_shell.videos_panel import STATUS_ROLE, StatusDelegate
 
+from . import preprocess_status
 from .pipeline_config import (
     BATCH_CHOICES, CROP_DEFAULTS, CROP_KEYS_BY_METHOD, CROP_METHOD_HINTS, CROP_METHODS,
     EXPORT_FORMATS, FRAMES_CHOICES, LOCALIZER_SMOOTHING,
@@ -100,6 +102,10 @@ class PreprocessTab(_Base):
 
         self.video_label = QtWidgets.QLabel("—")
         form.addRow("Video", self.video_label)
+        # Whether this video's labeled frames are already on disk, and how.
+        self.frames_status = QtWidgets.QLabel()
+        self.frames_status.setWordWrap(True)
+        form.addRow("Frames", self.frames_status)
 
         # How the animal is found. Background subtraction is the default; the
         # SAM2-distilled localizer copes with a drifting background or an
@@ -390,11 +396,23 @@ class PreprocessTab(_Base):
     def refresh(self) -> None:
         self._restore_settings()
         self.video_label.setText(self.ctx.video_path() or "—")
+        self._update_frames_status()
         if self.ctx.current_bg_path() and not self.bg_edit.text():
             self.bg_edit.setText(self.ctx.current_bg_path())
         saved = getattr(self.ctx, "localizer_path", lambda: None)()
         if saved and saved != self.loc_edit.text().strip():
             self.loc_edit.setText(saved)
+
+    def _update_frames_status(self) -> None:
+        statuses = getattr(self.ctx, "video_statuses", lambda: {})()
+        vid = getattr(self.ctx, "current_video_id", None)
+        st = statuses.get(vid) if vid else None
+        if st is None:
+            self.frames_status.setText("—")
+            return
+        self.frames_status.setText(
+            f'<span style="color:{st.color}">●</span> <b>{st.short}</b><br>'
+            f'<span style="color:#8b949e">{st.detail}</span>')
 
     def build_crop_params(self) -> dict:
         out = {}
@@ -520,6 +538,7 @@ class PreprocessTab(_Base):
                 self.progress.setValue(prog)
             if ev.get("status") in ("completed", "error", "cancelled"):
                 self.ctx.status(f"Preprocess {ev.get('status')}.")
+                getattr(self.ctx, "frames_changed", lambda: None)()
             elif ev.get("message"):
                 self.ctx.status(ev["message"])
 
@@ -563,6 +582,24 @@ class TrainTab(_Base):
         inner = QtWidgets.QWidget()
         scroll.setWidget(inner)
         layout = QtWidgets.QVBoxLayout(inner)
+
+        # Which project videos to train on, each with whether its labeled
+        # frames are on disk (preprocess_status). A video is ticked when it has
+        # frames, unless you've ticked or unticked it yourself: that sticks.
+        src_box = QtWidgets.QGroupBox("Training videos")
+        src_layout = QtWidgets.QVBoxLayout(src_box)
+        self.sources = QtWidgets.QListWidget()
+        self.sources.setItemDelegate(StatusDelegate(self.sources))
+        self.sources.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.sources.itemChanged.connect(self._on_source_ticked)
+        self.sources_hint = QtWidgets.QLabel()
+        self.sources_hint.setWordWrap(True)
+        src_layout.addWidget(self.sources)
+        src_layout.addWidget(self.sources_hint)
+        layout.addWidget(src_box)
+        self._ticks: dict = {}  # video id -> ticked, for videos the user (un)ticked
+        self._source_recs: dict = {}  # video id -> ctx.video_sources() record
+
         form = QtWidgets.QFormLayout()
 
         self.frames_per_group = NoWheelSpinBox()
@@ -699,7 +736,9 @@ class TrainTab(_Base):
         self.batch_hint.setText(msg)
 
     def refresh(self) -> None:
-        """Rebuild the positive-class checklist, keeping whatever is still ticked."""
+        """Rebuild the video and positive-class checklists, keeping whatever is
+        still ticked."""
+        self._refresh_sources()
         checked = set(self.positive_behaviors())
         self.binarize.blockSignals(True)
         self.binarize.clear()
@@ -710,6 +749,88 @@ class TrainTab(_Base):
             self.binarize.addItem(item)
         self.binarize.blockSignals(False)
         self._update_binarize_hint()
+
+    # ---------------------------------------------------------- data sources
+    def _has_sources(self) -> bool:
+        return hasattr(self.ctx, "video_sources")
+
+    def _refresh_sources(self) -> None:
+        if not self._has_sources():
+            self.sources.parentWidget().setVisible(False)  # a ctx without a project list
+            return
+        statuses = getattr(self.ctx, "video_statuses", lambda: {})()
+        self._source_recs = {s["id"]: s for s in self.ctx.video_sources()}
+        self.sources.blockSignals(True)
+        self.sources.clear()
+        for vid, rec in self._source_recs.items():
+            st = statuses.get(vid)
+            item = QtWidgets.QListWidgetItem(rec.get("name") or vid)
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, vid)
+            trainable = bool(rec.get("label_path")) and st is not None \
+                and st.state != preprocess_status.UNLABELED
+            if st is not None:
+                item.setData(STATUS_ROLE, (st.short, st.color))
+                item.setToolTip(st.detail)
+            if trainable:
+                ticked = self._ticks.get(
+                    vid, st.state in (preprocess_status.READY, preprocess_status.PARTIAL))
+                item.setCheckState(QtCore.Qt.Checked if ticked else QtCore.Qt.Unchecked)
+            else:
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsUserCheckable
+                              & ~QtCore.Qt.ItemFlag.ItemIsEnabled)
+            self.sources.addItem(item)
+        self.sources.blockSignals(False)
+        rows = [self.sources.sizeHintForRow(i) for i in range(min(self.sources.count(), 6))]
+        self.sources.setFixedHeight((sum(rows) if rows else 40) + 2 * self.sources.frameWidth() + 2)
+        self._update_sources_hint()
+
+    def _on_source_ticked(self, item) -> None:
+        self._ticks[item.data(QtCore.Qt.ItemDataRole.UserRole)] = \
+            item.checkState() == QtCore.Qt.Checked
+        self._update_sources_hint()
+
+    def selected_sources(self) -> list:
+        """The ticked videos' ctx.video_sources() records."""
+        out = []
+        for i in range(self.sources.count()):
+            item = self.sources.item(i)
+            if item.checkState() == QtCore.Qt.Checked:
+                rec = self._source_recs.get(item.data(QtCore.Qt.ItemDataRole.UserRole))
+                if rec and rec.get("label_path"):
+                    out.append(rec)
+        return out
+
+    def training_paths(self) -> tuple[list, list]:
+        """(label CSVs, frame dirs) to train on, paired by position."""
+        if not self._has_sources():
+            return self.ctx.label_paths(), self.ctx.frame_dirs()
+        chosen = self.selected_sources()
+        return [s["label_path"] for s in chosen], [s["frame_dir"] for s in chosen]
+
+    def _update_sources_hint(self) -> None:
+        statuses = getattr(self.ctx, "video_statuses", lambda: {})()
+        chosen = self.selected_sources()
+        if not chosen:
+            self.sources_hint.setText("Tick at least one video to train on.")
+            return
+        frames = sum(statuses[s["id"]].present for s in chosen if s["id"] in statuses)
+        msg = f"{len(chosen)} video{'s' if len(chosen) != 1 else ''} · {frames:,} frames on disk"
+        notes = []
+        for s in chosen:
+            st = statuses.get(s["id"])
+            if st and st.state == preprocess_status.MISSING:
+                notes.append(f"{s['name']} is not preprocessed: it adds nothing until it is.")
+            elif st and st.state == preprocess_status.PARTIAL:
+                notes.append(f"{s['name']}: {st.needed - st.present:,} labeled frames not "
+                             "preprocessed yet are skipped.")
+        methods = {statuses[s["id"]].method for s in chosen
+                   if s["id"] in statuses and statuses[s["id"]].present}
+        if len(methods) > 1:
+            notes.append("These videos were cropped differently ("
+                         + ", ".join(sorted(str(m) for m in methods)) + "): a model should "
+                         "train on one crop method.")
+        self.sources_hint.setText(msg + "".join(
+            f'<br><span style="color:#e3b341">{n}</span>' for n in notes))
 
     def positive_behaviors(self) -> list:
         return [self.binarize.item(i).text()
@@ -734,8 +855,9 @@ class TrainTab(_Base):
     def build_config(self) -> dict:
         binarize, label_union = resolve_binarize(
             self.positive_behaviors(), [b.name for b in self.ctx.behaviors()])
+        label_paths, frame_dirs = self.training_paths()
         return build_train_config(
-            self.ctx.label_paths(), self.ctx.frame_dirs(),
+            label_paths, frame_dirs,
             frames_per_group=self.frames_per_group.value(),
             variant=self.variant.currentText(),
             tsm_stages=parse_stages(self.tsm_stages.text()),
@@ -763,10 +885,10 @@ class TrainTab(_Base):
         client = self._client()
         if not client:
             return
+        label_paths, frame_dirs = self.training_paths()
         self._spawn_call(
             lambda: client.check_coverage(
-                self.ctx.frame_dirs(), self.ctx.label_paths(),
-                self.frames_per_group.value()),
+                frame_dirs, label_paths, self.frames_per_group.value()),
             lambda res: self.log.appendPlainText(f"[coverage] {res}"),
         )
 
@@ -780,8 +902,11 @@ class TrainTab(_Base):
         client = self._client()
         if not client:
             return
-        if not self.ctx.label_paths() or not self.ctx.frame_dirs():
-            self.ctx.status("Need labels + extracted frames (preprocess first).")
+        label_paths, frame_dirs = self.training_paths()
+        if not label_paths or not frame_dirs:
+            self.ctx.status("Tick a labeled, preprocessed video under Training videos."
+                            if self._has_sources()
+                            else "Need labels + extracted frames (preprocess first).")
             return
         config = self.build_config()
         if find_lr:

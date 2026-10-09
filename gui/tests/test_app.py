@@ -164,6 +164,68 @@ def test_open_project_lists_videos_and_reopens_the_last_one():
         win2.player.reader.close()
 
 
+def test_videos_and_train_tab_show_preprocessing_status():
+    """Each video says whether its labeled frames are on disk; the Train tab
+    trains on the ticked videos (not just the open one), ticking the ones
+    with frames by default."""
+    import json
+    from plugins import preprocess_status as ps
+    from labeling_shell.videos_panel import STATUS_ROLE
+    _app()
+    from app import MainWindow
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        a, b = os.path.join(d, "a.mp4"), os.path.join(d, "b.mp4")
+        write_index_video(a, 30, fps=30, gop=12)
+        write_index_video(b, 30, fps=30, gop=12)
+        win = MainWindow(autostart_backend=False, settings=_settings())
+        win.project = ProjectStore(os.path.join(d, "proj"))
+        win.project.create("t")
+        groom = win.model.add_behavior("groom")
+        win.load_video(a, wait=True)
+        win.model.bouts.append(Bout(groom.id, "groom", 5, 9))
+        win._autosave()
+        win.load_video(b, wait=True)  # b is open; a's labels come from disk
+        win.model.bouts.append(Bout(groom.id, "groom", 10, 14))
+        win._autosave()
+        ida, idb = safe_id("a.mp4"), safe_id("b.mp4")
+        fa = win.project.frames_dir(ida)
+        fa.mkdir(parents=True)
+        for i in range(3, 10):  # the bout plus 2 lead-in frames (frames/group 3)
+            (fa / f"{i}.png").write_bytes(b"")
+        (fa / "crop_params.json").write_text(json.dumps(
+            {"crop_params": {"method": "localizer"}, "mixed": False}))
+        win.frames_changed()
+
+        st = win.video_statuses()
+        assert st[ida].state == ps.READY and st[ida].method == "localizer"
+        assert st[idb].state == ps.MISSING and st[idb].needed == 7
+        rows = {win.videos_panel.list.item(i).data(QtCore.Qt.ItemDataRole.UserRole):
+                win.videos_panel.list.item(i) for i in range(win.videos_panel.list.count())}
+        assert rows[ida].data(STATUS_ROLE)[0] == "preprocessed · SAM2 localizer"
+        assert rows[idb].data(STATUS_ROLE)[0] == "not preprocessed"
+        assert "Run Preprocess" in rows[idb].toolTip()
+        win.videos_panel.list.grab()  # the status line paints
+
+        train = win.pipeline.train
+        cfg = train.build_config()
+        assert cfg["frame_dirs"] == [str(fa)]  # a (ready) ticked, b (missing) not
+        assert cfg["label_paths"] == [str(win.project.label_csv_path(ida))]
+        assert "not preprocessed" in win.pipeline.preprocess.frames_status.text()
+
+        fb = win.project.frames_dir(idb)
+        fb.mkdir(parents=True)
+        (fb / "12.png").write_bytes(b"")
+        win.frames_changed()  # what a finished Preprocess run calls
+        assert win.video_statuses()[idb].state == ps.PARTIAL
+        assert "1/7" in win.pipeline.preprocess.frames_status.text()
+        assert train.build_config()["frame_dirs"] == [str(fa), str(fb)]  # now has frames
+        assert "skipped" in train.sources_hint.text()
+        train.sources.item(1).setCheckState(QtCore.Qt.Unchecked)
+        win._refresh_all()  # a tick you change survives refreshes
+        assert train.build_config()["frame_dirs"] == [str(fa)]
+        win.player.reader.close()
+
+
 def test_remove_video_from_project():
     _app()
     from app import MainWindow
