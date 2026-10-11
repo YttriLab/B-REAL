@@ -325,9 +325,17 @@ def main():
     # enabled). test_step / on_test_epoch_end only execute under trainer.test(),
     # so without this the standalone script's test logging never happened here.
     best_ckpt = checkpoint_cb.best_model_path or None
+    test = {}
     try:
-        info("Running test pass (logging test metrics / clips)...")
-        trainer.test(model, data_module, ckpt_path=best_ckpt or "best")
+        info("Running test pass on the held-out test split...")
+        results = trainer.test(model, data_module, ckpt_path=best_ckpt or "best")
+        test = {k: float(v) for k, v in (results[0] if results else {}).items()
+                if isinstance(v, (int, float)) or hasattr(v, "item")}
+        if "test_mcc" in test:
+            parts = [f"MCC {test['test_mcc']:.3f}"]
+            if "test_balanced_acc" in test:
+                parts.append(f"balanced accuracy {test['test_balanced_acc']:.3f}")
+            info("Test (best checkpoint): " + " · ".join(parts))
     except Exception as e:
         # Don't fail a successful training run just because testing/logging did.
         info(f"Test pass skipped: {type(e).__name__}: {e}")
@@ -341,6 +349,8 @@ def main():
         "best_checkpoint": checkpoint_cb.best_model_path,
         "best_val_mcc": float(best_mcc) if best_mcc is not None else None,
         "best_val_loss": float(best_loss) if best_loss != float("inf") else None,
+        "test_mcc": test.get("test_mcc"),
+        "test_balanced_acc": test.get("test_balanced_acc"),
         "epoch": trainer.current_epoch,
         "total_epochs": config.max_epochs,
     }

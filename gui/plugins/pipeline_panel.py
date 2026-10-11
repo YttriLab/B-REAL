@@ -992,6 +992,7 @@ class TrainTab(_Base):
             "created": datetime.date.today().isoformat(),
             "val_mcc": ev.get("best_val_mcc"),
             "val_loss": ev.get("best_val_loss"),
+            "test_mcc": ev.get("test_mcc"),
             "config": {
                 "variant": config.get("variant"),
                 "binarize": config.get("binarize"),

@@ -624,6 +624,9 @@ def test_train_log_lines_are_readable():
     assert fmt({"status": "completed", "best_val_mcc": 0.9,
                 "best_checkpoint": "/p/ck/rear-epoch=04-val_mcc=0.900.ckpt"}) == (
         "Done. best val MCC 0.900: rear-epoch=04-val_mcc=0.900.ckpt")
+    assert fmt({"status": "completed", "best_val_mcc": 0.9, "test_mcc": 0.87,
+                "best_checkpoint": "/p/ck/rear.ckpt"}) == (
+        "Done. best val MCC 0.900 · test MCC 0.870: rear.ckpt")
     assert fmt({"status": "error", "error": "CUDA out of memory"}) == "Error: CUDA out of memory"
     # A run that dies mid-way: its last message, with the error laid over it.
     assert fmt({"status": "error", "message": "Finding a learning rate...",

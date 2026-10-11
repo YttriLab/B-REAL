@@ -267,9 +267,11 @@ def format_train_event(ev: dict) -> str:
         ckpt = ev.get("best_checkpoint")
         if not ckpt:
             return "Done."
-        mcc = ev.get("best_val_mcc")
-        best = f"best val MCC {mcc:.3f}: " if isinstance(mcc, (int, float)) else ""
-        return f"Done. {best}{os.path.basename(ckpt)}"
+        scores = [f"{name} {ev[key]:.3f}" for key, name in
+                  (("best_val_mcc", "best val MCC"), ("test_mcc", "test MCC"))
+                  if isinstance(ev.get(key), (int, float))]
+        return "Done. " + "".join(f"{s} · " for s in scores[:-1]) + \
+            (f"{scores[-1]}: " if scores else "") + os.path.basename(ckpt)
     if "epoch" in ev:
         def num(key, fmt=".3f"):
             v = ev.get(key)

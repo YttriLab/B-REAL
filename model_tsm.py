@@ -393,9 +393,30 @@ class TSMClassifier(L.LightningModule):
 
         return loss
 
-    def on_test_epoch_end(self):
-        cm = self.test_confusion.compute().cpu().numpy()
+    def _wandb_run(self):
+        """The W&B run to log figures, tables and videos to; None without a
+        W&B logger (the app trains without one by default), in which case the
+        test metrics still go through self.log."""
+        return self.logger.experiment if isinstance(self.logger, WandbLogger) else None
 
+    def on_test_epoch_end(self):
+        run = self._wandb_run()
+        cm = self.test_confusion.compute().cpu().numpy()
+        self.test_confusion.reset()
+        if run is not None:
+            self._log_confusion(run, cm)
+        self._realtime_metrics(run)
+        self.test_preds = []
+        self.test_labels = []
+        if run is not None:
+            # Annotated test clips need moviepy (wandb[media]); without it the
+            # metrics above must still count, so a failure here is only noted.
+            try:
+                self.log_test_video(self.trainer.datamodule.test_dataloader(), fps=30)
+            except Exception as e:
+                print(f"Test clip videos not logged to W&B: {type(e).__name__}: {e}")
+
+    def _log_confusion(self, run, cm):
         fig, ax = plt.subplots(figsize=(10, 8), dpi=200)
         cm_normalized = cm.astype("float") / cm.sum(axis=1, keepdims=True)
         im = ax.imshow(cm_normalized, vmin=0, vmax=1)
@@ -408,10 +429,10 @@ class TSMClassifier(L.LightningModule):
         for i in range(self.num_classes):
             for j in range(self.num_classes):
                 ax.text(j, i, int(cm[i, j]), ha="center", va="center", color="black")
-        self.logger.experiment.log({"Confusion Matrix - Test Set": wandb.Image(fig)})
+        run.log({"Confusion Matrix - Test Set": wandb.Image(fig)})
         plt.close(fig)
-        self.test_confusion.reset()
 
+    def _realtime_metrics(self, run):
         # Realtime metrics (2-of-3 majority rule, per clip)
         if hasattr(self, "test_clip_sizes") and self.test_clip_sizes is not None:
             all_preds = torch.cat(self.test_preds).numpy()
@@ -530,17 +551,12 @@ class TSMClassifier(L.LightningModule):
                 "Mean", sum(self.test_clip_sizes),
                 mean_iou_raw, mean_iou_sm, mean_hit_rate, mean_fpr
             ])
-            iou_table = wandb.Table(
-                columns=["Clip", "Frames", "IoU (raw)", "IoU (2-of-3 rule)", "Hit Rate", "FPR"],
-                data=table_data
-            )
-            self.logger.experiment.log({"Realtime Metrics": iou_table})
-
-        self.test_preds = []
-        self.test_labels = []
-
-        test_dataloader = self.trainer.datamodule.test_dataloader()
-        self.log_test_video(test_dataloader, fps=30)
+            if run is not None:
+                iou_table = wandb.Table(
+                    columns=["Clip", "Frames", "IoU (raw)", "IoU (2-of-3 rule)", "Hit Rate", "FPR"],
+                    data=table_data
+                )
+                run.log({"Realtime Metrics": iou_table})
 
     def log_test_video(self, dataloader, fps=30, output_size=(640, 480)):
         self.eval()
@@ -612,7 +628,7 @@ class TSMClassifier(L.LightningModule):
                 annotated_frames.append(frame)
 
             video_array = np.stack(annotated_frames).transpose(0, 3, 1, 2)
-            self.logger.experiment.log({
+            self._wandb_run().log({
                 f"test_video_clip{clip_idx}": wandb.Video(
                     video_array, fps=fps, format="mp4",
                     caption=f"Clip {clip_idx} test predictions ({len(annotated_frames)} frames)"

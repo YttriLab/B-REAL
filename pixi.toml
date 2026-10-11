@@ -63,6 +63,7 @@ omegaconf = "*"
 pyyaml = "*"
 optuna = "*"
 wandb = "*"
+moviepy = "*"  # wandb.Video from frames: the annotated test clips (wandb[media])
 # Deployment-format export + latency measurement (see optimized_runtime.py).
 # ONNX is the shared intermediate; OpenVINO serves the CPU target. The GPU
 # target uses tensorrt-cu12, declared under [feature.backend.pypi-dependencies]
