@@ -345,9 +345,9 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/zstd-1.5.7-h534d264_6.conda
       - pypi: https://files.pythonhosted.org/packages/3c/2e/f241cfa13ab1306499731649bf944e9dc4eaacd484daffd908b78c880f6a/tensorrt_cu12-11.2.1.2.tar.gz
       - pypi: https://files.pythonhosted.org/packages/45/89/a45ef421b70d557eac7d196b03e45ff9ff8c7c786b4e54dfb505c1efc0f1/simsimd-6.5.16-cp312-cp312-win_amd64.whl
-      - pypi: https://files.pythonhosted.org/packages/b4/66/dd3be3d26617ef22e3d8d9b505c0c3b3330b58ba79f4ab8830b08166a251/tensorrt_cu12_libs-11.2.1.2.tar.gz
       - pypi: https://files.pythonhosted.org/packages/e2/9a/bdbc41120281a4bd6728a348e088eeca661dd4bb30d9fa0555374ec426e9/pynvvideocodec-2.2.3-cp312-cp312-win_amd64.whl
-      - pypi: https://files.pythonhosted.org/packages/f2/60/7d1f03a48009a6cb8b92bdccaf1870d95b1f18ea1d49526bf7fe10acf5ac/tensorrt_cu12_bindings-11.2.1.2-cp312-none-win_amd64.whl
+      - pypi: https://pypi.nvidia.com/tensorrt-cu12-bindings/tensorrt_cu12_bindings-11.2.1.2-cp312-none-win_amd64.whl
+      - pypi: https://pypi.nvidia.com/tensorrt-cu12-libs/tensorrt_cu12_libs-11.2.1.2-py3-none-win_amd64.whl
       p2:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-7_kmp_llvm.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/alsa-lib-1.2.16.1-hb03c661_0.conda
@@ -744,8 +744,8 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/3c/28/7ae846998728326759eab771afd83ad721b6c10e9cef7da2b5ca9bdd4a7b/simsimd-6.5.16-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/3c/2e/f241cfa13ab1306499731649bf944e9dc4eaacd484daffd908b78c880f6a/tensorrt_cu12-11.2.1.2.tar.gz
       - pypi: https://files.pythonhosted.org/packages/60/a9/e4b692f63f7e4085838e7d444b7e5d4a01c6e43843abeff0e31e27ebaf81/pynvvideocodec-2.2.3-cp312-cp312-manylinux_2_28_x86_64.whl
-      - pypi: https://files.pythonhosted.org/packages/7f/ee/bf6969058c451044bbbf543610425912f1682b5e7efe5bf3ef388675ed88/tensorrt_cu12_bindings-11.2.1.2-cp312-none-manylinux_2_28_x86_64.whl
-      - pypi: https://files.pythonhosted.org/packages/b4/66/dd3be3d26617ef22e3d8d9b505c0c3b3330b58ba79f4ab8830b08166a251/tensorrt_cu12_libs-11.2.1.2.tar.gz
+      - pypi: https://pypi.nvidia.com/tensorrt-cu12-bindings/tensorrt_cu12_bindings-11.2.1.2-cp312-none-manylinux_2_28_x86_64.whl
+      - pypi: https://pypi.nvidia.com/tensorrt-cu12-libs/tensorrt_cu12_libs-11.2.1.2-py3-none-manylinux_2_28_x86_64.whl
   gui:
     channels:
     - url: https://conda.anaconda.org/conda-forge/
@@ -7235,7 +7235,7 @@ packages:
   license: BSD-3-Clause
   license_family: BSD
   purls:
-  - pkg:pypi/omegaconf?source=compressed-mapping
+  - pkg:pypi/omegaconf?source=hash-mapping
   run_exports: {}
   size: 167939
   timestamp: 1786382930185
@@ -12140,12 +12140,6 @@ packages:
   - socksio==1.* ; extra == 'socks'
   - trio>=0.22.0,<1.0 ; extra == 'trio'
   requires_python: '>=3.8'
-- pypi: https://files.pythonhosted.org/packages/7f/ee/bf6969058c451044bbbf543610425912f1682b5e7efe5bf3ef388675ed88/tensorrt_cu12_bindings-11.2.1.2-cp312-none-manylinux_2_28_x86_64.whl
-  name: tensorrt-cu12-bindings
-  version: 11.2.1.2
-  sha256: bedf74a326ef081a299bd481573bc1aef046e38b55a42aa3fbeb46e1bb5691a9
-  requires_dist:
-  - numpy ; extra == 'numpy'
 - pypi: https://files.pythonhosted.org/packages/95/9c/c510029fc6ef33a6275cd2c5d3cecd6613dfd6aa401d57c54f1c18852ccf/setuptools-84.0.0-py3-none-any.whl
   name: setuptools
   version: 84.0.0
@@ -12206,10 +12200,6 @@ packages:
   name: altgraph
   version: 0.17.5
   sha256: f3a22400bce1b0c701683820ac4f3b159cd301acab067c51c653e06961600597
-- pypi: https://files.pythonhosted.org/packages/b4/66/dd3be3d26617ef22e3d8d9b505c0c3b3330b58ba79f4ab8830b08166a251/tensorrt_cu12_libs-11.2.1.2.tar.gz
-  name: tensorrt-cu12-libs
-  version: 11.2.1.2
-  sha256: 25a2b14fd845d8b03370292dc52e224d0fe7164a586dd7d72430b1cac2439587
 - pypi: https://files.pythonhosted.org/packages/da/35/f2287558c17e29fafc8ef3daf819bb9834061cfa43bff8014f7df7f63bdc/anyio-4.14.2-py3-none-any.whl
   name: anyio
   version: 4.14.2
@@ -12256,9 +12246,27 @@ packages:
   - psutil ; extra == 'hook-testing'
   - pytest>=2.7.3 ; extra == 'hook-testing'
   requires_python: '>=3.8,<3.16'
-- pypi: https://files.pythonhosted.org/packages/f2/60/7d1f03a48009a6cb8b92bdccaf1870d95b1f18ea1d49526bf7fe10acf5ac/tensorrt_cu12_bindings-11.2.1.2-cp312-none-win_amd64.whl
+- pypi: https://pypi.nvidia.com/tensorrt-cu12-bindings/tensorrt_cu12_bindings-11.2.1.2-cp312-none-manylinux_2_28_x86_64.whl
+  name: tensorrt-cu12-bindings
+  version: 11.2.1.2
+  sha256: bedf74a326ef081a299bd481573bc1aef046e38b55a42aa3fbeb46e1bb5691a9
+  index: https://pypi.nvidia.com/
+  requires_dist:
+  - numpy ; extra == 'numpy'
+- pypi: https://pypi.nvidia.com/tensorrt-cu12-bindings/tensorrt_cu12_bindings-11.2.1.2-cp312-none-win_amd64.whl
   name: tensorrt-cu12-bindings
   version: 11.2.1.2
   sha256: d4b256e6ffbca50e2b9622129e20e121c39a1ed943084963cf3d9dac81a13c4d
+  index: https://pypi.nvidia.com/
   requires_dist:
   - numpy ; extra == 'numpy'
+- pypi: https://pypi.nvidia.com/tensorrt-cu12-libs/tensorrt_cu12_libs-11.2.1.2-py3-none-manylinux_2_28_x86_64.whl
+  name: tensorrt-cu12-libs
+  version: 11.2.1.2
+  sha256: d13d25345b1f87279478e2c63e0f1286c00c0824bc9eb0915ad0935857bc4e8e
+  index: https://pypi.nvidia.com/
+- pypi: https://pypi.nvidia.com/tensorrt-cu12-libs/tensorrt_cu12_libs-11.2.1.2-py3-none-win_amd64.whl
+  name: tensorrt-cu12-libs
+  version: 11.2.1.2
+  sha256: 794c015bb2130cfb55af569a8666d98476bff94a48f0cc3b20b7ebafb6387cc1
+  index: https://pypi.nvidia.com/

@@ -94,6 +94,13 @@ simsimd = "*"
 # here. The -cu12 variant matches the CUDA 12 runtime pytorch-gpu brings in;
 # tensorrt-cu13 would load a second, conflicting CUDA into the same process.
 tensorrt-cu12 = "*"
+# On PyPI, tensorrt-cu12-libs is a "wheel-stub" sdist: building it downloads the
+# real multi-GB wheel from NVIDIA mid-install, which fails on Windows. NVIDIA's
+# own index has proper linux-64 and win-64 wheels, so the two binary parts come
+# from there and the solver picks the right one per platform. (tensorrt-cu12
+# itself is a tiny plain-setuptools sdist that only provides `import tensorrt`.)
+tensorrt-cu12-libs = { version = "*", index = "https://pypi.nvidia.com" }
+tensorrt-cu12-bindings = { version = "*", index = "https://pypi.nvidia.com" }
 # NVDEC hardware video decoding for inference/preprocessing (video_decode.py).
 # Optional at runtime: decoder="auto" falls back to cv2 if it's missing or the
 # GPU has no NVDEC. Uses the driver's libnvcuvid and bundles its own demuxer.
