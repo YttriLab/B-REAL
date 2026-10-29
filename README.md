@@ -37,11 +37,9 @@ A complete pipeline in one app:
 pixi install   # both environments — .pixi/envs/default (backend) and .pixi/envs/gui (frontend)
 ```
 
+Installation takes approximately 5–10 minutes on standard hardware (most of it is downloading PyTorch and the CUDA libraries).
+
 **GPU or not, nothing to edit.** `pixi install` installs CUDA PyTorch when the NVIDIA driver supports CUDA 12, and the CPU build otherwise (no NVIDIA GPU, or an older driver). Needs a recent pixi (`pixi self-update`).
-
-## Demo project
-
-`demo/calms21_demo/` is a small project to try the whole pipeline on: four one-minute clips of two interacting mice from the [CalMS21](https://data.caltech.edu/records/s0vdx-0k302) dataset (CC BY 4.0), three with expert labels (attack / investigation / mount / other) and one left unlabeled for Active Learning. Open it from the start dialog; see `demo/README.md`.
 
 ## Running
 
@@ -50,6 +48,22 @@ pixi run gui
 ```
 
 Use the **Backend** menu to spawn a local backend (`uvicorn backend.server:app --port 8742`, run from the **backend pixi env**) or to attach to a remote one. `GET /api/health` reports the interpreter + CUDA status. To run the backend on its own: `pixi run backend`.
+
+## Demo project
+
+`demo/calms21_demo/` is a small, ready-to-open project for trying the whole pipeline. It has four one-minute clips of a resident (black) and intruder (white) mouse from the [CalMS21](https://data.caltech.edu/records/s0vdx-0k302) dataset (Sun et al. 2021, CC BY 4.0):
+
+- **Three labeled clips** carry the dataset's expert labels as bouts: attack, investigation, mount and other (keys 1–4).
+- **One unlabeled clip** (`mouse001_f1350`) is for trying Active Learning. Its expert labels are in `demo/calms21_demo/ground_truth/` to compare against.
+
+To try it:
+
+1. `pixi run gui`, then **Open project** → `demo/calms21_demo`.
+2. **Preprocess** the three labeled videos. The demo is set to whole-frame cropping, since both mice matter.
+3. **Train** on them. A few epochs is enough to see it work.
+4. Open `mouse001_f1350` and run **Active Learning** with the new model.
+
+Frames, models and predictions you make are saved in the demo folder but ignored by git. Details, and how to rebuild the clips: `demo/README.md`.
 
 To run the backend on its own (e.g. for API testing) or the tests:
 
@@ -263,6 +277,7 @@ pixi run -e gui python gui/run_all_tests.py
 ├── sam2_track.py       # SAM2 teacher: one click -> body-centre track (Train Localizer)
 ├── localizer_train.py  # SAM2 clips -> distilled localizer weights
 ├── weights/localizer/  # the bundled default localizer (+ model card)
+├── demo/               # calms21_demo/ — small ready-to-open CalMS21 project (+ build script)
 ├── video_decode.py     # cv2 / NVDEC frame source (bit-identical), prefetching
 ├── trt_engines.py      # automatic TensorRT engines for the localizer + classifier
 ├── config_tsm.yaml     # training defaults
