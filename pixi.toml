@@ -10,14 +10,23 @@
 #   pixi run backend    # run the FastAPI backend standalone
 #   pixi run test        # run the pytest suite
 #
-# CPU-only machine? Swap `pytorch-gpu` for `pytorch-cpu` under [feature.backend.dependencies].
+# GPU or not, `pixi install` picks the right build by itself: every platform is
+# solved twice (with and without CUDA 12) and pixi installs the variant this
+# machine supports — CUDA PyTorch with an NVIDIA driver >= CUDA 12, CPU otherwise.
 
-[project]
+[workspace]
 name = "b-real"
 version = "0.1.0"
 description = "Real-time clip-based animal behavior classifier (PySide6 GUI + FastAPI/PyTorch backend)."
 channels = ["conda-forge"]
-platforms = ["win-64", "linux-64"]   # add "osx-64" here too, then re-run `pixi install`
+# Order matters: pixi installs the FIRST entry this machine satisfies, so the
+# CUDA variants come first and the plain ones are the no-GPU fallback.
+platforms = [
+  { name = "win-64-cuda", platform = "win-64", cuda = "12.0" },
+  { name = "linux-64-cuda", platform = "linux-64", cuda = "12.0" },
+  "win-64",
+  "linux-64",
+]   # add "osx-64" here too, then re-run `pixi install`
 
 [dependencies]
 # Shared by both environments — kept minimal so the gui environment stays
@@ -31,19 +40,12 @@ numpy = "*"
 backend = "uvicorn backend.server:app --port 8742 --host 127.0.0.1"
 test = "pytest"
 
-# Without this, pixi solves as if no CUDA is present (for lockfile portability),
-# so pytorch-gpu can never be solved on any machine, GPU or not. 12.0 is a
-# conservative floor compatible with recent drivers (raise if a newer
-# pytorch-gpu build requires it; check `pixi info` for what your driver reports).
-# Scoped to this feature only — the gui environment has no CUDA dependency and
-# must not be gated on a CUDA-capable driver to solve/install.
-[feature.backend.system-requirements]
-cuda = "12.0"
-
 [feature.backend.dependencies]
-# Deep learning (CUDA build pulled from conda-forge — bundles the CUDA runtime,
-# no separate CUDA toolkit install needed).
-pytorch-gpu = "*"
+# Deep learning. Plain `pytorch`, not `pytorch-gpu`: conda-forge has CUDA and
+# CPU builds of it, and the solver takes the CUDA one (bundled CUDA runtime, no
+# toolkit install needed) only on the CUDA platform variants above. Pinning
+# pytorch-gpu made the env refuse to install on machines without CUDA 12.
+pytorch = "*"
 torchvision = "*"
 lightning = "*"
 torchmetrics = "*"
