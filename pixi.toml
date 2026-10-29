@@ -111,6 +111,12 @@ PyNvVideoCodec = "*"
 # The PySide6 desktop app. No torch, no CUDA — this environment installs (and
 # solves) on a machine with no GPU at all, which matters for anyone running the
 # GUI against a remote backend.
+[feature.gui]
+# The plain platforms only: the GUI never uses CUDA, and letting it solve for
+# the CUDA variants too re-resolved it onto PySide6 6.11.2, which segfaults
+# building the main window.
+platforms = ["win-64", "linux-64"]
+
 [feature.gui.tasks]
 gui = "python gui/app.py"
 
