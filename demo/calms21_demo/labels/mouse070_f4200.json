@@ -1,0 +1,304 @@
+{
+  "bouts": [
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 0,
+      "end_frame": 4
+    },
+    {
+      "behavior_id": "calms21-other",
+      "behavior_name": "other",
+      "start_frame": 5,
+      "end_frame": 268
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 269,
+      "end_frame": 362
+    },
+    {
+      "behavior_id": "calms21-other",
+      "behavior_name": "other",
+      "start_frame": 363,
+      "end_frame": 388
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 389,
+      "end_frame": 393
+    },
+    {
+      "behavior_id": "calms21-mount",
+      "behavior_name": "mount",
+      "start_frame": 394,
+      "end_frame": 427
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 428,
+      "end_frame": 464
+    },
+    {
+      "behavior_id": "calms21-mount",
+      "behavior_name": "mount",
+      "start_frame": 465,
+      "end_frame": 483
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 484,
+      "end_frame": 496
+    },
+    {
+      "behavior_id": "calms21-other",
+      "behavior_name": "other",
+      "start_frame": 497,
+      "end_frame": 517
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 518,
+      "end_frame": 599
+    },
+    {
+      "behavior_id": "calms21-mount",
+      "behavior_name": "mount",
+      "start_frame": 600,
+      "end_frame": 619
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 620,
+      "end_frame": 663
+    },
+    {
+      "behavior_id": "calms21-attack",
+      "behavior_name": "attack",
+      "start_frame": 664,
+      "end_frame": 722
+    },
+    {
+      "behavior_id": "calms21-other",
+      "behavior_name": "other",
+      "start_frame": 723,
+      "end_frame": 820
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 821,
+      "end_frame": 828
+    },
+    {
+      "behavior_id": "calms21-other",
+      "behavior_name": "other",
+      "start_frame": 829,
+      "end_frame": 863
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 864,
+      "end_frame": 881
+    },
+    {
+      "behavior_id": "calms21-attack",
+      "behavior_name": "attack",
+      "start_frame": 882,
+      "end_frame": 943
+    },
+    {
+      "behavior_id": "calms21-mount",
+      "behavior_name": "mount",
+      "start_frame": 944,
+      "end_frame": 959
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 960,
+      "end_frame": 972
+    },
+    {
+      "behavior_id": "calms21-other",
+      "behavior_name": "other",
+      "start_frame": 973,
+      "end_frame": 979
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 980,
+      "end_frame": 1009
+    },
+    {
+      "behavior_id": "calms21-mount",
+      "behavior_name": "mount",
+      "start_frame": 1010,
+      "end_frame": 1034
+    },
+    {
+      "behavior_id": "calms21-attack",
+      "behavior_name": "attack",
+      "start_frame": 1035,
+      "end_frame": 1121
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 1122,
+      "end_frame": 1158
+    },
+    {
+      "behavior_id": "calms21-other",
+      "behavior_name": "other",
+      "start_frame": 1159,
+      "end_frame": 1193
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 1194,
+      "end_frame": 1216
+    },
+    {
+      "behavior_id": "calms21-attack",
+      "behavior_name": "attack",
+      "start_frame": 1217,
+      "end_frame": 1253
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 1254,
+      "end_frame": 1265
+    },
+    {
+      "behavior_id": "calms21-attack",
+      "behavior_name": "attack",
+      "start_frame": 1266,
+      "end_frame": 1283
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 1284,
+      "end_frame": 1326
+    },
+    {
+      "behavior_id": "calms21-other",
+      "behavior_name": "other",
+      "start_frame": 1327,
+      "end_frame": 1357
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 1358,
+      "end_frame": 1403
+    },
+    {
+      "behavior_id": "calms21-attack",
+      "behavior_name": "attack",
+      "start_frame": 1404,
+      "end_frame": 1408
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 1409,
+      "end_frame": 1446
+    },
+    {
+      "behavior_id": "calms21-attack",
+      "behavior_name": "attack",
+      "start_frame": 1447,
+      "end_frame": 1457
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 1458,
+      "end_frame": 1471
+    },
+    {
+      "behavior_id": "calms21-other",
+      "behavior_name": "other",
+      "start_frame": 1472,
+      "end_frame": 1630
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 1631,
+      "end_frame": 1639
+    },
+    {
+      "behavior_id": "calms21-attack",
+      "behavior_name": "attack",
+      "start_frame": 1640,
+      "end_frame": 1682
+    },
+    {
+      "behavior_id": "calms21-other",
+      "behavior_name": "other",
+      "start_frame": 1683,
+      "end_frame": 1701
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 1702,
+      "end_frame": 1704
+    },
+    {
+      "behavior_id": "calms21-other",
+      "behavior_name": "other",
+      "start_frame": 1705,
+      "end_frame": 1708
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 1709,
+      "end_frame": 1712
+    },
+    {
+      "behavior_id": "calms21-attack",
+      "behavior_name": "attack",
+      "start_frame": 1713,
+      "end_frame": 1719
+    },
+    {
+      "behavior_id": "calms21-other",
+      "behavior_name": "other",
+      "start_frame": 1720,
+      "end_frame": 1725
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 1726,
+      "end_frame": 1737
+    },
+    {
+      "behavior_id": "calms21-other",
+      "behavior_name": "other",
+      "start_frame": 1738,
+      "end_frame": 1746
+    },
+    {
+      "behavior_id": "calms21-investigation",
+      "behavior_name": "investigation",
+      "start_frame": 1747,
+      "end_frame": 1799
+    }
+  ]
+}

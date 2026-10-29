@@ -30,6 +30,7 @@ The original Electron frontend (`LabelingApp/`) was removed once this replaced i
 ├── sam2_track.py          # SAM2 teacher (HF transformers): click -> body-centre track
 ├── localizer_train.py     # Train Localizer: SAM2 clips -> distilled localizer weights
 ├── weights/localizer/     # bundled default localizer (mouse_topdown.pt) + model card
+├── demo/                  # calms21_demo/ (small ready-to-open project, CalMS21 subset) + its build script
 ├── video_decode.py        # cv2 / NVDEC frame source, bit-identical to cv2
 ├── trt_engines.py         # auto-built, cached TensorRT engines (localizer + TSM) for inference
 ├── config_tsm.yaml        # Training hyperparameters

@@ -37,7 +37,11 @@ A complete pipeline in one app:
 pixi install   # both environments — .pixi/envs/default (backend) and .pixi/envs/gui (frontend)
 ```
 
-**CPU-only machine?** Edit `pixi.toml` and replace `pytorch-gpu` with `pytorch-cpu` under `[feature.backend.dependencies]`, then re-run `pixi install`. This only affects the backend environment — `gui` never depended on CUDA.
+**GPU or not, nothing to edit.** `pixi install` installs CUDA PyTorch when the NVIDIA driver supports CUDA 12, and the CPU build otherwise (no NVIDIA GPU, or an older driver). Needs a recent pixi (`pixi self-update`).
+
+## Demo project
+
+`demo/calms21_demo/` is a small project to try the whole pipeline on: four one-minute clips of two interacting mice from the [CalMS21](https://data.caltech.edu/records/s0vdx-0k302) dataset (CC BY 4.0), three with expert labels (attack / investigation / mount / other) and one left unlabeled for Active Learning. Open it from the start dialog; see `demo/README.md`.
 
 ## Running
 

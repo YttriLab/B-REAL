@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "name": "CalMS21 demo",
+  "behaviors": [
+    {
+      "id": "calms21-attack",
+      "name": "attack",
+      "key": "1"
+    },
+    {
+      "id": "calms21-investigation",
+      "name": "investigation",
+      "key": "2"
+    },
+    {
+      "id": "calms21-mount",
+      "name": "mount",
+      "key": "3"
+    },
+    {
+      "id": "calms21-other",
+      "name": "other",
+      "key": "4"
+    }
+  ],
+  "videos": [
+    {
+      "id": "mouse070_f4200",
+      "name": "mouse070_f4200.mp4",
+      "path": "/mnt/data/samba/yttri/Aden/B-REAL/demo/calms21_demo/videos/mouse070_f4200.mp4",
+      "rel_path": "videos/mouse070_f4200.mp4",
+      "frame_count": 1800
+    },
+    {
+      "id": "mouse018_f1350",
+      "name": "mouse018_f1350.mp4",
+      "path": "/mnt/data/samba/yttri/Aden/B-REAL/demo/calms21_demo/videos/mouse018_f1350.mp4",
+      "rel_path": "videos/mouse018_f1350.mp4",
+      "frame_count": 1800
+    },
+    {
+      "id": "mouse055_f4500",
+      "name": "mouse055_f4500.mp4",
+      "path": "/mnt/data/samba/yttri/Aden/B-REAL/demo/calms21_demo/videos/mouse055_f4500.mp4",
+      "rel_path": "videos/mouse055_f4500.mp4",
+      "frame_count": 1800
+    },
+    {
+      "id": "mouse001_f1350",
+      "name": "mouse001_f1350.mp4",
+      "path": "/mnt/data/samba/yttri/Aden/B-REAL/demo/calms21_demo/videos/mouse001_f1350.mp4",
+      "rel_path": "videos/mouse001_f1350.mp4",
+      "frame_count": 1800
+    }
+  ],
+  "settings": {
+    "preprocess": {
+      "method": "none",
+      "params": {}
+    }
+  },
+  "last_video": "mouse070_f4200"
+}
