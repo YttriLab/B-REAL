@@ -60,8 +60,12 @@ To try it:
 
 1. `pixi run gui`, then **Open project** → `demo/calms21_demo`.
 2. **Preprocess** the three labeled videos. The demo is set to whole-frame cropping, since both mice matter.
-3. **Train** on them. A few epochs is enough to see it work.
+3. **Train** on them with the default settings.
 4. Open `mouse001_f1350` and run **Active Learning** with the new model.
+
+**Expected results.** On an RTX 5090 the whole demo takes about 16 minutes: preprocessing ~15 s, training ~15 min (early stopping ends it after ~30 epochs), Active Learning inference ~50 s. On the unlabeled clip the model scores about **0.62 balanced accuracy** against the expert labels (macro F1 0.64). Other behaviors score better than mount, which has few training frames. These are from a single run, so expect some variation, and slower training on smaller GPUs. CPU-only works but is much slower (roughly 3 min per epoch on a 32-core machine). The demo is for seeing the pipeline work, not a benchmark. Trained on the full CalMS21 training set, the same model reaches about 0.81–0.86 balanced accuracy on the CalMS21 test set.
+
+To reproduce these numbers without the GUI: `pixi run python demo/run_calms21_demo.py`.
 
 Frames, models and predictions you make are saved in the demo folder but ignored by git. Details, and how to rebuild the clips: `demo/README.md`.
 

@@ -23,8 +23,35 @@ everything else).
 
 1. `pixi run gui` → **Open project** → `demo/calms21_demo`.
 2. **Preprocess** the three labeled videos.
-3. **Train** on them (a few epochs is enough to see it work).
+3. **Train** on them with the default settings (about 15 min on a fast GPU).
 4. Open `mouse001_f1350` and run **Active Learning** with the new model.
+
+## Expected results
+
+One run of `pixi run python demo/run_calms21_demo.py` (the steps above with
+the Train tab's defaults) on an RTX 5090:
+
+| Step | Time |
+|---|---|
+| Preprocess 3 clips | 14 s |
+| Train (early stopping, 28 epochs) | 15 min |
+| Active Learning inference, 1 clip | 48 s |
+| **Total** | **~16 min** |
+
+Predictions on `mouse001_f1350` against its expert labels (1,798 frames):
+
+| | Balanced accuracy | Macro F1 | Accuracy |
+|---|---|---|---|
+| All classes | **0.62** | 0.64 | 0.66 |
+
+Per class (recall / F1): investigation 0.65 / 0.66, mount 0.32 / 0.47,
+other 0.90 / 0.79. The clip has no attack. Mount is the weak class, since the
+training clips have only ~560 mount frames. These are from a single run;
+expect some variation between runs. Training takes longer on smaller GPUs and much longer on CPU
+(roughly 3 min per epoch on a 32-core machine). With three minutes of training
+video this is a pipeline check, not a benchmark: trained on the full CalMS21
+training set, the same model reaches about 0.81–0.86 balanced accuracy on the
+CalMS21 test set.
 
 What you generate (frames, models, predictions) stays in the folder but is
 git-ignored. Opening the project rewrites the video paths in `project.json` for
